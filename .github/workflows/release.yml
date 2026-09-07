@@ -129,12 +129,16 @@ jobs:
           cp skills/smart-resume-offline-release/assets/docker-compose.yml release/compose.yml
           cp skills/smart-resume-offline-release/assets/env.example release/env.example
           cp REPOSITORIES.md release/REPOSITORIES.md
+          cp ops/delivery/README.md release/README.md
           cp backend/resume_contracts/bundle/manifest.json release/contract-manifest.json
           python - <<'PY'
           import json, os
           from pathlib import Path
           images = [json.loads(p.read_text()) for p in sorted(Path("release/images").glob("*.json"))]
           assert len(images) == 5
+          template = Path("release/env.example")
+          template.write_text(template.read_text().replace("__APP_VERSION__", os.environ["VERSION"])
+                              .replace("__AGENT_KERNEL_VERSION__", "").replace("__AGENT_KERNEL_IMAGE__", ""))
           settings = ["APP_VERSION=" + os.environ["VERSION"]]
           for item in images:
               value = item["image"].split(":")[0] + "@" + item["digest"] if item["published"] else item["image"]
@@ -147,7 +151,7 @@ jobs:
           Path("release/images.env").write_text("\n".join(settings) + "\n")
           PY
           cd release
-          sha256sum compose.yml env.example images.env REPOSITORIES.md contract-manifest.json images/*.json > SHA256SUMS
+          sha256sum compose.yml env.example images.env README.md REPOSITORIES.md contract-manifest.json images/*.json > SHA256SUMS
           sha256sum -c SHA256SUMS
           tar -czf "../resume-platform-$VERSION.tar.gz" .
           cd ..

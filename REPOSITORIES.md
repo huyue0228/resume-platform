@@ -44,6 +44,7 @@ python manage.py runserver 127.0.0.1:8001 --settings=config.settings_mock
 ## 协作与版本发布
 
 - 默认负责人为 `@huyue0228`。外包账号确认前不授权；确认后只授予平台仓协作权限。Kernel 源码不给外包，协议变更走双方评审。
+- 2026-09-07 已确认当前个人账户对私有仓规则集返回 403，需要 Pro；因此当前仅有责任人声明，没有强制审批保护。各仓已准备 `.github/branch-protection.json`，包含必需 CI、过期审批失效、CODEOWNERS 审批与禁止强推/删除。维护者升级后在每个仓执行 `gh api --method PUT repos/huyue0228/<仓名>/branches/main/protection --input .github/branch-protection.json` 并回读验证，再邀请外包。模板保留仓主管理员应急绕过；普通协作者不能绕过。若以后要求管理员同样受限，需先有第二名审核人并将 `enforce_admins` 设为 true。
 - 功能分支提交 PR，等待各仓 `check.yml` 通过。`.github/CODEOWNERS` 明确负责人，但只有 GitHub 分支保护启用后，审批才是强制门禁。个人私有仓的强制保护取决于账户套餐；不能用文件代替服务端权限。
 - `release.yml` 可手动执行演练：运行回归测试、构建并保留 Actions 产物，不发布镜像、不创建 Release。维护者从已合并的 `main` 提交推送 `vX.Y.Z`（或预发布标签）才自动发布。标签必须指向 main 历史；已发布版本不得覆盖。
 - 平台发布五种独立镜像（backend、frontend、postgres、redis、backup），Kernel 发布自己的镜像和 linux/amd64 二进制，协议仓发布 wheel/sdist。发布产物均有 SHA-256；镜像清单记录不可变 digest。只发布制品，不自动部署生产。
