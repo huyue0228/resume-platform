@@ -2,16 +2,75 @@
   cursor: pointer;
 }
 
+.resume-table-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.resume-table-heading > span:last-child {
+  color: var(--srf-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.resume-candidate-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  color: var(--srf-ink);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.resume-candidate-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.resume-candidate-link:hover .resume-candidate-name {
+  color: var(--srf-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.resume-candidate-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #dbe6df;
+  border-radius: 9px;
+  background: #eef4ef;
+  color: #426554;
+  font-size: 12px;
+  font-weight: 500;
+}
+.resume-library-row:nth-child(3n+2) .resume-candidate-avatar {
+  color: #526d86;
+  background: #edf2f6;
+  border-color: #dee6ed;
+}
+.resume-library-row:nth-child(3n) .resume-candidate-avatar {
+  color: #88694c;
+  background: #f6f1e9;
+  border-color: #eae3d8;
+}
+
 .resume-volunteer-row {
   cursor: pointer;
 }
 
 .resume-volunteer-row-active > td {
-  background: #e6f4ff !important;
+  background: var(--srf-primary-soft) !important;
 }
 
 .resume-volunteer-row:hover > td {
-  background: #f0f7ff !important;
+  background: #f2f7f4 !important;
 }
 
 .resume-selection-summary,

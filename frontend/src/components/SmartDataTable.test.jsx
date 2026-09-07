@@ -7,6 +7,25 @@ import SmartDataTable from './SmartDataTable'
 const rows = [{ id: 1, name: '张三' }]
 
 describe('SmartDataTable', () => {
+  it('does not reserve horizontal space for hidden columns', async () => {
+    const { container } = render(
+      <SmartDataTable
+        tableId="hidden-column-width"
+        rowKey="id"
+        columns={[
+          { title: '姓名', dataIndex: 'name', width: 190 },
+          { title: '内部资料', dataIndex: 'internal', width: 900 },
+        ]}
+        defaultColumnsState={{ internal: { show: false } }}
+        dataSource={rows}
+        options={false}
+      />,
+    )
+    await screen.findByText('张三')
+    expect(container.querySelector('table').style.width).toBe('190px')
+    expect(screen.queryByRole('columnheader', { name: '内部资料' })).toBeNull()
+  })
+
   it('requests the first page and applies a confirmed text filter', async () => {
     const request = vi.fn().mockResolvedValue({ data: { results: rows, count: 1 } })
     const { container } = render(
@@ -33,6 +52,18 @@ describe('SmartDataTable', () => {
       page_size: 10,
       name: '张三',
     }))
+    await userEvent.click(screen.getByRole('button', { name: '清除姓名筛选' }))
+    await waitFor(() => expect(request).toHaveBeenLastCalledWith({ page: 1, page_size: 10 }))
+  })
+
+  it('distinguishes request failures from empty results and allows retry', async () => {
+    const request = vi.fn().mockRejectedValueOnce(new Error('unavailable'))
+      .mockResolvedValue({ data: { results: rows, count: 1 } })
+    render(<SmartDataTable tableId="retry-failed" rowKey="id" columns={[{ title: '姓名', dataIndex: 'name' }]} request={request} />)
+    expect(await screen.findByText('列表加载失败，请重试')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '重新加载' }))
+    expect(await screen.findByText('张三')).toBeTruthy()
+    expect(screen.queryByText('列表加载失败，请重试')).toBeNull()
   })
 
   it('offers 500 rows per page and submits page_size=500', async () => {

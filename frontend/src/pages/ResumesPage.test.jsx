@@ -375,6 +375,10 @@ describe('ResumesPage detail', () => {
       current_apply_id: { show: false },
       current_entity: { show: false },
       allocation_source: { show: false },
+      current_primary_department_name: { show: false },
+      job_department_name: { show: false },
+      current_job_category: { show: false },
+      reason_type: { show: false },
     })
     expect(screen.queryByText('第一学历标签')).toBeNull()
     expect(screen.queryByText('最高学历标签')).toBeNull()

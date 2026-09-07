@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Outlet, useNavigate, useLocation } from 'react-router-dom'
+import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { ProLayout } from '@ant-design/pro-components'
 import { Dropdown, Tag } from 'antd'
 import { UserOutlined } from '@ant-design/icons'
@@ -7,6 +7,7 @@ import { APP_NAME } from '../appBrand'
 import { useRole, ROLES } from '../contexts/roleState'
 import { canAccessRoute } from '../routePermissions'
 import BrandLogo from '../components/BrandLogo'
+import QuickNavigation from '../components/QuickNavigation'
 import { allRoute } from './menuRoutes'
 import { appLayoutSettings, appLayoutToken, appSiderMenuProps } from '../theme'
 import useUsagePageView from '../utils/useUsagePageView'
@@ -47,7 +48,7 @@ export default function BasicLayout() {
   const location = useLocation()
   const { role, roles, user, logout, hasPermission, isContact } = useRole()
   const [pathname, setPathname] = useState(location.pathname)
-  const [openKeys, setOpenKeys] = useState(() => defaultOpenKeys(location.pathname))
+  const [openKeys, setOpenKeys] = useState(() => [...new Set(['/data', ...defaultOpenKeys(location.pathname)])])
   useUsagePageView(location.pathname)
 
   useEffect(() => {
@@ -84,22 +85,21 @@ export default function BasicLayout() {
         onOpenChange: setOpenKeys,
       }}
       menuItemRender={(item, dom) => (
-        <div
+        <Link
           className="srf-menu-item-link"
-          onClick={() => {
-            setPathname(item.path)
-            navigate(item.path)
-          }}
+          to={item.path}
+          aria-label={item.name}
+          aria-current={pathname === item.path ? 'page' : undefined}
         >
           {dom}
-        </div>
+        </Link>
       )}
       avatarProps={{
         icon: <UserOutlined />,
         title: (
           <span>
             {user?.username || ROLES[role]?.label}
-            <Tag color={isContact ? 'orange' : 'blue'} style={{ marginLeft: 8 }}>
+            <Tag color={isContact ? 'orange' : 'default'} style={{ marginLeft: 8 }}>
               {roles?.[0] || ROLES[role]?.label || '用户'}
             </Tag>
           </span>
@@ -127,6 +127,10 @@ export default function BasicLayout() {
         ),
       }}
     >
+      <div className="workspace-topbar">
+        <span className="workspace-context"><span className="workspace-context-mark" />招聘工作空间</span>
+        <QuickNavigation routes={route.routes} />
+      </div>
       <Outlet />
     </ProLayout>
   )

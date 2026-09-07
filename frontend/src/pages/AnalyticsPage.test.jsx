@@ -123,6 +123,7 @@ describe('AnalyticsPage', () => {
   })
 
   it('renders the management overview, conversion, rankings and diagnosis sections', async () => {
+    const user = userEvent.setup()
     renderAnalytics()
 
     expect(await screen.findByText('招聘概览')).toBeTruthy()
@@ -133,17 +134,21 @@ describe('AnalyticsPage', () => {
     expect(screen.getByText('招聘流程')).toBeTruthy()
     expect(screen.queryByText('按日趋势')).toBeNull()
     expect(screen.queryByText('最近候选人')).toBeNull()
+    expect(screen.getByText('人工复核')).toBeTruthy()
+    expect(screen.getByRole('img', { name: /分配来源：规则分配 6/ })).toBeTruthy()
+    expect(screen.getByRole('img', { name: /AI 建议分布：人工复核 1/ })).toBeTruthy()
+    expect(screen.queryByText('处理效率')).toBeNull()
+    await user.click(screen.getByRole('tab', { name: '处理时效' }))
     expect(screen.getByText('处理效率')).toBeTruthy()
     expect(screen.getByText('人工处理时效')).toBeTruthy()
     expect(screen.getByText('HR 下发时长')).toBeTruthy()
     expect(screen.getByText('部门处理时效')).toBeTruthy()
     expect(screen.getByText('算法平台部')).toBeTruthy()
-    expect(screen.getByText('人工复核')).toBeTruthy()
-    expect(screen.getByRole('img', { name: /分配来源：规则分配 6/ })).toBeTruthy()
-    expect(screen.getByRole('img', { name: /AI 建议分布：人工复核 1/ })).toBeTruthy()
+    await user.click(screen.getByRole('tab', { name: '岗位与人才' }))
     expect(screen.getByRole('img', { name: /岗位排行：软件工程师 5/ })).toBeTruthy()
     expect(screen.getByRole('img', { name: /一级部门排行：科技中心 5/ })).toBeTruthy()
     expect(screen.getByRole('img', { name: /二级部门排行：产品研发 5/ })).toBeTruthy()
+    await user.click(screen.getByRole('tab', { name: '结果诊断' }))
     expect(screen.getByText('暂无 AI 错误记录')).toBeTruthy()
     expect(fetchRecruitmentOverview).toHaveBeenCalledWith({})
   })
@@ -305,6 +310,7 @@ describe('AnalyticsPage', () => {
     const user = userEvent.setup()
     renderAnalytics()
     await screen.findByText('招聘概览')
+    await user.click(screen.getByRole('tab', { name: '结果诊断' }))
 
     await user.click(screen.getByRole('button', { name: /专业背景不匹配/ }))
 
@@ -340,6 +346,7 @@ describe('AnalyticsPage', () => {
   })
 
   it('renders recorded AI errors instead of the healthy empty state', async () => {
+    const user = userEvent.setup()
     fetchRecruitmentOverview.mockResolvedValue({
       data: {
         ...payload,
@@ -349,8 +356,17 @@ describe('AnalyticsPage', () => {
       },
     })
     renderAnalytics()
+    await user.click(await screen.findByRole('tab', { name: '结果诊断' }))
 
     expect(await screen.findByText('llm_timeout')).toBeTruthy()
     expect(screen.queryByText('暂无 AI 错误记录')).toBeNull()
+  })
+
+  it('explains an empty cohort without implying the entire resume library is empty', async () => {
+    fetchRecruitmentOverview.mockResolvedValue({ data: { ...payload, summary: { candidate_count: 0 } } })
+    renderAnalytics()
+    expect(await screen.findByText('当前范围还没有候选人')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /前往简历库/ })).toBeTruthy()
+    expect(screen.queryByRole('img', { name: /分配来源：/ })).toBeNull()
   })
 })

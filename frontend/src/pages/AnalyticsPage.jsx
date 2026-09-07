@@ -14,6 +14,7 @@ import {
   Space,
   Spin,
   Table,
+  Tabs,
   Tag,
   Typography,
   message,
@@ -29,6 +30,7 @@ import {
   SearchOutlined,
   SendOutlined,
   TeamOutlined,
+  ArrowRightOutlined,
 } from '@ant-design/icons'
 import { exportResumeResultReport, fetchRecruitmentOverview } from '../api/services'
 import { useRole } from '../contexts/roleState'
@@ -358,7 +360,7 @@ export default function AnalyticsPage() {
     <PageContainer
       className="analytics-page"
       title="数据看板"
-      content="聚焦候选规模、转化效率与招聘结果，所有阶段指标按候选人去重。"
+      content="从候选人到招聘结果，掌握每个关键环节。所有阶段指标按候选人去重。"
       extra={(
         <Space wrap>
           {hasPermission('resume.view') ? (
@@ -371,11 +373,7 @@ export default function AnalyticsPage() {
               导出结果报表
             </Button>
           ) : null}
-          <div className="analytics-as-of">
-            <CalendarOutlined />
-            <span>数据截至</span>
-            <strong>{asOf}</strong>
-          </div>
+          {canDrilldown && <Button type="primary" icon={<ArrowRightOutlined />} onClick={() => navigate('/resumes')}>打开简历库</Button>}
         </Space>
       )}
     >
@@ -401,6 +399,7 @@ export default function AnalyticsPage() {
                 <div className="analytics-inline-filter">
                   <FilterField label="时间区间" className="analytics-filter-field--range">
                     <DatePicker.RangePicker
+                      placeholder={['开始日期', '结束日期']}
                       value={dateRange}
                       onChange={(range, dateStrings) => {
                         setDateRange(range)
@@ -456,6 +455,7 @@ export default function AnalyticsPage() {
                 <div className="analytics-filter-note">
                   <CalendarOutlined />
                   <Typography.Text>当前范围：{activeRange}</Typography.Text>
+                  <span className="analytics-as-of">数据截至 {asOf}</span>
                 </div>
               </div>
 
@@ -521,122 +521,159 @@ export default function AnalyticsPage() {
               </div>
             </section>
 
-            <section>
-              <SectionHeading title="招聘概览" description="分配来源、流程转化与 AI 建议构成" />
-              <Row gutter={[16, 16]} className="analytics-equal-row">
-                <Col xs={24} xl={7}>
-                  <DoughnutChartCard
-                    title="分配来源"
-                    rows={data.source_distribution}
-                    onRowClick={canDrilldown ? (row) => openDrilldown('source', row, '分配来源') : undefined}
-                  />
-                </Col>
-                <Col xs={24} xl={10}>
-                  <HorizontalBarChartCard
-                    title="招聘流程"
-                    rows={pipelineRows}
-                    palette="pipeline"
-                    onRowClick={canDrilldown
-                      ? (row) => openDrilldown(row.key === 'candidate' ? 'candidate' : row.key, row, '招聘流程')
-                      : undefined}
-                  />
-                </Col>
-                <Col xs={24} xl={7}>
-                  <DoughnutChartCard
-                    title="AI 建议分布"
-                    rows={data.ai_recommendation_distribution}
-                    onRowClick={canDrilldown ? (row) => openDrilldown('ai_recommendation', row, 'AI 建议分布') : undefined}
-                  />
-                </Col>
-              </Row>
-            </section>
+            <Tabs
+              className="analytics-view-tabs"
+              items={[
+                {
+                  key: 'overview',
+                  label: '流程概览',
+                  children: (
+                    <section>
+                      <SectionHeading title="招聘概览" description="分配来源、流程转化与 AI 建议构成" />
+                      {Number(summary.candidate_count) === 0 ? (
+                        <div className="analytics-cohort-empty">
+                          <span className="analytics-cohort-empty-icon"><TeamOutlined /></span>
+                          <Typography.Title level={4}>当前范围还没有候选人</Typography.Title>
+                          <Typography.Text type="secondary">试试调整时间或部门范围，或前往简历库查看已导入的候选人。</Typography.Text>
+                          {canDrilldown && <Button onClick={() => navigate('/resumes')} icon={<ArrowRightOutlined />}>前往简历库</Button>}
+                        </div>
+                      ) : (
+                        <Row gutter={[16, 16]} className="analytics-equal-row">
+                          <Col xs={24} xl={7}>
+                            <DoughnutChartCard
+                              title="分配来源"
+                              rows={data.source_distribution}
+                              onRowClick={canDrilldown ? (row) => openDrilldown('source', row, '分配来源') : undefined}
+                            />
+                          </Col>
+                          <Col xs={24} xl={10}>
+                            <HorizontalBarChartCard
+                              title="招聘流程"
+                              rows={pipelineRows}
+                              palette="pipeline"
+                              onRowClick={canDrilldown
+                                ? (row) => openDrilldown(row.key === 'candidate' ? 'candidate' : row.key, row, '招聘流程')
+                                : undefined}
+                            />
+                          </Col>
+                          <Col xs={24} xl={7}>
+                            <DoughnutChartCard
+                              title="AI 建议分布"
+                              rows={data.ai_recommendation_distribution}
+                              onRowClick={canDrilldown ? (row) => openDrilldown('ai_recommendation', row, 'AI 建议分布') : undefined}
+                            />
+                          </Col>
+                        </Row>
+                      )}
+                    </section>
+                  ),
+                },
+                {
+                  key: 'efficiency',
+                  label: '处理时效',
+                  children: (
+                    <div className="analytics-tab-content">
+                      <section>
+                        <SectionHeading title="处理效率" description="候选人从导入到关键阶段的平均耗时" />
+                        <EfficiencyStrip
+                          values={data.average_hours}
+                          onItemClick={canDrilldown
+                            ? (dimension, label) => openDrilldown(dimension, null, label)
+                            : undefined}
+                        />
+                      </section>
 
-            <section>
-              <SectionHeading title="处理效率" description="候选人从导入到关键阶段的平均耗时" />
-              <EfficiencyStrip
-                values={data.average_hours}
-                onItemClick={canDrilldown
-                  ? (dimension, label) => openDrilldown(dimension, null, label)
-                  : undefined}
-              />
-            </section>
-
-            <section>
-              <SectionHeading
-                title="人工处理时效"
-                description="按自然时间统计下发、部门处理和最终反馈速度，系统自动路由不计入人工时长"
-              />
-              <HandlingSpeedPanel value={data.handling_speed} />
-            </section>
-
-            <section>
-              <SectionHeading title="岗位与人才结构" description="识别需求集中度和候选人结构分布" />
-              <Row gutter={[16, 16]} className="analytics-equal-row">
-                <Col xs={24} xl={8}>
-                  <HorizontalBarChartCard
-                    title="岗位排行"
-                    rows={data.job_ranking}
-                    onRowClick={canDrilldown ? (row) => openDrilldown('job', row, '岗位排行') : undefined}
-                  />
-                </Col>
-                <Col xs={24} xl={8}>
-                  <HorizontalBarChartCard
-                    title="一级部门排行"
-                    rows={data.primary_department_ranking}
-                    onRowClick={canDrilldown ? (row) => openDrilldown('primary_department', row, '一级部门排行') : undefined}
-                  />
-                </Col>
-                <Col xs={24} xl={8}>
-                  <HorizontalBarChartCard
-                    title="二级部门排行"
-                    rows={data.department_ranking}
-                    onRowClick={canDrilldown ? (row) => openDrilldown('department', row, '二级部门排行') : undefined}
-                  />
-                </Col>
-                <Col xs={24} lg={12}>
-                  <DoughnutChartCard
-                    title="院校标签"
-                    rows={data.school_tag_ranking}
-                    onRowClick={canDrilldown ? (row) => openDrilldown('school_tag', row, '院校标签') : undefined}
-                  />
-                </Col>
-                <Col xs={24} lg={12}>
-                  <DoughnutChartCard
-                    title="最高学历"
-                    rows={data.education_distribution}
-                    onRowClick={canDrilldown ? (row) => openDrilldown('education', row, '最高学历') : undefined}
-                  />
-                </Col>
-              </Row>
-            </section>
-
-            <section>
-              <SectionHeading title="结果诊断" description="集中查看 AI 异常、归档和未通过原因" />
-              <Row gutter={[16, 16]} className="analytics-equal-row">
-                <Col xs={24} xl={8}>
-                  <DoughnutChartCard
-                    title="AI 错误码"
-                    rows={data.ai_error_distribution}
-                    successWhenEmpty
-                    onRowClick={canDrilldown ? (row) => openDrilldown('ai_error', row, 'AI 错误码') : undefined}
-                  />
-                </Col>
-                <Col xs={24} xl={8}>
-                  <DoughnutChartCard
-                    title="归档原因"
-                    rows={data.archive_reason_distribution}
-                    onRowClick={canDrilldown ? (row) => openDrilldown('archive_reason', row, '归档原因') : undefined}
-                  />
-                </Col>
-                <Col xs={24} xl={8}>
-                  <DoughnutChartCard
-                    title="未通过原因"
-                    rows={data.rejection_reason_distribution}
-                    onRowClick={canDrilldown ? (row) => openDrilldown('rejection_reason', row, '未通过原因') : undefined}
-                  />
-                </Col>
-              </Row>
-            </section>
+                      <section>
+                        <SectionHeading
+                          title="人工处理时效"
+                          description="按自然时间统计下发、部门处理和最终反馈速度，系统自动路由不计入人工时长"
+                        />
+                        <HandlingSpeedPanel value={data.handling_speed} />
+                      </section>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'talent',
+                  label: '岗位与人才',
+                  children: (
+                    <section>
+                      <SectionHeading title="岗位与人才结构" description="识别需求集中度和候选人结构分布" />
+                      <Row gutter={[16, 16]} className="analytics-equal-row">
+                        <Col xs={24} xl={8}>
+                          <HorizontalBarChartCard
+                            title="岗位排行"
+                            rows={data.job_ranking}
+                            onRowClick={canDrilldown ? (row) => openDrilldown('job', row, '岗位排行') : undefined}
+                          />
+                        </Col>
+                        <Col xs={24} xl={8}>
+                          <HorizontalBarChartCard
+                            title="一级部门排行"
+                            rows={data.primary_department_ranking}
+                            onRowClick={canDrilldown ? (row) => openDrilldown('primary_department', row, '一级部门排行') : undefined}
+                          />
+                        </Col>
+                        <Col xs={24} xl={8}>
+                          <HorizontalBarChartCard
+                            title="二级部门排行"
+                            rows={data.department_ranking}
+                            onRowClick={canDrilldown ? (row) => openDrilldown('department', row, '二级部门排行') : undefined}
+                          />
+                        </Col>
+                        <Col xs={24} lg={12}>
+                          <DoughnutChartCard
+                            title="院校标签"
+                            rows={data.school_tag_ranking}
+                            onRowClick={canDrilldown ? (row) => openDrilldown('school_tag', row, '院校标签') : undefined}
+                          />
+                        </Col>
+                        <Col xs={24} lg={12}>
+                          <DoughnutChartCard
+                            title="最高学历"
+                            rows={data.education_distribution}
+                            onRowClick={canDrilldown ? (row) => openDrilldown('education', row, '最高学历') : undefined}
+                          />
+                        </Col>
+                      </Row>
+                    </section>
+                  ),
+                },
+                {
+                  key: 'diagnosis',
+                  label: '结果诊断',
+                  children: (
+                    <section>
+                      <SectionHeading title="结果诊断" description="集中查看 AI 异常、归档和未通过原因" />
+                      <Row gutter={[16, 16]} className="analytics-equal-row">
+                        <Col xs={24} xl={8}>
+                          <DoughnutChartCard
+                            title="AI 错误码"
+                            rows={data.ai_error_distribution}
+                            successWhenEmpty
+                            onRowClick={canDrilldown ? (row) => openDrilldown('ai_error', row, 'AI 错误码') : undefined}
+                          />
+                        </Col>
+                        <Col xs={24} xl={8}>
+                          <DoughnutChartCard
+                            title="归档原因"
+                            rows={data.archive_reason_distribution}
+                            onRowClick={canDrilldown ? (row) => openDrilldown('archive_reason', row, '归档原因') : undefined}
+                          />
+                        </Col>
+                        <Col xs={24} xl={8}>
+                          <DoughnutChartCard
+                            title="未通过原因"
+                            rows={data.rejection_reason_distribution}
+                            onRowClick={canDrilldown ? (row) => openDrilldown('rejection_reason', row, '未通过原因') : undefined}
+                          />
+                        </Col>
+                      </Row>
+                    </section>
+                  ),
+                },
+              ]}
+            />
           </div>
         </Spin>
       ) : !error ? (

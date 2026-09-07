@@ -103,9 +103,21 @@ export default function LoginPage({ redirectToW3 = redirectBrowserToW3 }) {
 
   return (
     <div className="login-shell">
+      <section className="login-story" aria-label="海纳智聘招聘工作空间">
+        <div className="login-wordmark"><BrandLogo size={36} />{APP_NAME}</div>
+        <div className="login-story-copy">
+          <span className="login-eyebrow">TALENT, MEET OPPORTUNITY.</span>
+          <h1>看见人才，<br />连接每一种可能。</h1>
+          <p>让简历分析、岗位匹配与团队协作，在同一个清晰的工作空间里发生。</p>
+          <div className="login-principles"><span>证据化分析</span><span>有边界的智能</span><span>可追溯的协作</span></div>
+        </div>
+        <div className="login-story-foot">海纳智聘 · 招聘管理工作空间</div>
+      </section>
       <div className="login-redirect-card">
-        <BrandLogo size={52} />
-        <Title level={3}>{APP_NAME}</Title>
+        <div className="login-card-heading">
+          <Title level={3}>欢迎回来</Title>
+          <p>登录{APP_NAME}，继续你的招聘工作。</p>
+        </div>
         {debugTokenLoginEnabled && !oauth2Success ? (
           <>
             <Alert
@@ -114,6 +126,7 @@ export default function LoginPage({ redirectToW3 = redirectBrowserToW3 }) {
               message={error || 'W3 登录尚未就绪，可使用本地开发令牌'}
             />
             <Input.Password
+              aria-label="开发令牌"
               autoComplete="off"
               placeholder="开发令牌"
               value={devToken}

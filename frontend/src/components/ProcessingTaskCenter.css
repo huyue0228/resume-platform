@@ -1,6 +1,6 @@
 .processing-task-center {
   overflow: hidden;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--srf-border);
   border-radius: 14px;
   background: #fff;
   box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
@@ -12,7 +12,7 @@
   justify-content: space-between;
   gap: 20px;
   padding: 20px 22px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--srf-border);
 }
 
 .processing-task-toolbar .ant-typography {
@@ -52,7 +52,7 @@
 
 .processing-task-summary .anticon {
   margin-right: 7px;
-  color: #1677ff;
+  color: var(--srf-primary);
 }
 
 .processing-task-summary > div:nth-child(2) .anticon {
@@ -67,7 +67,7 @@
 }
 
 .processing-task-summary strong {
-  color: #182230;
+  color: var(--srf-ink);
   font-size: 18px;
   font-weight: 650;
 }
@@ -99,17 +99,17 @@
 }
 
 .processing-task-table .ant-table {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--srf-border);
 }
 
 .processing-task-table .ant-table-thead > tr > th {
-  color: #667085;
+  color: var(--srf-muted);
   font-size: 12px;
   font-weight: 600;
 }
 
 .processing-task-table .ant-table-tbody > tr.is-active > td:first-child {
-  border-left: 3px solid #1677ff;
+  border-left: 3px solid var(--srf-primary);
 }
 
 .processing-task-table-task,
@@ -165,7 +165,7 @@
 }
 
 .processing-task-card.is-active {
-  border-left: 3px solid #1677ff;
+  border-left: 3px solid var(--srf-primary);
 }
 
 .processing-task-card .ant-card-body {
@@ -194,7 +194,7 @@
 .processing-task-title {
   min-width: 0;
   overflow-wrap: anywhere;
-  color: #182230;
+  color: var(--srf-ink);
   font-size: 14px;
 }
 
@@ -212,7 +212,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px 14px;
-  color: #667085;
+  color: var(--srf-muted);
   font-size: 12px;
 }
 
@@ -240,18 +240,18 @@
 }
 
 .processing-task-metric-label {
-  color: #667085;
+  color: var(--srf-muted);
   font-size: 12px;
 }
 
 .processing-task-primary-metrics strong {
-  color: #182230;
+  color: var(--srf-ink);
   font-size: 18px;
   font-weight: 650;
 }
 
 .processing-task-primary-metrics .anticon {
-  color: #1677ff;
+  color: var(--srf-primary);
   font-size: 14px;
 }
 
@@ -292,14 +292,14 @@
   min-width: 0;
   height: auto;
   padding: 9px 4px;
-  color: #667085;
+  color: var(--srf-muted);
   font-size: 11px;
   text-align: center;
 }
 
 .processing-task-result-button.ant-btn:not(:disabled):hover {
-  color: #1677ff;
-  background: #f0f7ff;
+  color: var(--srf-primary);
+  background: var(--srf-primary-soft);
 }
 
 .processing-task-result-button.ant-btn strong {
@@ -320,7 +320,7 @@
   min-width: 22px;
   height: 22px;
   padding: 0;
-  color: #667085;
+  color: var(--srf-muted);
 }
 
 .processing-task-success-details {

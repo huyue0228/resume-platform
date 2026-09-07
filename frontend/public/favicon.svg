@@ -3,8 +3,8 @@
   <desc id="description">由聚光束、精密光学圆环和流线组成的海纳智聘标志</desc>
   <defs>
     <linearGradient id="background" x1="8" y1="6" x2="57" y2="60" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#155EEF"/>
-      <stop offset="1" stop-color="#0E9384"/>
+      <stop stop-color="#176B58"/>
+      <stop offset="1" stop-color="#477953"/>
     </linearGradient>
     <linearGradient id="beam" x1="32" y1="9" x2="32" y2="33" gradientUnits="userSpaceOnUse">
       <stop stop-color="#D9F7FF"/>

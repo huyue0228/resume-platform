@@ -1,8 +1,9 @@
 import React from 'react'
 import { render, waitFor } from '@testing-library/react'
 import { ProLayout } from '@ant-design/pro-components'
+import { ConfigProvider } from 'antd'
 import { describe, expect, it } from 'vitest'
-import { appLayoutSettings, appLayoutToken, appSiderMenuProps } from '../theme'
+import { appLayoutSettings, appLayoutToken, appSiderMenuProps, appTheme } from '../theme'
 import { allRoute } from './menuRoutes'
 import '../index.css'
 
@@ -28,25 +29,25 @@ describe('BasicLayout menu hierarchy', () => {
     ])
   })
 
-  it('uses the reference dashboard dark sider and light application background', () => {
+  it('uses a quiet light workspace with consistent green navigation emphasis', () => {
     expect(appLayoutSettings).toMatchObject({
       layout: 'side',
-      siderWidth: 220,
+      siderWidth: 232,
       siderMenuType: 'sub',
       fixedHeader: true,
       fixSiderbar: true,
     })
-    expect(appLayoutToken.bgLayout).toBe('#f5f7fb')
-    expect(appLayoutToken.sider.colorMenuBackground).toBe('#111827')
-    expect(appLayoutToken.sider.colorBgMenuItemSelected).toBe('#4f46e5')
+    expect(appLayoutToken.bgLayout).toBe('#f7f8fa')
+    expect(appLayoutToken.sider.colorMenuBackground).toBe('#f0f3f1')
+    expect(appLayoutToken.sider.colorBgMenuItemSelected).toBe('#e0ece5')
     expect(appLayoutToken.header.colorBgHeader).toBe('#ffffff')
     expect(appLayoutSettings.navTheme).toBeUndefined()
-    expect(appSiderMenuProps.theme).toBe('dark')
+    expect(appSiderMenuProps.theme).toBe('light')
   })
 
   it('keeps the selected parent icon visible when the sider is collapsed', async () => {
     render(
-      <ProLayout
+      <ConfigProvider theme={appTheme}><ProLayout
         {...appLayoutSettings}
         className="srf-app-layout"
         collapsed
@@ -54,7 +55,7 @@ describe('BasicLayout menu hierarchy', () => {
         location={{ pathname: '/jobs' }}
         token={appLayoutToken}
         menuProps={appSiderMenuProps}
-      />,
+      /></ConfigProvider>,
     )
 
     await waitFor(() => {
@@ -66,13 +67,16 @@ describe('BasicLayout menu hierarchy', () => {
       '.ant-menu-submenu-selected > .ant-menu-submenu-title',
     )
     const selectedParentIcon = selectedParentTitle?.querySelector('.anticon')
-    expect(menu?.classList.contains('ant-menu-dark')).toBe(true)
+    expect(menu?.classList.contains('ant-menu-light')).toBe(true)
     expect(selectedParentTitle).toBeTruthy()
     expect(selectedParentIcon).toBeTruthy()
-    expect(window.getComputedStyle(selectedParentTitle).color).toBe('rgb(255, 255, 255)')
-    expect(window.getComputedStyle(selectedParentIcon).color).toBe('rgb(255, 255, 255)')
-    expect(window.getComputedStyle(selectedParentTitle).backgroundColor).toBe(
-      'rgb(79, 70, 229)',
-    )
+    const foreground = window.getComputedStyle(selectedParentTitle).color
+    const background = window.getComputedStyle(selectedParentTitle).backgroundColor
+    expect(window.getComputedStyle(selectedParentIcon).color).toBe(foreground)
+    const luminance = (color) => color.match(/[\d.]+/g).slice(0, 3)
+      .map((value) => Number(value) / 255)
+      .map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+      .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0)
+    expect((luminance(background) + 0.05) / (luminance(foreground) + 0.05)).toBeGreaterThan(4.5)
   })
 })

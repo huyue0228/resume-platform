@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { FilterOutlined, SearchOutlined } from '@ant-design/icons'
+import { CloseOutlined, FilterOutlined, SearchOutlined } from '@ant-design/icons'
 import { ProTable } from '@ant-design/pro-components'
 import { Alert, Button, Input, Select, Space } from 'antd'
 import { useRole } from '../contexts/roleState'
@@ -248,6 +248,7 @@ const SmartDataTable = forwardRef(function SmartDataTable(
   const filtersRef = useRef({})
   const columnsStateRef = useRef(persisted.columnsState || stableDefaultColumnsState)
   const [filters, setFilters] = useState({})
+  const [requestFailed, setRequestFailed] = useState(false)
   const [filterOptions, setFilterOptions] = useState({})
   const [widths, setWidths] = useState(persisted.widths || {})
   const [columnsState, setColumnsState] = useState(columnsStateRef.current)
@@ -499,8 +500,8 @@ const SmartDataTable = forwardRef(function SmartDataTable(
         filteredValue: selectedKeys.some(Boolean) ? selectedKeys : null,
         filterMultiple: Boolean(filter.multiple),
         filterIcon: (filtered) => filter.type !== 'text'
-          ? <FilterOutlined style={{ color: filtered ? '#1677ff' : undefined }} />
-          : <SearchOutlined style={{ color: filtered ? '#1677ff' : undefined }} />,
+          ? <FilterOutlined style={{ color: filtered ? 'var(--srf-primary)' : undefined }} />
+          : <SearchOutlined style={{ color: filtered ? 'var(--srf-primary)' : undefined }} />,
         filterDropdown,
       }
     }),
@@ -508,7 +509,9 @@ const SmartDataTable = forwardRef(function SmartDataTable(
   )
 
   const totalWidth = columns.reduce(
-    (sum, column) => sum + Number(column.width || DEFAULT_COLUMN_WIDTH),
+    (sum, column) => columnsState[column.key]?.show === false || column.hideInTable
+      ? sum
+      : sum + Number(column.width || DEFAULT_COLUMN_WIDTH),
     0,
   )
   const localData = useMemo(
@@ -600,6 +603,38 @@ const SmartDataTable = forwardRef(function SmartDataTable(
       size={12}
       style={tableRootStyle}
     >
+      {requestFailed && (
+        <Alert
+          type="error"
+          showIcon
+          message="列表加载失败，请重试"
+          description="筛选条件已保留。"
+          action={<Button size="small" onClick={() => proActionRef.current?.reload?.()}>重新加载</Button>}
+        />
+      )}
+      {Object.keys(filters).length > 0 && (
+        <div className="srf-active-filters" aria-label="已生效的列筛选">
+          <span className="srf-active-filters-label"><FilterOutlined /> 当前筛选</span>
+          {columns.filter((column) => filters[column.key]?.length).map((column) => {
+            const values = filters[column.key]
+            const choices = optionValues(column.filter?.options, filterOptions)
+            const title = typeof column.title === 'string' ? column.title : '当前列'
+            const label = values.map((value) => choices.find((option) => option.value === value)?.label ?? value).join('、')
+            return (
+              <button
+                key={column.key}
+                type="button"
+                className="srf-filter-chip"
+                aria-label={`清除${title}筛选`}
+                title={`${title}：${label}`}
+                onClick={() => updateFilter(column.key, [])}
+              >
+                <span>{title}：{label}</span><CloseOutlined />
+              </button>
+            )
+          })}
+        </div>
+      )}
       {batchContent ? (
         <Alert
           type="info"
@@ -642,6 +677,7 @@ const SmartDataTable = forwardRef(function SmartDataTable(
         pagination={mergedPagination}
         params={externalParams}
         request={dataRequest ? async (params) => {
+          setRequestFailed(false)
           try {
             const { current, pageSize, ...requestParams } = params
             const response = await dataRequest({
@@ -657,6 +693,7 @@ const SmartDataTable = forwardRef(function SmartDataTable(
               success: true,
             }
           } catch {
+            setRequestFailed(true)
             return { data: [], total: 0, success: false }
           }
         } : undefined}

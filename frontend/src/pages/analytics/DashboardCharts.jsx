@@ -14,8 +14,8 @@ import { formatChartCount, prepareDistributionRows } from './chartUtils'
 
 ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend)
 
-const CHART_COLORS = ['#4f46e5', '#16a34a', '#d97706', '#08979c', '#dc2626', '#64748b']
-const PIPELINE_COLORS = ['#c7d2fe', '#a5b4fc', '#818cf8', '#6366f1', '#4f46e5']
+const CHART_COLORS = ['#397d65', '#849ebd', '#d2a061', '#73aaa5', '#b9827d', '#9ba997']
+const PIPELINE_COLORS = ['#bfdbca', '#9cc6ae', '#77ae92', '#508e72', '#28634d']
 
 function percentage(value, total) {
   return total ? value * 100 / total : 0

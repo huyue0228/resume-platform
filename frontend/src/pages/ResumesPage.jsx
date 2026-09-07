@@ -992,8 +992,31 @@ export default function ResumesPage() {
       title: '姓名',
       dataIndex: 'name',
       fixed: 'left',
-      width: 100,
+      width: 190,
       filter: { type: 'text', param: 'name', pinyin: true, placeholder: '筛选姓名/拼音' },
+      render: (_, record) => (
+        <button type="button" className="resume-candidate-link" onClick={() => setDetailRecord(record)} aria-label={`查看 ${record.name || '未命名候选人'} 的简历`}>
+          <span className="resume-candidate-avatar" aria-hidden="true">{(record.name || '?').slice(0, 1)}</span>
+          <span className="resume-candidate-name">{record.name || '未命名候选人'}</span>
+        </button>
+      ),
+    },
+    {
+      title: '简历状态',
+      dataIndex: 'system_status',
+      width: 120,
+      valueType: 'select',
+      valueEnum: Object.fromEntries(
+        Object.entries(SYSTEM_STATUS_OPTIONS).map(([value, item]) => [
+          value,
+          { text: item.text, status: item.status },
+        ]),
+      ),
+      filter: { type: 'select', param: 'system_status', multiple: true, options: Object.entries(SYSTEM_STATUS_OPTIONS).map(([value, item]) => ({ value, label: item.text })) },
+      render: (_, record) => {
+        const item = SYSTEM_STATUS_OPTIONS[record.system_status]
+        return item ? <Tooltip title={item.description}><Tag color={item.color}>{item.text}</Tag></Tooltip> : '-'
+      },
     },
     {
       title: '最高学历专业',
@@ -1095,28 +1118,6 @@ export default function ResumesPage() {
           : (record.school_tag ? <SchoolTagBadge value={record.school_tag} /> : '-'),
     },
     {
-      title: '简历状态',
-      dataIndex: 'system_status',
-      width: 110,
-      valueType: 'select',
-      valueEnum: Object.fromEntries(
-        Object.entries(SYSTEM_STATUS_OPTIONS).map(([value, item]) => [
-          value,
-          { text: item.text, status: item.status },
-        ]),
-      ),
-      filter: { type: 'select', param: 'system_status', multiple: true, options: Object.entries(SYSTEM_STATUS_OPTIONS).map(([value, item]) => ({ value, label: item.text })) },
-      render: (_, record) => {
-        const status = record.system_status
-        const item = SYSTEM_STATUS_OPTIONS[status]
-        return item ? (
-          <Tooltip title={item.description}>
-            <Tag color={item.color}>{item.text}</Tag>
-          </Tooltip>
-        ) : '-'
-      },
-    },
-    {
       title: '原因',
       dataIndex: 'reason_type',
       width: 240,
@@ -1155,8 +1156,17 @@ export default function ResumesPage() {
   ]
   return (
     <PageContainer
+      className="resumes-page"
       title="简历库"
-      content="按候选人聚合展示当前有效志愿；单击候选人行查看全部投递、分配尝试和反馈。"
+      content="一位候选人，一份完整视图。查看当前志愿，协同完成分析、下发与反馈。"
+      extra={canImport ? <ImportButton
+        buttonText="上传简历"
+        title="上传简历（简历列表 + 简历包），上传后自动处理"
+        fields={RESUME_IMPORT_FIELDS}
+        templateType="resume_list"
+        templateFilename="简历信息列表标准模板.xlsx"
+        onDone={handleImported}
+      /> : null}
     >
       {processingResultFilter && (
         <Alert
@@ -1180,6 +1190,7 @@ export default function ResumesPage() {
       )}
       <SmartDataTable
         tableId="candidates"
+        headerTitle={<div className="resume-table-heading"><span>候选人清单</span><span>点击姓名查看完整档案</span></div>}
         stickyPagination
         actionRef={actionRef}
         rowKey="id"
@@ -1188,6 +1199,10 @@ export default function ResumesPage() {
           current_apply_id: { show: false },
           current_entity: { show: false },
           allocation_source: { show: false },
+          current_primary_department_name: { show: false },
+          job_department_name: { show: false },
+          current_job_category: { show: false },
+          reason_type: { show: false },
         }}
         filterOptionsRequest={fetchCandidateFilterOptions}
         rowSelection={
@@ -1245,15 +1260,6 @@ export default function ResumesPage() {
           </Space>
         )}
         toolBarRender={() => [
-          canImport && <ImportButton
-            key="import"
-            buttonText="上传简历"
-            title="上传简历（简历列表 + 简历包），上传后自动处理"
-            fields={RESUME_IMPORT_FIELDS}
-            templateType="resume_list"
-            templateFilename="简历信息列表标准模板.xlsx"
-            onDone={handleImported}
-          />,
           canRunPipeline && <Button
             key="process"
             type="primary"
