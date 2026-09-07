@@ -1,0 +1,248 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "简历智能体内核：业务控制面与 Agent 执行面的边界",
+    "locale": "zh-CN",
+    "output": "resume-agent-boundary.html",
+    "animation": "none",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "main-path",
+        "label": "主执行链路",
+        "focus": ["frontend", "django_api", "celery", "lane_control", "kernel_runtime", "llm", "policy_gate", "business_db"],
+        "note": "从前端提交到提案回传；只有 Django Policy Gate 能提交业务事务。"
+      },
+      {
+        "id": "agent-boundary",
+        "label": "Agent 信任边界",
+        "focus": ["lane_control", "kernel_runtime", "readonly_tools", "agent_core", "llm"],
+        "note": "二进制内核只有只读工具和自身状态，不持有业务数据库凭据。"
+      },
+      {
+        "id": "review-path",
+        "label": "人工复核与影子运行",
+        "focus": ["lane_control", "kernel_runtime", "policy_gate", "manual_review", "business_db"],
+        "note": "shadow 仅留运行证据；review_only 进入人工复核，不自动下发或归档。"
+      }
+    ],
+    "legend": {
+      "mode": "all",
+      "entries": {
+        "frontend": { "label": "用户界面" },
+        "backend": { "label": "服务与执行逻辑" },
+        "database": { "label": "持久状态" },
+        "security": { "label": "策略与信任边界" },
+        "messagebus": { "label": "异步调度" },
+        "external": { "label": "外部依赖" }
+      }
+    },
+    "viewBox": [1390, 860]
+  },
+  "components": [
+    {
+      "id": "frontend",
+      "type": "frontend",
+      "label": "React 前端",
+      "sublabel": "任务 · 进度 · 人工操作",
+      "tag": "不直连 Agent",
+      "pos": [20, 278],
+      "size": [150, 76]
+    },
+    {
+      "id": "django_api",
+      "type": "backend",
+      "label": "Django API",
+      "sublabel": "RBAC · Step1–3 · 构造 Envelope",
+      "tag": "业务入口",
+      "pos": [220, 270],
+      "size": [180, 92]
+    },
+    {
+      "id": "celery",
+      "type": "messagebus",
+      "label": "Celery 编排",
+      "sublabel": "ProcessingRun · 重试 · 超时",
+      "tag": "异步控制",
+      "pos": [460, 278],
+      "size": [180, 76]
+    },
+    {
+      "id": "business_db",
+      "type": "database",
+      "label": "业务数据库",
+      "sublabel": "候选人/志愿/HC/流程 + 运行投影",
+      "tag": "Django 独占写入",
+      "pos": [220, 520],
+      "size": [180, 90]
+    },
+    {
+      "id": "policy_gate",
+      "type": "security",
+      "label": "Policy Gate",
+      "sublabel": "硬规则 · HC · 修订号 · 事务",
+      "tag": "最终裁决权",
+      "pos": [700, 516],
+      "size": [200, 96]
+    },
+    {
+      "id": "lane_control",
+      "type": "messagebus",
+      "label": "执行 Lane 控制",
+      "sublabel": "唯一 primary · 最多一个 shadow",
+      "tag": "冻结版本与 request_id",
+      "pos": [700, 275],
+      "size": [200, 82]
+    },
+    {
+      "id": "manual_review",
+      "type": "frontend",
+      "label": "HR 人工复核",
+      "sublabel": "确认下发/归档 · 重试 · 切 Rule",
+      "tag": "review_only",
+      "pos": [700, 682],
+      "size": [200, 82]
+    },
+    {
+      "id": "agent_core",
+      "type": "database",
+      "label": "Agent Core 存储",
+      "sublabel": "配置 revision · pin · 幂等 lease/result",
+      "tag": "非业务状态",
+      "pos": [960, 82],
+      "size": [230, 90]
+    },
+    {
+      "id": "kernel_runtime",
+      "type": "backend",
+      "label": "agent-kernel 二进制",
+      "sublabel": "Runtime · Agent Loop · 模型网关",
+      "tag": "目标设计｜未实现",
+      "pos": [960, 260],
+      "size": [230, 112]
+    },
+    {
+      "id": "readonly_tools",
+      "type": "security",
+      "label": "只读工具注册表",
+      "sublabel": "约束/岗位/简历片段/证据搜索/引文校验",
+      "tag": "有界结果",
+      "pos": [960, 520],
+      "size": [230, 96]
+    },
+    {
+      "id": "llm",
+      "type": "external",
+      "label": "内网 LLM",
+      "sublabel": "推理 · 工具调用意图",
+      "tag": "无业务写权限",
+      "pos": [1240, 272],
+      "size": [140, 88]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Django 业务控制面",
+      "wraps": ["django_api", "celery", "business_db", "policy_gate", "lane_control", "manual_review"],
+      "pad": 22
+    },
+    {
+      "kind": "security-group",
+      "label": "Agent 执行面｜独立部署与升级",
+      "wraps": ["agent_core", "kernel_runtime", "readonly_tools"],
+      "pad": 22
+    }
+  ],
+  "connections": [
+    {
+      "from": "frontend",
+      "to": "django_api",
+      "label": "API",
+      "variant": "emphasis"
+    },
+    {
+      "from": "django_api",
+      "to": "celery",
+      "label": "调度 Run"
+    },
+    {
+      "from": "django_api",
+      "to": "business_db",
+      "variant": "default"
+    },
+    {
+      "from": "celery",
+      "to": "lane_control",
+      "variant": "emphasis"
+    },
+    {
+      "from": "lane_control",
+      "to": "kernel_runtime",
+      "label": "HMAC",
+      "variant": "security"
+    },
+    {
+      "from": "kernel_runtime",
+      "to": "readonly_tools",
+      "variant": "security"
+    },
+    {
+      "from": "agent_core",
+      "to": "kernel_runtime"
+    },
+    {
+      "from": "kernel_runtime",
+      "to": "llm",
+      "label": "LLM",
+      "variant": "dashed"
+    },
+    {
+      "from": "kernel_runtime",
+      "to": "policy_gate",
+      "label": "ProposalV1 + SafeTrace",
+      "variant": "security"
+    },
+    {
+      "from": "policy_gate",
+      "to": "business_db",
+      "label": "enforced 原子提交",
+      "variant": "emphasis"
+    },
+    {
+      "from": "policy_gate",
+      "to": "manual_review",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "不可跨越的权限边界",
+      "items": [
+        "Agent Kernel 不持有业务数据库凭据，也不直接下发、归档或占用 HC",
+        "模型首轮只见 case manifest，后续只见只读工具的有界结果",
+        "最终动作必须经过 Django Policy Gate 的最新状态复验与事务提交"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "一次运行必须冻结",
+      "items": [
+        "kernel build / protocol / toolset / schema / policy / prompt",
+        "model_config_revision 以 pin_id 固定，禁止缺失时回退 current",
+        "请求与响应关联 method/path/nonce/status/body hash；跨主机使用 mTLS"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "安全演进路径",
+      "items": [
+        "legacy primary + kernel shadow → kernel review_only → kernel enforced",
+        "shadow 使用独立 request_id，只写运行证据，不改业务对象与计数",
+        "主 Lane 失败进入可恢复状态；永不静默回退 Rule"
+      ]
+    }
+  ]
+}

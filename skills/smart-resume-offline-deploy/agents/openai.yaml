@@ -1,0 +1,6 @@
+interface:
+  display_name: "海纳智聘部署"
+  short_description: "通过固定编号菜单部署、验证和安全卸载源码或离线镜像 Docker 环境"
+  default_prompt: "Use $smart-resume-offline-deploy to deploy, verify, or uninstall the current smart-resume-filter source checkout or offline Docker package through its fixed numbered confirmation menus."
+policy:
+  allow_implicit_invocation: false

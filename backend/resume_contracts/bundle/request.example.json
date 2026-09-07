@@ -1,0 +1,83 @@
+{
+  "budget": {
+    "max_duration_seconds": 600,
+    "max_ocr_pages": 30,
+    "max_tokens": 120000,
+    "max_tool_calls": 256,
+    "max_turns": 32
+  },
+  "idempotency_key": "fixture-key",
+  "model": {
+    "api_style": "chat_json",
+    "base_url": "http://127.0.0.1:9999/v1",
+    "insecure_skip_verify": false,
+    "model_name": "fixture-model",
+    "retry_count": 1,
+    "structured_output_mode": "json_compat",
+    "timeout_seconds": 120.0
+  },
+  "pin": {
+    "instruction_version": "resume-job-match-kernel/v1",
+    "kernel_build": "dev",
+    "model_config_revision": "fixture-model",
+    "pin_id": "fixture-pin",
+    "policy_version": "django-policy-gate/v2",
+    "protocol_version": "resume-analysis/v1",
+    "result_schema_version": "resume-job-match/v1",
+    "toolset_version": "resume-job-match-tools/v1"
+  },
+  "protocol_version": "resume-analysis/v1",
+  "scope": {
+    "artifact": {
+      "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expires_at": 2100000000,
+      "media_type": "application/pdf",
+      "path": "resumes/fixture.pdf",
+      "signature": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "size_bytes": 100
+    },
+    "candidate": {
+      "highest_education": "本科",
+      "highest_major": "软件工程",
+      "ref": "candidate-fixture"
+    },
+    "jobs": [
+      {
+        "category": "",
+        "content_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "department_name": "示例部门",
+        "department_ref": "department-fixture",
+        "education": "",
+        "entity": "",
+        "job_family": "",
+        "location": "",
+        "position_name": "软件开发",
+        "public_name": "",
+        "ref": "job-a",
+        "required_majors": [],
+        "responsibilities": "服务开发与测试"
+      },
+      {
+        "category": "",
+        "content_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "department_name": "示例部门",
+        "department_ref": "department-fixture",
+        "education": "",
+        "entity": "",
+        "job_family": "",
+        "location": "",
+        "position_name": "软件开发",
+        "public_name": "",
+        "ref": "job-b",
+        "required_majors": [],
+        "responsibilities": "服务开发与测试"
+      }
+    ],
+    "taxonomy": [],
+    "volunteer_ref": "volunteer-fixture"
+  },
+  "task_id": "fixture-task",
+  "task_kind": "candidate.resume_job_match",
+  "trigger": "processing_run",
+  "workflow_revision": 1
+}

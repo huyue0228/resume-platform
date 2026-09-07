@@ -1,0 +1,307 @@
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --srf-bg: #f5f7fb;
+  --srf-surface: #ffffff;
+  --srf-ink: #1f2937;
+  --srf-muted: #6b7280;
+  --srf-border: #e5e7eb;
+  --srf-primary: #4f46e5;
+  --srf-primary-soft: #eef2ff;
+  --srf-success: #16a34a;
+  --srf-success-soft: #dcfce7;
+  --srf-danger: #dc2626;
+  --srf-danger-soft: #fee2e2;
+  --srf-warning: #d97706;
+  --srf-warning-soft: #fef3c7;
+  --srf-card-radius: 14px;
+  --srf-shadow: 0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --srf-shadow-md: 0 4px 12px rgba(16, 24, 40, 0.08);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+}
+
+.login-shell {
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top, rgba(79, 70, 229, 0.12), transparent 34%),
+    var(--srf-bg);
+}
+
+.login-redirect-card {
+  display: flex;
+  box-sizing: border-box;
+  width: min(420px, 100%);
+  min-height: 280px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 22px;
+  padding: 42px;
+  border: 1px solid var(--srf-border);
+  border-radius: var(--srf-card-radius);
+  background: var(--srf-surface);
+  box-shadow: var(--srf-shadow-md);
+  text-align: center;
+}
+
+.login-redirect-card .ant-alert,
+.login-redirect-card .ant-btn {
+  width: 100%;
+}
+
+.login-redirect-card .ant-typography {
+  margin: 0;
+}
+
+.srf-app-layout,
+.srf-app-layout .ant-layout,
+.srf-app-layout .ant-pro-layout-container {
+  min-height: 100vh;
+  background: var(--srf-bg);
+}
+
+.srf-app-layout .ant-pro-sider-logo {
+  padding-inline: 18px;
+  border-block-end-color: rgba(148, 163, 184, 0.16);
+}
+
+.srf-app-layout .ant-pro-sider-logo h1 {
+  color: #ffffff;
+  font-size: 16px;
+  letter-spacing: 0.3px;
+}
+
+/* ProLayout 折叠宽度固定为 64px；展开态的 14px 内边距会把 40px 图标容器裁窄。 */
+.srf-app-layout .ant-pro-sider.ant-pro-sider-collapsed > .ant-layout-sider-children {
+  padding-inline: 0 !important;
+}
+
+.srf-menu-item-link {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+}
+
+.srf-app-layout .ant-pro-sider-collapsed .srf-menu-item-link,
+.srf-app-layout .ant-pro-sider-collapsed .ant-pro-base-menu-vertical-item-title-collapsed {
+  justify-content: center;
+}
+
+/*
+ * 收缩态下，子路由选中会让父级 submenu 同时进入 selected 状态。
+ * 深色侧栏必须让父级图标使用白色前景，避免 Ant Menu 的浅色主题主色
+ * 与靛青选中背景重叠，造成父级图标看起来消失。
+ */
+.srf-app-layout .ant-pro-sider-collapsed
+  .ant-menu-submenu-selected
+  > .ant-menu-submenu-title {
+  color: #ffffff !important;
+  background: var(--srf-primary) !important;
+}
+
+.srf-app-layout .ant-pro-sider-collapsed
+  .ant-menu-submenu-selected
+  > .ant-menu-submenu-title
+  .ant-pro-base-menu-vertical-item-icon,
+.srf-app-layout .ant-pro-sider-collapsed
+  .ant-menu-submenu-selected
+  > .ant-menu-submenu-title
+  .anticon {
+  color: inherit !important;
+}
+
+.srf-app-layout .ant-pro-sider-logo-collapsed > a > img {
+  width: 28px !important;
+  height: 28px !important;
+  object-fit: contain;
+}
+
+.srf-app-layout .ant-pro-layout-header {
+  border-block-end: 1px solid var(--srf-border);
+  box-shadow: none;
+}
+
+.srf-app-layout .ant-pro-page-container-warp-page-header {
+  padding-block-start: 18px;
+  background: var(--srf-bg);
+}
+
+.srf-app-layout .ant-page-header-heading-title,
+.srf-app-layout .ant-pro-page-container-warp-page-header-title {
+  color: var(--srf-ink);
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.srf-app-layout .ant-page-header-heading-sub-title,
+.srf-app-layout .ant-pro-page-container-warp-page-header-content {
+  color: var(--srf-muted);
+}
+
+.srf-app-layout .ant-card,
+.srf-app-layout .ant-pro-card {
+  border-color: var(--srf-border);
+  box-shadow: var(--srf-shadow);
+}
+
+.srf-app-layout .ant-card-head,
+.srf-app-layout .ant-pro-card-title {
+  color: var(--srf-ink);
+}
+
+.srf-app-layout .ant-tabs-nav::before {
+  border-block-end-color: var(--srf-border);
+}
+
+.config-page-tabs > .ant-tabs-nav .ant-tabs-nav-wrap {
+  justify-content: flex-start;
+}
+
+.srf-app-layout .ant-form-item-label > label,
+.srf-app-layout .ant-descriptions-item-label {
+  color: var(--srf-muted);
+}
+
+.srf-app-layout .ant-btn-primary {
+  box-shadow: none;
+}
+
+.srf-app-layout .ant-btn-default:hover {
+  border-color: var(--srf-primary);
+}
+
+.srf-column-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  z-index: 2;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+}
+
+.srf-table-filter {
+  display: flex;
+  width: 260px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.srf-table-filter .ant-select {
+  width: 100%;
+}
+
+.srf-smart-data-table {
+  box-sizing: border-box;
+}
+
+.srf-smart-data-table .ant-pro-card {
+  overflow: hidden;
+  border: 1px solid var(--srf-border);
+  border-radius: var(--srf-card-radius);
+  background: var(--srf-surface);
+  box-shadow: var(--srf-shadow);
+}
+
+.srf-smart-data-table .ant-pro-table-list-toolbar {
+  position: relative;
+  z-index: 4;
+  padding-inline: 18px;
+  background: var(--srf-surface);
+}
+
+.srf-smart-data-table .ant-pro-table-list-toolbar-title {
+  color: var(--srf-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.srf-smart-data-table .ant-table-thead > tr > th {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+}
+
+/* 横向滚动时固定列表头必须高于后绘制的普通表头，否则会被遮住。 */
+.srf-smart-data-table .ant-table-thead > tr > th.ant-table-cell-fix-left,
+.srf-smart-data-table .ant-table-thead > tr > th.ant-table-cell-fix-right {
+  z-index: 3;
+}
+
+.srf-smart-data-table .ant-table-tbody > tr > td {
+  color: #374151;
+}
+
+.srf-smart-data-table .ant-table-tbody > tr:last-child > td {
+  border-block-end: 0;
+}
+
+.srf-smart-data-table .ant-table-filter-trigger.active,
+.srf-smart-data-table .ant-table-column-sorter-up.active,
+.srf-smart-data-table .ant-table-column-sorter-down.active {
+  color: var(--srf-primary);
+}
+
+.srf-smart-data-table > .ant-alert {
+  border-radius: 10px;
+}
+
+.srf-table-pagination-sticky.ant-pagination {
+  box-sizing: border-box;
+  justify-content: flex-end;
+  margin: 0 !important;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: transparent;
+}
+
+.srf-smart-data-table--pagination-fixed {
+  padding-bottom: var(--srf-sticky-pagination-height);
+}
+
+.srf-smart-data-table--pagination-fixed .srf-table-pagination-sticky.ant-pagination {
+  position: fixed;
+  z-index: 20;
+  bottom: 0;
+  left: var(--srf-sticky-pagination-left);
+  width: var(--srf-sticky-pagination-width);
+}
+
+.srf-smart-data-table--viewport-scroll .ant-table-body {
+  height: var(--srf-table-body-height);
+  max-height: var(--srf-table-body-height) !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.srf-column-resize-handle:hover {
+  background: rgba(79, 70, 229, 0.18);
+}
+
+@media (max-width: 767px) {
+  .srf-app-layout .ant-pro-page-container-children-container {
+    padding-inline: 12px;
+  }
+
+  .srf-app-layout .ant-pro-page-container-warp-page-header {
+    padding-inline: 12px;
+  }
+}

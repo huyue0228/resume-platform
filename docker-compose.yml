@@ -1,0 +1,271 @@
+# 完整镜像 + Compose 编排（PostgreSQL + Redis + Django + Celery worker + Nginx frontend）。
+# 服务器部署手册见 README 的「Docker Compose 部署手册」。
+
+x-backend-env: &backend-env
+  DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
+  USAGE_METRICS_TOKEN: ${USAGE_METRICS_TOKEN:?Set USAGE_METRICS_TOKEN in .env}
+  DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
+  DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?Set DJANGO_ALLOWED_HOSTS in .env}
+  W3_OAUTH2_ENABLED: ${W3_OAUTH2_ENABLED:-False}
+  W3_OAUTH2_CLIENT_ID: ${W3_OAUTH2_CLIENT_ID:-}
+  W3_OAUTH2_CLIENT_SECRET: ${W3_OAUTH2_CLIENT_SECRET:-}
+  W3_OAUTH2_AUTHORIZE_URL: ${W3_OAUTH2_AUTHORIZE_URL:-}
+  W3_OAUTH2_TOKEN_URL: ${W3_OAUTH2_TOKEN_URL:-}
+  W3_OAUTH2_USERINFO_URL: ${W3_OAUTH2_USERINFO_URL:-}
+  W3_OAUTH2_REDIRECT_URI: ${W3_OAUTH2_REDIRECT_URI:-}
+  W3_OAUTH2_FRONTEND_CALLBACK_URL: ${W3_OAUTH2_FRONTEND_CALLBACK_URL:-/login}
+  W3_OAUTH2_SCOPE: ${W3_OAUTH2_SCOPE:-}
+  W3_OAUTH2_EMPLOYEE_NO_FIELD: ${W3_OAUTH2_EMPLOYEE_NO_FIELD:-employeeNumber}
+  W3_OAUTH2_EMAIL_FIELD: ${W3_OAUTH2_EMAIL_FIELD:-email}
+  W3_OAUTH2_CLIENT_AUTH_METHOD: ${W3_OAUTH2_CLIENT_AUTH_METHOD:-client_secret_basic}
+  W3_OAUTH2_USE_PKCE: ${W3_OAUTH2_USE_PKCE:-True}
+  W3_OAUTH2_TIMEOUT_SECONDS: ${W3_OAUTH2_TIMEOUT_SECONDS:-10}
+  W3_OAUTH2_TRANSACTION_TTL_SECONDS: ${W3_OAUTH2_TRANSACTION_TTL_SECONDS:-300}
+  POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+  POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+  POSTGRES_HOST: db
+  POSTGRES_PORT: 5432
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/1
+  CELERY_TASK_ALWAYS_EAGER: "False"
+  FILE_UPLOAD_TEMP_DIR: ${FILE_UPLOAD_TEMP_DIR:-/app/media/tmp_uploads}
+  RESUME_OCR_MAX_PAGES: ${RESUME_OCR_MAX_PAGES:-20}
+  RESUME_OCR_DPI: ${RESUME_OCR_DPI:-200}
+  RESUME_OCR_TIMEOUT_SECONDS: ${RESUME_OCR_TIMEOUT_SECONDS:-120}
+  RESUME_OCR_CONCURRENCY: ${RESUME_OCR_CONCURRENCY:-2}
+  AGENT_KERNEL_MODE: remote
+  AGENT_KERNEL_URL: http://agent-kernel:8090
+  AGENT_KERNEL_TOKEN: ${AGENT_KERNEL_TOKEN:?Set AGENT_KERNEL_TOKEN in .env}
+  AGENT_KERNEL_BUILD: ${AGENT_KERNEL_VERSION:?Set independent AGENT_KERNEL_VERSION}
+  AGENT_KERNEL_ROLLOUT: ${AGENT_KERNEL_ROLLOUT:-shadow}
+  AGENT_KERNEL_DOCUMENT_SIGNING_KEY: ${AGENT_KERNEL_DOCUMENT_SIGNING_KEY:-${AGENT_KERNEL_TOKEN}}
+  AGENT_KERNEL_MODEL_INSECURE_SKIP_VERIFY: ${AGENT_KERNEL_MODEL_INSECURE_SKIP_VERIFY:-False}
+
+services:
+  agent-kernel:
+    image: ${AGENT_KERNEL_IMAGE:?Set released AGENT_KERNEL_IMAGE}
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    environment:
+      AGENT_KERNEL_ADDRESS: :8090
+      AGENT_KERNEL_TOKEN: ${AGENT_KERNEL_TOKEN:?Set AGENT_KERNEL_TOKEN in .env}
+      AGENT_KERNEL_MCP_CONFIG: ${AGENT_KERNEL_MCP_CONFIG:-}
+      AGENT_KERNEL_OCR_TOOL: ${AGENT_KERNEL_OCR_TOOL:-}
+      AGENT_KERNEL_DOCUMENT_ROOT: /app/media
+      AGENT_KERNEL_DOCUMENT_SIGNING_KEY: ${AGENT_KERNEL_DOCUMENT_SIGNING_KEY:-${AGENT_KERNEL_TOKEN}}
+    volumes:
+      - media_data:/app/media:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  db:
+    build:
+      context: ./docker/postgres
+      args:
+        POSTGRES_IMAGE: ${POSTGRES_IMAGE:-postgres:16}
+    image: ${POSTGRES_IMAGE_RELEASE:-smart-resume-filter-postgres:${POSTGRES_VERSION:-16}}
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "${POSTGRES_BIND:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?Set POSTGRES_USER in .env} -d ${POSTGRES_DB:?Set POSTGRES_DB in .env}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    build:
+      context: ./docker/redis
+      args:
+        REDIS_IMAGE: ${REDIS_IMAGE:-redis:7}
+    image: ${REDIS_IMAGE_RELEASE:-smart-resume-filter-redis:${REDIS_VERSION:-7}}
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    ports:
+      - "${REDIS_BIND:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12.3-slim}
+    image: ${BACKEND_IMAGE:-smart-resume-filter-backend:${APP_VERSION:-latest}}
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    environment:
+      <<: *backend-env
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-1}
+      RUN_SEED_BASE: ${RUN_SEED_BASE:-0}
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout ${GUNICORN_TIMEOUT:-1800}
+    ports:
+      - "${BACKEND_BIND:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - media_data:/app/media
+    depends_on:
+      agent-kernel:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import socket; s=socket.create_connection(('127.0.0.1', 8000), 3); s.close()\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  worker:
+    image: ${BACKEND_IMAGE:-smart-resume-filter-backend:${APP_VERSION:-latest}}
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    environment:
+      <<: *backend-env
+      RUN_MIGRATIONS: "0"
+      RUN_SEED_BASE: "0"
+    command: celery -A config worker -l info -Q default --prefetch-multiplier=1
+    volumes:
+      - media_data:/app/media
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  ai-worker:
+    image: ${BACKEND_IMAGE:-smart-resume-filter-backend:${APP_VERSION:-latest}}
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    environment:
+      <<: *backend-env
+      RUN_MIGRATIONS: "0"
+      RUN_SEED_BASE: "0"
+    command: celery -A config worker -l info -Q ai --pool=threads --concurrency=${AI_WORKER_CONCURRENCY:-20} --prefetch-multiplier=1
+    volumes:
+      - media_data:/app/media
+    depends_on:
+      agent-kernel:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  backup-scheduler:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: docker/backup/Dockerfile
+      args:
+        POSTGRES_IMAGE: ${POSTGRES_IMAGE:-postgres:16}
+    image: ${BACKUP_IMAGE:-smart-resume-filter-backup:${APP_VERSION:-latest}}
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    command: schedule
+    environment: &backup-env
+      APP_VERSION: ${APP_VERSION:-latest}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      RESTIC_REPOSITORY: /repository/restic
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:?Set RESTIC_PASSWORD in .env}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-3600}
+      BACKUP_KEEP_HOURLY: ${BACKUP_KEEP_HOURLY:-48}
+      BACKUP_KEEP_DAILY: ${BACKUP_KEEP_DAILY:-30}
+      BACKUP_KEEP_MONTHLY: ${BACKUP_KEEP_MONTHLY:-12}
+    volumes:
+      - media_data:/data/media:ro
+      - ${BACKUP_TARGET_PATH:?Set BACKUP_TARGET_PATH in .env}:/repository
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backup:
+    profiles: ["backup"]
+    image: ${BACKUP_IMAGE:-smart-resume-filter-backup:${APP_VERSION:-latest}}
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    command: backup
+    environment: *backup-env
+    volumes:
+      - media_data:/data/media:ro
+      - ${BACKUP_TARGET_PATH:?Set BACKUP_TARGET_PATH in .env}:/repository
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backup-verify:
+    profiles: ["backup"]
+    image: ${BACKUP_IMAGE:-smart-resume-filter-backup:${APP_VERSION:-latest}}
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    command: verify
+    environment: *backup-env
+    volumes:
+      - ${BACKUP_TARGET_PATH:?Set BACKUP_TARGET_PATH in .env}:/repository
+
+  restore:
+    profiles: ["restore"]
+    image: ${BACKUP_IMAGE:-smart-resume-filter-backup:${APP_VERSION:-latest}}
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    command: restore
+    environment:
+      <<: *backup-env
+      RESTORE_DATABASE: ${RESTORE_DATABASE:-srf_restore}
+      RESTORE_MEDIA_ROOT: /restore-media
+      RESTORE_MEDIA: ${RESTORE_MEDIA:-1}
+      CONFIRM_RESTORE: ${CONFIRM_RESTORE:-}
+      ALLOW_PRODUCTION_OVERWRITE: ${ALLOW_PRODUCTION_OVERWRITE:-}
+      RESTIC_SNAPSHOT: ${RESTIC_SNAPSHOT:-latest}
+    volumes:
+      - media_data:/restore-media
+      - ${BACKUP_TARGET_PATH:?Set BACKUP_TARGET_PATH in .env}:/repository
+    depends_on:
+      db:
+        condition: service_healthy
+
+  init:
+    profiles: ["init"]
+    image: ${BACKEND_IMAGE:-smart-resume-filter-backend:${APP_VERSION:-latest}}
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    environment:
+      <<: *backend-env
+      RUN_MIGRATIONS: "1"
+      RUN_SEED_BASE: "1"
+    command: python manage.py check
+    volumes:
+      - media_data:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginx:1.27-alpine}
+    image: ${FRONTEND_IMAGE:-smart-resume-filter-frontend:${APP_VERSION:-latest}}
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    ports:
+      - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-5173}:80"
+    volumes:
+      - media_data:/usr/share/nginx/media:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  media_data:

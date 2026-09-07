@@ -1,0 +1,85 @@
+.candidate-analysis { --analysis-ink: #25334a; --analysis-muted: #6c778a; --analysis-line: #e5e9f0; --analysis-accent: #4f46e5; color: var(--analysis-ink); }
+.candidate-analysis-overview { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 14px 0 22px; }
+.candidate-analysis-eyebrow { color: var(--analysis-muted); font-size: 12px; letter-spacing: .08em; margin-bottom: 8px; }
+.candidate-analysis h2 { margin: 0; font-size: 26px; font-weight: 650; line-height: 1.35; }
+.candidate-analysis h2 span { display: inline-block; margin-left: 16px; font-size: 15px; font-weight: 400; color: var(--analysis-muted); }
+.candidate-analysis-overview p { margin: 9px 0 0; color: var(--analysis-muted); font-size: 13px; }
+.candidate-analysis-overview .ant-tag { margin-top: 20px; padding: 3px 10px; }
+.candidate-analysis h3 { font-size: 18px; font-weight: 650; margin: 8px 0; }
+.candidate-analysis h4 { margin: 22px 0 12px; font-size: 13px; font-weight: 650; }
+.candidate-analysis .ant-alert { margin-bottom: 16px; }
+.candidate-analysis-workspace { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 420px; gap: 28px; }
+.candidate-analysis-joblist { padding-right: 22px; border-right: 1px solid var(--analysis-line); }
+.candidate-analysis-section-label { font-size: 11px; color: var(--analysis-muted); letter-spacing: .03em; }
+.candidate-analysis-section-label > span { margin-left: 6px; font-variant-numeric: tabular-nums; }
+.candidate-analysis-joblist > .candidate-analysis-section-label { padding: 4px 10px 16px; }
+.candidate-analysis-job { display: grid; width: 100%; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: start; margin-bottom: 8px; padding: 16px 10px; border: 1px solid transparent; border-radius: 10px; background: #fff; cursor: pointer; color: inherit; text-align: left; transition: background 120ms ease, border-color 120ms ease; }
+.candidate-analysis-job:hover { background: #f8fafc; }
+.candidate-analysis-job.is-selected { background: #f0f0ff; border-color: #dedbff; }
+.candidate-analysis-job:focus-visible, .candidate-analysis summary:focus-visible { outline: 2px solid var(--analysis-accent); outline-offset: 3px; }
+.candidate-analysis-rank { color: #8d97a8; font-size: 11px; padding-top: 2px; font-variant-numeric: tabular-nums; }
+.candidate-analysis-jobname { display: grid; gap: 5px; }
+.candidate-analysis-jobname strong { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.candidate-analysis-jobname small { color: var(--analysis-muted); font-size: 11px; }
+.candidate-analysis-jobname em { color: var(--analysis-accent); font-style: normal; font-size: 10px; }
+.candidate-analysis-jobscore { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.candidate-analysis-job.is-selected .candidate-analysis-jobscore { color: var(--analysis-accent); }
+.candidate-analysis-muted { color: var(--analysis-muted); font-size: 12px; line-height: 1.7; }
+.candidate-analysis-joblist > .candidate-analysis-muted { padding: 8px 10px; }
+.candidate-analysis-match { min-width: 0; padding: 4px 0 8px; }
+.candidate-analysis-match-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.candidate-analysis-match-heading p { margin: 0; color: var(--analysis-muted); font-size: 12px; }
+.candidate-analysis-score { display: flex; flex-direction: column; align-items: flex-end; flex: none; }
+.candidate-analysis-score strong { color: var(--analysis-accent); font-size: 44px; letter-spacing: -.04em; line-height: 1.1; font-weight: 600; font-variant-numeric: tabular-nums; }
+.candidate-analysis-score span { color: var(--analysis-muted); font-size: 10px; margin-top: 7px; }
+.candidate-analysis-reason { margin: 24px 0; font-size: 14px; line-height: 1.85; white-space: pre-wrap; }
+.candidate-analysis-dimensions { padding: 20px; background: #f8f9fc; border-radius: 10px; }
+.candidate-analysis-dimension { display: grid; grid-template-columns: 130px minmax(40px, 1fr) 25px; align-items: center; gap: 14px; margin-bottom: 14px; font-size: 12px; }
+.candidate-analysis-dimension span { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
+.candidate-analysis-dimension small { color: #8b95a5; font-size: 9px; }
+.candidate-analysis-dimension strong { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; }
+.candidate-analysis-dimension meter { width: 100%; height: 7px; background: #e5e9f1; border: 0; border-radius: 9px; }
+.candidate-analysis-dimension meter::-webkit-meter-bar { background: #e5e9f1; border: none; height: 7px; }
+.candidate-analysis-dimension meter::-webkit-meter-optimum-value { background: #8580e8; border-radius: 9px; }
+.candidate-analysis-dimension meter::-moz-meter-bar { background: #8580e8; }
+.candidate-analysis-dimensions > p { margin: 18px 0 0; font-size: 10px; }
+.candidate-analysis-evidence figure { border-left: 2px solid #c8c5f4; margin: 12px 0; padding: 2px 0 2px 15px; }
+.candidate-analysis-evidence blockquote { margin: 0; font-size: 13px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.candidate-analysis-evidence figcaption { color: #8b95a5; font-size: 10px; margin-top: 8px; }
+.candidate-analysis-risks { background: #fff9ef; border-radius: 8px; padding: 14px 18px; margin-top: 22px; color: #8a591e; }
+.candidate-analysis-risks h4 { margin: 0 0 8px; }
+.candidate-analysis-risks ul { padding-left: 16px; margin: 0; font-size: 12px; line-height: 1.8; }
+.candidate-analysis-profile { padding: 8px 0 20px; }
+.candidate-analysis-claim-group { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 24px; padding: 18px 0; border-bottom: 1px solid var(--analysis-line); }
+.candidate-analysis-claim-group h3 { font-size: 13px; margin: 4px 0; }
+.candidate-analysis-claim-group article { margin-bottom: 18px; }
+.candidate-analysis-claim-group article:last-child { margin-bottom: 0; }
+.candidate-analysis-claim-group p { margin: 0 0 10px; font-size: 13px; line-height: 1.75; }
+.candidate-analysis summary { cursor: pointer; font-size: 12px; }
+.candidate-analysis summary span { margin-left: 8px; color: #8b95a5; font-size: 10px; }
+.candidate-analysis-claim-group summary { color: var(--analysis-accent); }
+.candidate-analysis-diagnostics { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--analysis-line); color: var(--analysis-muted); }
+.candidate-analysis-diagnostics dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; margin: 24px 0; }
+.candidate-analysis-diagnostics dt { font-size: 11px; margin-bottom: 6px; }
+.candidate-analysis-diagnostics dd { margin: 0; color: var(--analysis-ink); font-size: 12px; overflow-wrap: anywhere; }
+.candidate-analysis-trace { max-height: 240px; overflow: auto; }
+.candidate-analysis-trace table { width: 100%; font-size: 11px; border-collapse: collapse; }
+.candidate-analysis-trace caption { text-align: left; margin-bottom: 12px; }
+.candidate-analysis-trace td, .candidate-analysis-trace th { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--analysis-line); }
+.candidate-analysis-reused { font-size: 12px; color: #37705b; padding: 10px 14px; background: #f0f8f4; border-radius: 8px; }
+.candidate-analysis-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-top: 22px; }
+.candidate-analysis-footer > span { color: var(--analysis-muted); font-size: 12px; }
+.candidate-analysis-legacy { max-width: 650px; margin: 0 auto; padding: 12px 0; }
+@media (max-width: 760px) {
+  .candidate-analysis-workspace { grid-template-columns: 1fr; gap: 20px; }
+  .candidate-analysis-joblist { border-right: 0; padding-right: 0; max-height: 270px; overflow-y: auto; }
+  .candidate-analysis-claim-group { grid-template-columns: 1fr; gap: 12px; }
+  .candidate-analysis-diagnostics dl { grid-template-columns: repeat(2, 1fr); }
+  .candidate-analysis-overview { gap: 12px; }
+  .candidate-analysis h2 { font-size: 22px; }
+  .candidate-analysis h2 span { display: block; margin: 6px 0 0; font-size: 13px; }
+  .candidate-analysis-footer { flex-direction: column; align-items: flex-start; }
+  .candidate-analysis-dimension { grid-template-columns: 112px minmax(30px, 1fr) 24px; gap: 8px; }
+  .candidate-analysis-dimensions { padding: 16px 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .candidate-analysis-job { transition: none; } }

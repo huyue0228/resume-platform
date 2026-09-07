@@ -1,0 +1,16 @@
+{
+  "files": {
+    "request.example.json": "db9fa72f9373b85a6f4bc28b0832a949ea0965c1ea8061aedd9b7981a0e5ed09",
+    "request.schema.json": "db6585c54e75f19a47baece77dbc07f350fea3cc9fefcc8ab646f381bb5f779b",
+    "response.example.json": "05ed7f421bbb885006e86323c0e88dd07ea5b482cf9c52a62616e4cd60c3efa1",
+    "response.schema.json": "9fca5a5d4d7444711383acbe27ad33bbe16abb1458a61c68359b8e1852035a3d"
+  },
+  "python": {
+    "__init__.py": "9bb519ee4e9eb06b46b80dfaa29ff72fd48597d7869dcb6682b8d791683be504",
+    "fixtures.py": "1632b9977f808eb8ca89d621b032ea05fcb57d1f746f99e104f6e9d60d419f4a",
+    "mock_server.py": "e188677f1d238cf957079444f2c6f3ba8686917abf349c617f695f081dd5a07c",
+    "models.py": "075a94d6579208dfee267f4ace79b4747fc8203549dc2e4c3fcc0ddfda28ee83",
+    "verify.py": "b20a5129270804ea14526af20d6fe04a0646e2137c187d80d340dba31efd8f72"
+  },
+  "version": "1.0.0"
+}

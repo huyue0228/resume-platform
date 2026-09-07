@@ -1,0 +1,5 @@
+{
+  "platform": {"name": "resume-platform", "repository": "https://github.com/huyue0228/resume-platform", "local_path": ".", "owner": "business-team", "build": "docker compose build"},
+  "kernel": {"name": "resume-agent-kernel", "repository": "https://github.com/huyue0228/resume-agent-kernel", "local_path": "../resume-agent-kernel", "owner": "kernel-team", "dependency": "released OCI image; no source dependency"},
+  "contracts": {"name": "resume-contracts", "repository": "https://github.com/huyue0228/resume-contracts", "local_path": "../resume-contracts", "owner": "joint-contract-review", "version": "1.0.0", "dependency": "vendored versioned bundle; no sibling runtime imports"}
+}

@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+release/
+backups/
+
+# 后端运行时产物
+*.sqlite3
+backend/media/
+backend/media.mock/
+backend/sample_data/
+
+# 个人会议纪要，不纳入版本控制
+纪要.md

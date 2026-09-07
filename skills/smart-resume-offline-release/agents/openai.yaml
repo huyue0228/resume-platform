@@ -1,0 +1,4 @@
+interface:
+  display_name: "离线镜像发布"
+  short_description: "一键构建、校验并交付 amd64 Docker 离线包"
+  default_prompt: "Use $smart-resume-offline-release to build, verify, and copy the latest amd64 offline Docker bundle to the mounted drive."

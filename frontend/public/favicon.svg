@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title description">
+  <title id="title">海纳智聘</title>
+  <desc id="description">由聚光束、精密光学圆环和流线组成的海纳智聘标志</desc>
+  <defs>
+    <linearGradient id="background" x1="8" y1="6" x2="57" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#155EEF"/>
+      <stop offset="1" stop-color="#0E9384"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="32" y1="9" x2="32" y2="33" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D9F7FF"/>
+      <stop offset="1" stop-color="#7CE7F2" stop-opacity="0.35"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#background)"/>
+  <path d="M27 9h10l-2.8 23h-4.4L27 9Z" fill="url(#beam)"/>
+  <circle cx="32" cy="34" r="16" fill="#FFFFFF" fill-opacity="0.08" stroke="#FFFFFF" stroke-width="3"/>
+  <circle cx="32" cy="34" r="10" fill="none" stroke="#B8F3F0" stroke-width="2" stroke-opacity="0.9"/>
+  <path d="M16 38c4.3-4 8.6-4 13 0s8.7 4 13 0 8.7-4 13 0" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+  <path d="M20 45c3.4-2.8 6.8-2.8 10.2 0 3.4 2.8 6.8 2.8 10.2 0 3.4-2.8 6.8-2.8 10.2 0" fill="none" stroke="#B8F3F0" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="32" cy="25" r="2.5" fill="#FFFFFF"/>
+</svg>

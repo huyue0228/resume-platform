@@ -1,0 +1,61 @@
+.resume-library-row {
+  cursor: pointer;
+}
+
+.resume-volunteer-row {
+  cursor: pointer;
+}
+
+.resume-volunteer-row-active > td {
+  background: #e6f4ff !important;
+}
+
+.resume-volunteer-row:hover > td {
+  background: #f0f7ff !important;
+}
+
+.resume-selection-summary,
+.resume-selection-actions {
+  animation: resume-selection-slide-in 180ms ease-out;
+}
+
+.resume-detail-actions {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.resume-handling-timeline {
+  margin-top: 16px;
+  padding: 16px 16px 4px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.resume-handling-timeline-meta {
+  margin: 4px 0;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+}
+
+@keyframes resume-selection-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .resume-selection-summary,
+  .resume-selection-actions {
+    animation: none;
+  }
+}
