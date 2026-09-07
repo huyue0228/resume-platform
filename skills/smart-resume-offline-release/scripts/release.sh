@@ -224,7 +224,7 @@ for image_name in "${IMAGES[@]}"; do
 done
 docker run --rm --platform "$TARGET_PLATFORM" "$BACKEND_IMAGE" python manage.py check
 docker run --rm --platform "$TARGET_PLATFORM" --entrypoint /bin/sh "$KERNEL_IMAGE" -c 'test -x /usr/local/bin/agent-kernel'
-docker run --rm --platform "$TARGET_PLATFORM" "$FRONTEND_IMAGE" nginx -t
+docker run --rm --platform "$TARGET_PLATFORM" --add-host backend:127.0.0.1 "$FRONTEND_IMAGE" nginx -t
 
 log "组装离线包"
 mkdir -p "$PACKAGE_DIR"
