@@ -1,231 +1,78 @@
-from datetime import datetime, timezone
-from unittest.mock import Mock, patch
-
+"""公开协议握手、安全失败与独立版本升级的客户端回归。"""
+from unittest.mock import patch
+import httpx
 from django.test import SimpleTestCase, override_settings
-from pydantic import ValidationError
-
 from apps.pipeline.agent_kernel.client import AgentKernelClient
-from apps.pipeline.agent_kernel.contracts import (
-    AgentActionProposalV1,
-    CaseEnvelopeV2,
-)
-from apps.pipeline.agent_kernel.gateway import is_agent_ready
-from apps.pipeline.agent_kernel.policy import validate_proposal
-from apps.pipeline.ai.structured_output import AIServiceError
+from apps.pipeline.agent_kernel.gateway import validate_runtime
+from apps.pipeline.errors import AIServiceError
+from resume_contracts.fixtures import capabilities_fixture
 
+@override_settings(AGENT_KERNEL_TOKEN="kernel-token", AGENT_KERNEL_BUILD="", AGENT_KERNEL_ALLOW_MOCK=False)
+class KernelCapabilitiesTests(SimpleTestCase):
+    def response(self, payload=None, status=200):
+        return httpx.Response(status, json=payload or {}, request=httpx.Request("GET", "http://kernel/v2/capabilities"))
 
-def envelope_payload():
-    return {
-        "protocol_version": "resume-agent/v2",
-        "task_id": "task-1",
-        "idempotency_key": "idem-1",
-        "pin": {
-            "pin_id": "pin-1",
-            "kernel_build": "test-build",
-            "protocol_version": "resume-agent/v2",
-            "toolset_version": "resume-tool-providers/v2",
-            "result_schema_version": "resume-screening/v1",
-            "policy_version": "django-policy-gate/v1",
-            "instruction_version": "resume-screening-kernel/v1",
-            "model_config_revision": "model-v1",
-        },
-        "constraints": {
-            "workflow_revision": 2,
-            "volunteer_rank": 1,
-            "policies": ["只处理当前志愿"],
-        },
-        "candidate_reference": {"highest_major": "计算机科学"},
-        "current_volunteer": {"position_name": "后端工程师"},
-        "current_job": {
-            "position_name": "后端工程师",
-            "responsibilities": "开发可靠的后端服务",
-            "department_name": "平台部",
-        },
-        "resume": {
-            "checksum": "a" * 64,
-            "text": "项目经历：负责 Go 服务开发和性能优化。",
-        },
-        "model": {
-            "api_style": "chat_json",
-            "base_url": "https://model.example.test/v1",
-            "model_name": "test-model",
-            "structured_output_mode": "json_object",
-            "timeout_seconds": 30,
-            "retry_count": 1,
-        },
-        "budget": {
-            "max_turns": 4,
-            "max_tool_calls": 8,
-            "max_duration_seconds": 60,
-        },
-    }
+    def test_future_internal_versions_do_not_require_platform_upgrade(self):
+        caps = capabilities_fixture(kernel_build="release-2040", toolset_version="tools/v999", instruction_version="sha256:" + "f"*64)
+        with patch("httpx.get", return_value=self.response(caps.model_dump())) as get:
+            self.assertEqual(AgentKernelClient().capabilities(), caps)
+        self.assertTrue(get.call_args.args[0].endswith("/v2/capabilities"))
+        self.assertEqual(get.call_args.kwargs["headers"], {"X-Agent-Kernel-Token": "kernel-token"})
 
+    def test_incompatible_public_protocol_is_rejected(self):
+        for field in ("protocol_version", "result_schema_version"):
+            payload = capabilities_fixture().model_dump()
+            payload[field] = "incompatible/v999"
+            with self.subTest(field=field), patch("httpx.get", return_value=self.response(payload)):
+                with self.assertRaises(AIServiceError) as caught:
+                    AgentKernelClient().capabilities()
+                self.assertEqual(caught.exception.code, "agent_protocol_incompatible")
 
-def proposal_payload():
-    now = datetime.now(timezone.utc).isoformat()
-    return {
-        "proposal_version": "agent-action-proposal/v1",
-        "task_id": "task-1",
-        "pin_id": "pin-1",
-        "action": "review",
-        "evaluation": {
-            "profile": {
-                "major_direction": "后端开发",
-                "educations": [],
-                "projects": [],
-                "internships": [],
-                "skills": ["Go"],
-                "certificates": [],
-                "summary": "具备后端开发经历",
-                "risk_flags": [],
-            },
-            "decision": {
-                "recommendation": "review",
-                "score_breakdown": {
-                    "major_match": 0.8,
-                    "skills_match": 0.8,
-                    "experience_evidence": 0.7,
-                    "job_requirement": 0.8,
-                    "resume_quality": 0.7,
-                },
-                "summary": "建议复核",
-                "reason": "具备相关经验",
-                "evidence": ["负责 Go 服务开发和性能优化"],
-                "risks": [],
-                "ai_specialist_match": False,
-                "ai_specialist_confidence": 0,
-                "ai_specialist_evidence": [],
-            },
-        },
-        "safe_trace": {
-            "trace_id": "trace-1",
-            "kernel_build": "test-build",
-            "started_at": now,
-            "finished_at": now,
-            "turns": 2,
-            "tool_call_count": 1,
-            "tool_calls": [
-                {
-                    "name": "resume.read_sections",
-                    "status": "success",
-                    "duration_ms": 1,
-                    "item_count": 1,
-                }
-            ],
-            "input_tokens": 100,
-            "output_tokens": 50,
-            "status": "completed",
-        },
-    }
+    def test_internal_version_cannot_be_blank(self):
+        payload = capabilities_fixture().model_dump()
+        payload["instruction_version"] = " "
+        with patch("httpx.get", return_value=self.response(payload)):
+            self.assertFalse(AgentKernelClient().is_ready())
 
+    def test_auth_failure_never_exposes_server_body(self):
+        with patch("httpx.get", return_value=self.response({"detail": "sk-secret"}, 401)):
+            with self.assertRaises(AIServiceError) as caught:
+                AgentKernelClient().capabilities()
+        self.assertNotIn("sk-secret", str(caught.exception))
 
-class AgentKernelContractTests(SimpleTestCase):
-    def test_case_envelope_forbids_business_database_identifiers(self):
-        payload = envelope_payload()
-        payload["candidate_reference"]["candidate_id"] = 123
+    @override_settings(AGENT_KERNEL_BUILD="pinned-build")
+    def test_explicit_operator_build_lock_is_enforced(self):
+        with patch("httpx.get", return_value=self.response(capabilities_fixture().model_dump())):
+            self.assertFalse(AgentKernelClient().is_ready())
 
-        with self.assertRaises(ValidationError):
-            CaseEnvelopeV2.model_validate(payload)
+    def test_mock_cannot_be_used_as_production_kernel(self):
+        with patch("httpx.get", return_value=self.response(capabilities_fixture(mock=True).model_dump())):
+            self.assertFalse(AgentKernelClient().is_ready())
 
-    def test_policy_accepts_only_pinned_verifiable_proposal(self):
-        envelope = CaseEnvelopeV2.model_validate(envelope_payload())
-        proposal = AgentActionProposalV1.model_validate(proposal_payload())
+    @override_settings(AGENT_KERNEL_ROLLOUT="shadow")
+    def test_old_rollout_is_not_supported(self):
+        with self.assertRaises(AIServiceError):
+            validate_runtime()
 
-        output = validate_proposal(envelope, proposal)
+    def test_removed_runtime_cannot_be_imported(self):
+        from importlib.util import find_spec
+        self.assertIsNone(find_spec("apps.pipeline.ai.service"))
+        self.assertIsNone(find_spec("apps.pipeline.agent_kernel.legacy_baseline"))
+        self.assertIsNone(find_spec("apps.pipeline.agent_kernel.contracts"))
 
-        self.assertEqual(output.decision.recommendation, "review")
+    def test_error_text_rejects_database_nul(self):
+        self.assertEqual(AIServiceError("test", "bad" + chr(0) + "value").message, "badvalue")
 
-    def test_policy_rejects_unverifiable_evidence(self):
-        envelope = CaseEnvelopeV2.model_validate(envelope_payload())
-        payload = proposal_payload()
-        payload["evaluation"]["decision"]["evidence"] = ["简历中不存在的经历"]
-        proposal = AgentActionProposalV1.model_validate(payload)
-
-        with self.assertRaises(AIServiceError) as raised:
-            validate_proposal(envelope, proposal)
-
-        self.assertEqual(raised.exception.code, "agent_evidence_invalid")
-
-    @override_settings(
-        AGENT_KERNEL_BUILD="test-build",
-        AGENT_KERNEL_TOKEN="kernel-token",
-    )
-    @patch("apps.pipeline.agent_kernel.client.httpx.get")
-    def test_health_requires_matching_runtime_contract(self, mock_get):
-        response = Mock()
-        response.raise_for_status.return_value = None
-        response.json.return_value = {
-            "ok": True,
-            "build": "test-build",
-            "protocol_version": "resume-agent/v2",
-            "toolset_version": "resume-tool-providers/v2",
-            "result_schema_version": "resume-screening/v1",
-            "instruction_version": "resume-screening-kernel/v1",
-            "extra_health_field": "allowed",
-            "task_protocol_version": "resume-analysis/v1",
-            "task_toolset_version": "resume-job-match-tools/v1",
-            "task_result_version": "resume-job-match/v1",
-        }
-        mock_get.return_value = response
-
-        self.assertTrue(AgentKernelClient().is_ready())
-
-        response.json.return_value["build"] = "stale-build"
-        self.assertFalse(AgentKernelClient().is_ready())
-
-    @override_settings(
-        AGENT_KERNEL_MODE="remote",
-        AGENT_KERNEL_BUILD="test-build",
-        AGENT_KERNEL_TOKEN="kernel-token",
-    )
-    @patch("apps.pipeline.agent_kernel.gateway.AgentKernelClient.is_ready")
-    @patch("apps.pipeline.agent_kernel.gateway.ai_config.is_ai_available")
-    def test_remote_readiness_requires_model_and_kernel(
-        self, mock_ai_available, mock_kernel_ready
-    ):
-        mock_ai_available.return_value = True
-        mock_kernel_ready.return_value = False
-
-        self.assertFalse(is_agent_ready())
-
-    @override_settings(AGENT_KERNEL_TOKEN="kernel-token")
-    @patch("apps.pipeline.agent_kernel.client.httpx.post")
-    def test_model_key_is_forwarded_only_in_header(self, mock_post):
-        response = Mock(status_code=200)
-        response.json.return_value = proposal_payload()
-        mock_post.return_value = response
-        envelope = CaseEnvelopeV2.model_validate(envelope_payload())
-
-        AgentKernelClient(base_url="http://kernel.test").evaluate(
-            envelope,
-            model_api_key="model-secret",
-        )
-
-        kwargs = mock_post.call_args.kwargs
-        self.assertEqual(kwargs["headers"]["X-Model-API-Key"], "model-secret")
-        self.assertNotIn("model-secret", str(kwargs["json"]))
-
-    @override_settings(AGENT_KERNEL_TOKEN="kernel-token")
-    @patch("apps.pipeline.agent_kernel.client.httpx.post")
-    def test_kernel_failure_preserves_only_safe_trace(self, mock_post):
-        response = Mock(status_code=422)
-        response.json.return_value = {
-            "ok": False,
-            "code": "agent_evidence_invalid",
-            "detail": "internal detail is ignored",
-            "safe_trace": {
-                "trace_id": "trace-failed",
-                "status": "failed",
-                "tool_calls": [],
-            },
-        }
-        mock_post.return_value = response
-
-        with self.assertRaises(AIServiceError) as raised:
-            AgentKernelClient(base_url="http://kernel.test").evaluate(
-                CaseEnvelopeV2.model_validate(envelope_payload())
-            )
-
-        self.assertEqual(raised.exception.code, "agent_evidence_invalid")
-        self.assertEqual(raised.exception.safe_trace["trace_id"], "trace-failed")
-        self.assertNotIn("internal detail", raised.exception.message)
+    def test_execute_errors_are_safe_and_preserve_conflict_semantics(self):
+        from types import SimpleNamespace
+        from resume_contracts.fixtures import request_fixture
+        envelope = SimpleNamespace(budget=SimpleNamespace(max_duration_seconds=600))
+        for code in ("kernel_version_unavailable", "idempotency_conflict", "agent_budget_exhausted"):
+            response = httpx.Response(409 if "conflict" in code or "version" in code else 422,
+                json={"code": code, "detail": "secret-key"}, request=httpx.Request("POST", "http://kernel"))
+            with self.subTest(code=code), patch("apps.pipeline.agent_kernel.wire.analysis_request", return_value=request_fixture()), patch("httpx.post", return_value=response) as post:
+                with self.assertRaises(AIServiceError) as caught:
+                    AgentKernelClient().execute(envelope, model_api_key="model-secret")
+                self.assertEqual(caught.exception.code, code)
+                self.assertNotIn("secret", str(caught.exception))
+                self.assertNotIn("model-secret", str(post.call_args.kwargs["json"]))

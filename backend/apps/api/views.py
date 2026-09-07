@@ -57,7 +57,7 @@ from apps.pipeline.tasks import (
     submit_school_province_enrichment,
 )
 from apps.pipeline.services import allocate as allocate_service
-from apps.pipeline.ai import service as ai_service
+from apps.pipeline.ai import model_connection as ai_service
 
 from . import serializers
 from .job_export import build_job_export_workbook
@@ -613,13 +613,16 @@ class ImportView(APIView):
                 school_province_enrichment["status"] = "queue_failed"
         processing_runs = []
         if takes_resume and candidate_ids and agent_gateway.is_agent_ready():
-            run = runner.create_run(
-                "resume_process",
-                scope={"candidate_ids": candidate_ids, "source": "resume_import"},
-                created_by=request.user,
-            )
-            processing_runs = [run]
-            submit_processing_runs(processing_runs)
+            try:
+                run = runner.create_run(
+                    "resume_process",
+                    scope={"candidate_ids": candidate_ids, "source": "resume_import"},
+                    created_by=request.user,
+                )
+                processing_runs = [run]
+                submit_processing_runs(processing_runs)
+            except ai_service.AIServiceError:
+                warnings.append("导入已完成，Kernel 版本发现失败，请稍后手动提交处理任务")
         skipped_jobs = counts.get("jobs_skipped", 0)
         detail = (
             f"导入完成，已跳过 {skipped_jobs} 条缺少工作职责的岗位"
@@ -2390,7 +2393,7 @@ class AgentDispatchDecisionViewSet(PermissionedReadOnlyModelViewSet):
                 created_by=request.user,
             )
             submit_processing_runs([run])
-        except ValueError as exc:
+        except (ValueError, ai_service.AIServiceError) as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             {
@@ -2506,7 +2509,7 @@ class PipelineRunView(APIView):
             )
         try:
             run = runner.create_run(step, scope=scope, created_by=request.user)
-        except ValueError as exc:
+        except (ValueError, ai_service.AIServiceError) as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         runs = [run]
         submit_processing_runs(runs)

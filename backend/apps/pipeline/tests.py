@@ -1,6 +1,7 @@
 from unittest.mock import patch
 from types import SimpleNamespace
 
+from apps.pipeline.test_support import KernelTestCase, analysis_response
 from django.test import TestCase
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
@@ -9,12 +10,11 @@ from django.utils import timezone
 from apps.accounts.models import User
 from apps.core import models as m, system_status
 from apps.pipeline import ai_config, runner
-from apps.pipeline.ai import service as ai_service
-from apps.pipeline.ai.service import AIServiceError
+from apps.pipeline.errors import AIServiceError
 from apps.pipeline.services import allocate, classify_school
 
 
-class AllocationDesignContractTests(TestCase):
+class AllocationDesignContractTests(KernelTestCase):
     def setUp(self):
         ai_config.save_ai_connection_config(
             {
@@ -157,7 +157,7 @@ class AllocationDesignContractTests(TestCase):
         )
 
         with patch(
-            "apps.pipeline.services.allocate.ai_service.screen_resume",
+            "apps.pipeline.services.allocate.agent_gateway.evaluate_resume",
             return_value=self._ai_result(),
         ):
             runner.execute_run(run.id)
@@ -765,7 +765,7 @@ class AllocationDesignContractTests(TestCase):
         )
 
         with patch(
-            "apps.pipeline.services.allocate.ai_service.screen_resume"
+            "apps.pipeline.services.allocate.agent_gateway.evaluate_resume"
         ) as screen_resume:
             allocate.run(mode="ai")
 
@@ -832,7 +832,7 @@ class AllocationDesignContractTests(TestCase):
         m.Config.objects.create(key="ai_review_threshold", value=0.5)
 
         with patch(
-            "apps.pipeline.services.allocate.ai_service.screen_resume",
+            "apps.pipeline.services.allocate.agent_gateway.evaluate_resume",
             return_value=self._ai_result(),
         ):
             allocate.run(mode="ai")
@@ -858,7 +858,7 @@ class AllocationDesignContractTests(TestCase):
         m.JobMajor.objects.create(job=unrelated_job, major="工商管理")
 
         with patch(
-            "apps.pipeline.services.allocate.ai_service.screen_resume",
+            "apps.pipeline.services.allocate.agent_gateway.evaluate_resume",
             return_value=self._ai_result(),
         ) as mocked:
             allocate.run(mode="ai")
@@ -873,7 +873,7 @@ class AllocationDesignContractTests(TestCase):
         m.JobMajor.objects.create(job=self.job, major="电气工程")
 
         with patch(
-            "apps.pipeline.services.allocate.ai_service.screen_resume",
+            "apps.pipeline.services.allocate.agent_gateway.evaluate_resume",
             return_value=self._ai_result(),
         ) as screen_resume:
             allocate.run(mode="ai")
@@ -904,7 +904,8 @@ class AllocationDesignContractTests(TestCase):
             job_pool, _mapping = allocate._mapped_job_pool(self.resume, mode="ai")
             current_job = job_pool[0]
         with self.assertNumQueries(1):
-            context = ai_service._current_job_context(current_job)
+            from apps.pipeline.agent_kernel.task_contracts import job_content
+            context = job_content(current_job)
 
         self.assertEqual(current_job, self.job)
         self.assertEqual(context["public_name"], self.job.public_name)
@@ -920,7 +921,7 @@ class AllocationDesignContractTests(TestCase):
             resume_file="张三（A1002）.pdf",
         )
         with patch(
-            "apps.pipeline.services.allocate.ai_service.screen_resume",
+            "apps.pipeline.services.allocate.agent_gateway.evaluate_resume",
             side_effect=AIServiceError("llm_error", "模型服务不可用"),
         ) as mocked:
             allocate.run(mode="ai")
@@ -937,7 +938,7 @@ class AllocationDesignContractTests(TestCase):
     def test_ai_archive_detail_identifies_missing_secondary_department(self):
         self.job.department = None
         self.job.save(update_fields=["department"])
-        with patch("apps.pipeline.services.allocate.ai_service.screen_resume") as mocked:
+        with patch("apps.pipeline.services.allocate.agent_gateway.evaluate_resume") as mocked:
             allocate.run(mode="ai")
 
         self.candidate.workflow.refresh_from_db()
@@ -950,7 +951,7 @@ class AllocationDesignContractTests(TestCase):
     def test_ai_archive_detail_identifies_missing_job_requirement(self):
         self.job.is_active = False
         self.job.save(update_fields=["is_active"])
-        with patch("apps.pipeline.services.allocate.ai_service.screen_resume") as mocked:
+        with patch("apps.pipeline.services.allocate.agent_gateway.evaluate_resume") as mocked:
             allocate.run(mode="ai")
 
         self.candidate.workflow.refresh_from_db()
@@ -962,7 +963,7 @@ class AllocationDesignContractTests(TestCase):
 
     def test_ai_allocation_allows_department_without_active_contacts(self):
         with patch(
-            "apps.pipeline.services.allocate.ai_service.screen_resume",
+            "apps.pipeline.services.allocate.agent_gateway.evaluate_resume",
             return_value=self._ai_result(),
         ) as mocked:
             allocate.run(mode="ai")
@@ -978,7 +979,7 @@ class AllocationDesignContractTests(TestCase):
     def test_cancel_ai_review_archives_when_no_other_active_attempt(self):
         m.Config.objects.create(key="ai_dispatch_threshold", value=0.8)
         with patch(
-            "apps.pipeline.services.allocate.ai_service.screen_resume",
+            "apps.pipeline.services.allocate.agent_gateway.evaluate_resume",
             return_value=self._ai_result(),
         ):
             allocate.run(mode="ai")
@@ -1160,8 +1161,14 @@ class AllocationDesignContractTests(TestCase):
         first_attempt = m.AssignmentAttempt.objects.get()
         allocate.dispatch_attempt(first_attempt)
 
-        allocate.submit_feedback(
-            first_attempt,
+        with patch(
+            "apps.pipeline.agent_kernel.client.AgentKernelClient.execute",
+            side_effect=analysis_response,
+        ), self.captureOnCommitCallbacks(execute=True), patch(
+            "apps.pipeline.services.allocate.agent_gateway.is_agent_ready", return_value=True,
+        ):
+            allocate.submit_feedback(
+                first_attempt,
             m.AssignmentAttempt.FEEDBACK_REJECTED,
             "二级判断不匹配",
             reason_code=m.AssignmentAttempt.REJECTION_REASON_KEY_CAPABILITY_MISMATCH,
@@ -1221,15 +1228,15 @@ class AllocationDesignContractTests(TestCase):
             }
         )
         with patch(
-            "apps.pipeline.services.allocate.ai_service.screen_resume",
+            "apps.pipeline.services.allocate.agent_gateway.evaluate_resume",
             return_value=self._ai_result(),
         ):
             allocate.run(mode="ai")
 
         decision = m.AgentDispatchDecision.objects.get()
         self.assertEqual(decision.model_name, "gpt-test")
-        self.assertEqual(decision.prompt_version, "kernel-instructions-v1")
-        self.assertEqual(decision.decision_version, "decision-v1")
+        self.assertEqual(decision.prompt_version, "")  # 未提供实际 Kernel pin 的测试结果不能伪造版本。
+        self.assertEqual(decision.decision_version, "")
 
     def test_ai_runtime_config_uses_database_overrides(self):
         m.Config.objects.create(key="ai_timeout_seconds", value=120)
@@ -1259,8 +1266,8 @@ class AllocationDesignContractTests(TestCase):
         self.assertEqual(decision.processing_run, run)
         self.assertIsNone(decision.recommendation)
         self.assertIsNone(decision.confidence_score)
-        self.assertEqual(decision.error_code, "pdf_missing")
-        self.assertIn("PDF", decision.error_message)
+        self.assertEqual(decision.error_code, "agent_snapshot_unavailable")
+        self.assertIn("冻结快照", decision.error_message)
         self.assertEqual(decision.resume, self.resume)
         self.assertEqual(
             self.candidate.workflow.archive_reason,
@@ -1273,7 +1280,7 @@ class AllocationDesignContractTests(TestCase):
         m.Config.objects.create(key="ai_dispatch_threshold", value=0.8)
         m.Config.objects.create(key="ai_review_threshold", value=0.5)
         with patch(
-            "apps.pipeline.services.allocate.ai_service.screen_resume",
+            "apps.pipeline.services.allocate.agent_gateway.evaluate_resume",
             return_value=self._ai_result(),
         ):
             allocate.run(mode="ai")
@@ -1281,7 +1288,7 @@ class AllocationDesignContractTests(TestCase):
         self.assertEqual(first_attempt.status, m.AssignmentAttempt.STATUS_PENDING_REVIEW)
 
         with patch(
-            "apps.pipeline.services.allocate.ai_service.screen_resume",
+            "apps.pipeline.services.allocate.agent_gateway.evaluate_resume",
             return_value=self._ai_result(),
         ):
             allocate.run(mode="ai")
@@ -1631,7 +1638,7 @@ class AllocationDesignContractTests(TestCase):
         self.assertEqual(passed_attempt.status, m.AssignmentAttempt.STATUS_PASSED)
 
 
-class JobCapacityAllocationTests(TestCase):
+class JobCapacityAllocationTests(KernelTestCase):
     def setUp(self):
         ai_config.save_ai_connection_config(
             {
@@ -1698,11 +1705,11 @@ class JobCapacityAllocationTests(TestCase):
             },
         )
 
-    @patch("apps.pipeline.services.allocate.agent_gateway.evaluate_resume")
+    @patch("apps.pipeline.agent_kernel.client.AgentKernelClient.execute")
     def test_run_snapshot_distributes_by_hc_and_exhausted_candidate_reenters_new_run(
         self, mock_evaluate
     ):
-        mock_evaluate.side_effect = self._agent_result
+        mock_evaluate.side_effect = analysis_response
         candidates = [self._candidate(index)[0] for index in range(1, 5)]
         run = runner.create_run(
             "step2",
@@ -1715,7 +1722,8 @@ class JobCapacityAllocationTests(TestCase):
             item.job_id: (item.capacity, item.used_count)
             for item in run.job_capacities.all()
         }
-        self.assertEqual(capacities[self.job_a.id], (2, 2))
+        run.refresh_from_db()
+        self.assertEqual(capacities[self.job_a.id], (2, 2), (run.message, list(run.scope_items.values("status", "result_message", "reason_code"))))
         self.assertEqual(capacities[self.job_b.id], (1, 1))
         assigned_job_ids = list(
             m.Resume.objects.filter(candidate__in=candidates[:3])

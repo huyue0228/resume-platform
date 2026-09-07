@@ -6,7 +6,7 @@
       "job-b"
     ],
     "failure_code": "",
-    "input_hash": "9b74dfd701497b3b6c7059f6f362f70947ce9fe3ec98bbed37ae6777083a141d",
+    "input_hash": "78c2cc50d385c08b913021b9d70ec389d53aec948e0a44ea83b1132e9a5e438c",
     "ocr_pages": 0,
     "resume_checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "reused_from_task_id": "",
@@ -65,14 +65,14 @@
     }
   ],
   "pin": {
-    "instruction_version": "resume-job-match-kernel/v1",
+    "instruction_version": "fixture-instructions/v1",
     "kernel_build": "dev",
     "model_config_revision": "fixture-model",
     "pin_id": "fixture-pin",
-    "policy_version": "django-policy-gate/v2",
+    "policy_version": "fixture-policy/v1",
     "protocol_version": "resume-analysis/v1",
     "result_schema_version": "resume-job-match/v1",
-    "toolset_version": "resume-job-match-tools/v1"
+    "toolset_version": "fixture-tools/v1"
   },
   "profile": {
     "claims": [

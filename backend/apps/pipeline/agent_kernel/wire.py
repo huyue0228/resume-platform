@@ -2,6 +2,7 @@
 from resume_contracts.models import AnalysisRequestV1, AnalysisResponseV1, JobRequirementV1
 
 from apps.pipeline.services.admission_snapshot import prepare_snapshot
+from apps.pipeline.errors import AIServiceError
 from .task_contracts import TaskResultV1
 
 
@@ -11,6 +12,9 @@ def analysis_request(envelope):
         raise ValueError("candidate has no admitted analysis scope")
     snapshot = envelope.snapshot
     volunteer = next(v for v in snapshot["volunteers"] if v["ref"] == d["current_volunteer_ref"])
+    artifact = volunteer["artifact"]
+    if not artifact.get("path") or not artifact.get("checksum") or not artifact.get("size_bytes"):
+        raise AIServiceError("pdf_missing", "PDF 简历文件缺失或为空，请补齐文件后重新提交")
     jobs = [{key: value for key, value in job.items() if key in JobRequirementV1.model_fields}
             for job in snapshot["jobs"] if job["ref"] in d["job_refs"]]
     return AnalysisRequestV1(task_id=envelope.task_id, idempotency_key=envelope.idempotency_key,

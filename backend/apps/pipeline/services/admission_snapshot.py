@@ -58,4 +58,6 @@ def prepare_snapshot(snapshot):
     else:
         d["job_refs"] = sorted(j["ref"] for j in jobs if normalized(j["entity"]) in entities and normalized(j["position_name"]) in names and j["department_ref"] and j["department_level"] == 2)
         d["status"] = "ready" if d["job_refs"] else "job_pool_empty"
+        if any(not j.get("responsibilities", "").strip() for j in jobs if j["ref"] in d["job_refs"]):
+            d["status"] = "job_responsibility_missing"
     return d

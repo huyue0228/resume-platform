@@ -48,27 +48,17 @@ jobs:
       matrix:
         include:
           - component: backend
-            context: backend
-            dockerfile: backend/Dockerfile
           - component: frontend
-            context: frontend
-            dockerfile: frontend/Dockerfile
           - component: postgres
-            context: docker/postgres
-            dockerfile: docker/postgres/Dockerfile
           - component: redis
-            context: docker/redis
-            dockerfile: docker/redis/Dockerfile
           - component: backup
-            context: .
-            dockerfile: docker/backup/Dockerfile
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       COMPONENT: ${{ matrix.component }}
     steps:
       - uses: actions/checkout@v4
       - name: Set image name
-        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}-$COMPONENT" >> "$GITHUB_ENV"
+        run: echo "IMAGE_PREFIX=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         if: startsWith(github.ref, 'refs/tags/')
@@ -76,38 +66,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
-        id: image
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          platforms: linux/amd64
-          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-          tags: ${{ env.IMAGE }}:${{ env.VERSION }}
-          push: ${{ startsWith(github.ref, 'refs/tags/') }}
-          load: ${{ !startsWith(github.ref, 'refs/tags/') }}
-      - name: Record image digest
-        env:
-          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+      - name: Build component using repository tooling
         run: |
-          mkdir -p release
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          Path("release/" + os.environ["COMPONENT"] + ".json").write_text(json.dumps({
-              "component": os.environ["COMPONENT"],
-              "version": os.environ["VERSION"],
-              "image": os.environ["IMAGE"] + ":" + os.environ["VERSION"],
-              "digest": os.environ["IMAGE_DIGEST"],
-              "published": os.environ["GITHUB_REF"].startswith("refs/tags/"),
-              "platform": "linux/amd64",
-              "commit": os.environ["GITHUB_SHA"],
-          }, indent=2) + "\n")
-          PY
+          push=""
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then push="--push"; fi
+          make image APP_VERSION="$VERSION" COMPONENT="$COMPONENT" IMAGE_PREFIX="$IMAGE_PREFIX" PUSH="$push"
       - uses: actions/upload-artifact@v4
         with:
           name: image-${{ matrix.component }}
-          path: release/*.json
+          path: release/${{ env.VERSION }}/images/*.json
           retention-days: 7
   release:
     needs: [prepare, images]
@@ -125,41 +92,11 @@ jobs:
           path: release/images
           merge-multiple: true
       - name: Package image-only deployment template
-        run: |
-          cp skills/smart-resume-offline-release/assets/docker-compose.yml release/compose.yml
-          cp skills/smart-resume-offline-release/assets/env.example release/env.example
-          cp REPOSITORIES.md release/REPOSITORIES.md
-          cp ops/delivery/README.md release/README.md
-          cp backend/resume_contracts/bundle/manifest.json release/contract-manifest.json
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          images = [json.loads(p.read_text()) for p in sorted(Path("release/images").glob("*.json"))]
-          assert len(images) == 5
-          template = Path("release/env.example")
-          template.write_text(template.read_text().replace("__APP_VERSION__", os.environ["VERSION"])
-                              .replace("__AGENT_KERNEL_VERSION__", "").replace("__AGENT_KERNEL_IMAGE__", ""))
-          settings = ["APP_VERSION=" + os.environ["VERSION"]]
-          for item in images:
-              value = item["image"].split(":")[0] + "@" + item["digest"] if item["published"] else item["image"]
-              key = item["component"].upper() + "_IMAGE"
-              if item["component"] in ("postgres", "redis"):
-                  key += "_RELEASE"
-              settings.append(key + "=" + value)
-          settings.extend(["# Set separately after Kernel/model/OCR acceptance:",
-                           "AGENT_KERNEL_IMAGE=", "AGENT_KERNEL_VERSION="])
-          Path("release/images.env").write_text("\n".join(settings) + "\n")
-          PY
-          cd release
-          sha256sum compose.yml env.example images.env README.md REPOSITORIES.md contract-manifest.json images/*.json > SHA256SUMS
-          sha256sum -c SHA256SUMS
-          tar -czf "../resume-platform-$VERSION.tar.gz" .
-          cd ..
-          sha256sum "resume-platform-$VERSION.tar.gz" > "resume-platform-$VERSION.tar.gz.sha256"
+        run: make package APP_VERSION="$VERSION" IMAGES_DIR=release/images
       - uses: actions/upload-artifact@v4
         with:
           name: platform-deployment-${{ env.VERSION }}
-          path: resume-platform-*.tar.gz*
+          path: dist/resume-platform-*.tar.gz*
           retention-days: 7
       - name: Publish versioned release
         if: startsWith(github.ref, 'refs/tags/')
@@ -168,4 +105,4 @@ jobs:
         run: |
           args=()
           if [[ "$VERSION" == *-* ]]; then args+=(--prerelease); fi
-          gh release create "$VERSION" resume-platform-*.tar.gz* --verify-tag --generate-notes "${args[@]}"
+          gh release create "$VERSION" dist/resume-platform-*.tar.gz* --verify-tag --generate-notes "${args[@]}"

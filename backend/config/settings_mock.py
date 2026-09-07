@@ -3,7 +3,6 @@ from .settings import *  # noqa: F403
 
 DEBUG = True
 AGENT_KERNEL_ALLOW_MOCK = True
-AGENT_KERNEL_MODE = "remote"
 AGENT_KERNEL_ROLLOUT = "review_only"
 AGENT_KERNEL_BUILD = "dev"
 AGENT_KERNEL_URL = "http://127.0.0.1:8091"

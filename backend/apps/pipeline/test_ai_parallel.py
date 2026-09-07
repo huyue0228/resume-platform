@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from celery.exceptions import Retry
+from apps.pipeline.test_support import KernelTestCase
 from django.test import SimpleTestCase, TestCase, override_settings
 
 from apps.core import models as m
@@ -82,7 +83,7 @@ class AdaptiveConcurrencyTests(SimpleTestCase):
         self.assertNotEqual(concurrency._resource_key(other), (leases, state))
 
 
-class AIParallelPipelineTests(TestCase):
+class AIParallelPipelineTests(KernelTestCase):
     def setUp(self):
         ai_config.save_ai_connection_config(
             {
@@ -162,8 +163,8 @@ class AIParallelPipelineTests(TestCase):
             return self._ai_result(resume)
 
         with patch.object(
-            allocate.ai_service,
-            "screen_resume",
+            allocate.agent_gateway,
+            "evaluate_resume",
             side_effect=change_workflow,
         ):
             runner.execute_run(run.id)
@@ -181,8 +182,8 @@ class AIParallelPipelineTests(TestCase):
         )
 
         with patch.object(
-            allocate.ai_service,
-            "screen_resume",
+            allocate.agent_gateway,
+            "evaluate_resume",
             return_value=self._ai_result(resume),
         ):
             runner.execute_run(run.id)
@@ -207,8 +208,8 @@ class AIParallelPipelineTests(TestCase):
         )
 
         with patch.object(
-            allocate.ai_service,
-            "screen_resume",
+            allocate.agent_gateway,
+            "evaluate_resume",
             return_value=self._ai_result(resume),
         ) as screen_resume:
             runner.execute_run(run.id)
@@ -234,12 +235,12 @@ class AIParallelPipelineTests(TestCase):
 
         def fail_by_candidate(resume, *_args, **_kwargs):
             if resume.candidate_id == timeout_candidate.id:
-                raise allocate.ai_service.AIServiceError("llm_timeout", "模型超时")
-            raise allocate.ai_service.AIServiceError("ai_rate_limited", "模型限流")
+                raise allocate.AIServiceError("llm_timeout", "模型超时")
+            raise allocate.AIServiceError("ai_rate_limited", "模型限流")
 
         with patch.object(
-            allocate.ai_service,
-            "screen_resume",
+            allocate.agent_gateway,
+            "evaluate_resume",
             side_effect=fail_by_candidate,
         ):
             runner.execute_run(run.id)
@@ -266,7 +267,7 @@ class AIParallelPipelineTests(TestCase):
             "step2", scope={"candidate_ids": [candidate.id]}
         )
 
-        with patch.object(allocate.ai_service, "screen_resume") as screen:
+        with patch.object(allocate.agent_gateway, "evaluate_resume") as screen:
             runner.execute_run(run.id)
 
         item = run.scope_items.get()
@@ -284,9 +285,7 @@ class AIParallelPipelineTests(TestCase):
             "step2", scope={"candidate_ids": [candidate.id]}
         )
 
-        with patch.object(allocate.ai_service, "_extract_pdf") as extract_pdf, patch.object(
-            allocate.ai_service, "_call_model"
-        ) as call_model:
+        with patch.object(allocate.agent_gateway, "evaluate_resume") as call_model:
             runner.execute_run(run.id)
 
         run.refresh_from_db()
@@ -300,7 +299,6 @@ class AIParallelPipelineTests(TestCase):
         )
         self.assertEqual(run.needs_attention_count, 1)
         self.assertEqual(run.status, "needs_attention")
-        extract_pdf.assert_not_called()
         call_model.assert_not_called()
 
     def test_school_gate_uses_education_reason_only_for_education_restriction(self):
@@ -385,8 +383,8 @@ class AIParallelPipelineTests(TestCase):
             )
 
         with patch.object(
-            allocate.ai_service,
-            "screen_resume",
+            allocate.agent_gateway,
+            "evaluate_resume",
             side_effect=result_by_candidate,
         ):
             runner.execute_run(run.id)
@@ -453,8 +451,8 @@ class AIParallelPipelineTests(TestCase):
         )
 
         with patch.object(
-            allocate.ai_service,
-            "screen_resume",
+            allocate.agent_gateway,
+            "evaluate_resume",
             return_value=self._ai_result(resume, specialist_confidence=0.96),
         ):
             runner.execute_run(run.id)

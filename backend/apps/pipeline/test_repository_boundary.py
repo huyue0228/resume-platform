@@ -15,7 +15,7 @@ def snapshot():
         workflow={},admission_rules=[],volunteers=[
             dict(ref="south",entity="YLS",position_name="软件",apply_date="2020-01-01",rejected=False),
             dict(ref="north",entity="GW",position_name=" 软件 ",apply_date="2021-01-01",rejected=False)],
-        jobs=[dict(ref=ref,entity=entity,public_name=public,position_name="开发",department_ref="d",department_level=2)
+        jobs=[dict(ref=ref,entity=entity,public_name=public,position_name="开发",department_ref="d",department_level=2,responsibilities="岗位职责")
               for ref,entity,public in [("b","GW","软件"),("a","GW","其他"),("x","YLS","软件")]])
 
 

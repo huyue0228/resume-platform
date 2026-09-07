@@ -59,11 +59,6 @@ def run(scope=None, processing_run=None, processing_stage=None):
                 frozen = item.kernel_snapshot if item else {}
                 if item and item.result_type:
                     continue
-                if frozen.get("lane") == "shadow" and frozen.get("preflight"):
-                    expected = [frozen["volunteer_ids"][ref] for ref in frozen["preflight"]["volunteer_order"]]
-                    frozen.setdefault("shadow_comparison", {})["volunteer_order_equal"] = expected == [resume.pk for resume in resumes]
-                    item.kernel_snapshot = frozen
-                    item.save(update_fields=["kernel_snapshot"])
                 if frozen.get("lane") in {"enforced", "review_only"} and frozen.get("preflight"):
                     ids = frozen["volunteer_ids"]
                     order = {ids[ref]: rank for rank, ref in enumerate(frozen["preflight"]["volunteer_order"])}

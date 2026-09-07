@@ -1,0 +1,17 @@
+# 内网可在 GitLab CI/CD Variables 覆盖镜像和依赖镜像源；不需要另外两个源码仓。
+stages: [check]
+variables:
+  PYTHON_CI_IMAGE: "python:3.12"
+  NODE_CI_IMAGE: "node:22"
+backend:
+  stage: check
+  image: $PYTHON_CI_IMAGE
+  script:
+    - pip install -r backend/requirements.txt
+    - make check-backend check-release PYTHON=python
+frontend:
+  stage: check
+  image: $NODE_CI_IMAGE
+  script:
+    - cd frontend && npm ci && cd ..
+    - make check-frontend

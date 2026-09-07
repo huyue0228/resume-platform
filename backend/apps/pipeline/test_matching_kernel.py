@@ -2,6 +2,7 @@
 from copy import deepcopy
 from unittest.mock import patch
 
+from apps.pipeline.test_support import KernelTestCase
 from django.test import TestCase, override_settings
 
 from apps.core import models as m
@@ -12,8 +13,8 @@ from apps.pipeline.ai.structured_output import AIServiceError
 from apps.pipeline.services import allocate
 
 
-@override_settings(AGENT_KERNEL_MODE="remote", AGENT_KERNEL_ROLLOUT="enforced", AGENT_KERNEL_TOKEN="test", AGENT_KERNEL_DOCUMENT_SIGNING_KEY="test")
-class CandidateKernelTests(TestCase):
+@override_settings(AGENT_KERNEL_ROLLOUT="enforced", AGENT_KERNEL_TOKEN="test", AGENT_KERNEL_DOCUMENT_SIGNING_KEY="test")
+class CandidateKernelTests(KernelTestCase):
     def setUp(self):
         ai_config.save_ai_connection_config(dict(api_style="responses", model_name="test", base_url="https://model.internal/v1", api_key="test-key"))
         self.department = m.Department.objects.create(name="开发部", level=2)
@@ -36,11 +37,11 @@ class CandidateKernelTests(TestCase):
             idempotency_key=envelope.idempotency_key, pin=envelope.pin.model_dump(), workflow_revision=snapshot["workflow"]["revision"],
             deterministic=dict(volunteer_order=[v["ref"] for v in snapshot["volunteers"]], current_volunteer_ref=ref,
                 current_rank=1, admission_passed=True, admission_rule_ref="", job_refs=refs, status="ready"),
-            profile=None if envelope.prepare_only else dict(source_text="负责后端服务开发与测试工作", claims=[dict(kind="project", summary="后端服务开发", evidence=evidence)], risks=[]),
-            matches=[] if envelope.prepare_only else matches,
-            manifest=dict(input_hash="a"*64, resume_checksum="", covered_jobs=[] if envelope.prepare_only else refs,
-                          tool_versions={}, warnings=[], terminal_state="PREPARED" if envelope.prepare_only else "DONE", ocr_pages=0),
-            safe_trace=dict(turns=0 if envelope.prepare_only else 3)))
+            profile=dict(source_text="负责后端服务开发与测试工作", claims=[dict(kind="project", summary="后端服务开发", evidence=evidence)], risks=[]),
+            matches=matches,
+            manifest=dict(input_hash="a"*64, resume_checksum="", covered_jobs=refs,
+                          tool_versions={}, warnings=[], terminal_state="DONE", ocr_pages=0),
+            safe_trace=dict(turns=3)))
 
     def test_full_pipeline_ranking_and_live_capacity(self):
         run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
@@ -81,9 +82,8 @@ class CandidateKernelTests(TestCase):
         self.assertFalse(m.AssignmentAttempt.objects.exists())
     def test_no_old_model_fallback_on_enforced_failure(self):
         run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
-        with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.execute", side_effect=AIServiceError("agent_kernel_unavailable", "不可用")), patch("apps.pipeline.ai.service.screen_resume") as legacy:
+        with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.execute", side_effect=AIServiceError("agent_kernel_unavailable", "不可用")):
             runner.execute_run(run.pk)
-        self.assertFalse(legacy.called)
         self.assertEqual(run.scope_items.get().result_type, "needs_attention")
         self.assertFalse(m.AssignmentAttempt.objects.exists())
 
@@ -154,9 +154,8 @@ class CandidateKernelTests(TestCase):
         run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
         def respond(envelope, **kwargs):
             result = self.response(envelope)
-            if not envelope.prepare_only:
-                workflow = m.CandidateWorkflow.objects.get(pk=self.workflow.pk)
-                workflow.save(update_fields=["updated_at"])
+            workflow = m.CandidateWorkflow.objects.get(pk=self.workflow.pk)
+            workflow.save(update_fields=["updated_at"])
             return result
         with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.execute", side_effect=respond):
             runner.execute_run(run.pk)
@@ -213,9 +212,70 @@ class CandidateKernelTests(TestCase):
             allocate.submit_feedback(attempt, "rejected", note="岗位不适合", reason_code="other")
         self.assertFalse(model.called)
         self.assertEqual(len(callbacks), 1)
+        with patch("apps.pipeline.tasks.execute_runs_sequence_task", return_value=[]):
+            callbacks[0]()
         next_run = m.ProcessingRun.objects.latest("pk")
         self.assertNotEqual(next_run.pk, run.pk)
         self.assertEqual(next_run.scope["retry_resume_id"], second.pk)
         frozen = next_run.scope_items.get().kernel_snapshot
         rejected = [v for v in frozen["snapshot"]["volunteers"] if v["rejected"]]
         self.assertEqual(frozen["volunteer_ids"][rejected[0]["ref"]], self.resume.pk)
+
+    def test_one_capability_discovery_per_run_and_exact_snapshot_pin(self):
+        from resume_contracts.fixtures import capabilities_fixture
+        with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.capabilities", side_effect=capabilities_fixture) as discover:
+            run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        self.assertEqual(discover.call_count, 1)
+        pin = run.scope_items.get().kernel_snapshot["pin"]
+        self.assertEqual(pin["toolset_version"], run.toolset_version)
+        self.assertEqual(pin["instruction_version"], run.prompt_version)
+
+    def test_removed_task_snapshot_fails_before_deterministic_business_writes(self):
+        run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        run.scope_items.update(kernel_snapshot={})
+        with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.execute") as execute:
+            runner.execute_run(run.pk)
+        run.refresh_from_db()
+        self.assertEqual(run.status, "failed")
+        self.assertFalse(execute.called)
+        self.assertFalse(m.AssignmentAttempt.objects.exists())
+
+    def test_changed_runtime_result_pin_is_rejected(self):
+        run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        def invalid(envelope, **kwargs):
+            result = self.response(envelope)
+            result.pin.instruction_version = "unexpected-future-version"
+            return result
+        with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.execute", side_effect=invalid):
+            runner.execute_run(run.pk)
+        self.assertFalse(m.AssignmentAttempt.objects.exists())
+        self.assertEqual(m.AgentDispatchDecision.objects.get().error_code, "agent_invalid_output")
+
+    def test_nul_in_model_conclusion_is_controlled_failure(self):
+        run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        def invalid(envelope, **kwargs):
+            result = self.response(envelope)
+            result.profile.claims[0].summary += chr(0)
+            return result
+        with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.execute", side_effect=invalid):
+            runner.execute_run(run.pk)
+        self.assertFalse(m.ResumeProfile.objects.exists())
+        self.assertEqual(m.AgentDispatchDecision.objects.get().error_code, "agent_invalid_output")
+
+    def test_feedback_capability_failure_keeps_feedback_and_pending_work(self):
+        from apps.pipeline.tasks import process_next_volunteer_task
+        second = m.Resume.objects.create(candidate=self.candidate, apply_id="A2", entity="GW", position_name="软件", volunteer_rank=2)
+        run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.execute", side_effect=self.response):
+            runner.execute_run(run.pk)
+        attempt = allocate.dispatch_attempt(m.AssignmentAttempt.objects.get())
+        with self.captureOnCommitCallbacks(execute=False):
+            allocate.submit_feedback(attempt, "rejected", note="岗位不适合", reason_code="other")
+        self.workflow.refresh_from_db()
+        with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.capabilities", side_effect=AIServiceError("agent_kernel_unavailable", "不可用")):
+            result = process_next_volunteer_task(self.candidate.pk, second.pk, self.workflow.revision)
+        attempt.refresh_from_db()
+        self.workflow.refresh_from_db()
+        self.assertEqual(attempt.feedback_result, "rejected")
+        self.assertEqual(result["status"], "needs_attention")
+        self.assertEqual(self.workflow.block_reason, "agent_kernel_unavailable")

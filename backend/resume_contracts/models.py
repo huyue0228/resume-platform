@@ -2,13 +2,12 @@
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from typing_extensions import Annotated
 
 PROTOCOL = "resume-analysis/v1"
-TOOLSET = "resume-job-match-tools/v1"
 RESULT = "resume-job-match/v1"
-POLICY = "django-policy-gate/v2"
-INSTRUCTIONS = "resume-job-match-kernel/v1"
+VersionRef = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 SCORE_WEIGHTS = {"major_match": .30, "skills_match": .20, "experience_evidence": .25,
                  "job_requirement": .15, "resume_quality": .10}
 
@@ -19,13 +18,24 @@ class StrictModel(BaseModel):
 
 class TaskPinV1(StrictModel):
     pin_id: str = Field(min_length=1)
-    kernel_build: str = Field(min_length=1)
+    kernel_build: VersionRef
     protocol_version: Literal[PROTOCOL] = PROTOCOL
-    toolset_version: Literal[TOOLSET] = TOOLSET
+    toolset_version: VersionRef
     result_schema_version: Literal[RESULT] = RESULT
-    policy_version: Literal[POLICY] = POLICY
-    instruction_version: Literal[INSTRUCTIONS] = INSTRUCTIONS
-    model_config_revision: str = Field(min_length=1)
+    policy_version: VersionRef
+    instruction_version: VersionRef
+    model_config_revision: VersionRef
+
+
+class KernelCapabilitiesV1(StrictModel):
+    """公开兼容性固定；内部版本由内核声明，提交任务后必须精确执行冻结版本。"""
+    protocol_version: Literal[PROTOCOL] = PROTOCOL
+    result_schema_version: Literal[RESULT] = RESULT
+    task_kinds: list[Literal["candidate.resume_job_match"]] = Field(min_length=1)
+    kernel_build: VersionRef
+    toolset_version: VersionRef
+    instruction_version: VersionRef
+    mock: bool = False
 
 
 class TaskBudgetV1(StrictModel):

@@ -13,7 +13,7 @@ from apps.core import analytics_scope, system_status
 from apps.core.departments import secondary_department as _secondary_department
 from apps.pipeline import ai_config
 from apps.pipeline.agent_kernel import gateway as agent_gateway
-from apps.pipeline.ai import service as ai_service
+from apps.pipeline.errors import AIServiceError
 
 from ..cancellation import raise_if_cancel_requested
 from ..strategies import get_rule_strategy
@@ -851,8 +851,8 @@ def _ai_audit_versions(processing_run=None):
     except (RuntimeError, ValueError):
         return {
             "model_name": "",
-            "prompt_version": "kernel-instructions-v1",
-            "decision_version": "decision-v1",
+            "prompt_version": "",
+            "decision_version": "",
             "kernel_pin_id": "",
             "kernel_build": "",
             "protocol_version": "",
@@ -860,8 +860,8 @@ def _ai_audit_versions(processing_run=None):
         }
     return {
         "model_name": config.model_name,
-        "prompt_version": config.prompt_version,
-        "decision_version": config.decision_version,
+        "prompt_version": "",
+        "decision_version": "",
         "kernel_pin_id": "",
         "kernel_build": "",
         "protocol_version": "",
@@ -940,8 +940,9 @@ def _process_ai_recommendation(
             job,
             department=department,
             force=force,
+            processing_run_id=getattr(getattr(workflow, "_processing_run", None), "pk", None),
         )
-    except ai_service.AIServiceError as exc:
+    except AIServiceError as exc:
         _create_agent_failure_decision(
             workflow,
             resume,
@@ -973,7 +974,7 @@ def _apply_ai_result(workflow, resume, *, matched_rule, result):
         from apps.pipeline.agent_kernel import matching
         try:
             matching.validate_live_jobs(result)
-        except ai_service.AIServiceError as exc:
+        except AIServiceError as exc:
             _create_agent_failure_decision(workflow, resume, error_code=exc.code, error_message=exc.message)
             _block_current_volunteer(workflow, exc.code, exc.message)
             return None
@@ -1165,7 +1166,7 @@ def _claim_expiry():
         + 120
     )
     from django.conf import settings
-    minimum = 720 if settings.AGENT_KERNEL_MODE == "remote" else 180
+    minimum = 720
     return timezone.now() + timedelta(seconds=max(minimum, seconds))
 
 
@@ -1315,7 +1316,7 @@ def process_ai_scope_item(run_id, scope_item_id):
         and _secondary_department(job.department).id == department.id
     )
     if not references_valid:
-        ai_error = ai_service.AIServiceError(
+        ai_error = AIServiceError(
             "ai_reference_invalidated",
             "岗位与分配前置检查固定的岗位或二级部门在 AI 执行前已失效",
         )
@@ -1328,9 +1329,8 @@ def process_ai_scope_item(run_id, scope_item_id):
                 force=force_ai,
                 processing_run_id=run_id,
                 cancelled=cancelled,
-                prompt_version=run.prompt_version,
             )
-        except ai_service.AIServiceError as exc:
+        except AIServiceError as exc:
             ai_error = exc
 
     with transaction.atomic():
@@ -1688,10 +1688,6 @@ def run_school_gate(scope=None, mode="rule", processing_run=None, processing_sta
             else:
                 classify_school.classify_candidates([candidate], overwrite=True)
                 admission = school_admission.evaluate(candidate, rules)
-                if frozen.get("lane") == "shadow" and frozen.get("preflight"):
-                    frozen.setdefault("shadow_comparison", {})["admission_equal"] = admission.passed == frozen["preflight"]["admission_passed"]
-                    item.kernel_snapshot = frozen
-                    item.save(update_fields=["kernel_snapshot"])
             workflow.dispatch_strategy = mode
             workflow.started_at = workflow.started_at or timezone.now()
             workflow.save(update_fields=["dispatch_strategy", "started_at", "updated_at"])
@@ -1912,6 +1908,12 @@ def run_allocation_precheck(
             )
             _touch_workflow(workflow, resume, "ai")
             if reason_code:
+                if reason_code in {"job_responsibility_missing", "ai_reference_invalidated"}:
+                    _block_current_volunteer(workflow, reason_code, detail)
+                    if item:
+                        _scope_result(item, status="needs_attention", result_type=RESULT_NEEDS_ATTENTION,
+                                      reason_code=reason_code, message=detail)
+                    continue
                 if reason_code == "job_hc_exhausted":
                     _block_current_volunteer(
                         workflow, m.CandidateWorkflow.BLOCK_JOB_HC_EXHAUSTED, detail
@@ -2495,35 +2497,14 @@ def submit_feedback(attempt, result, note="", *, reason_code="", user=None):
         note=note,
         metadata={"reason_code": reason_code},
     )
-    from django.conf import settings
-    if settings.AGENT_KERNEL_MODE == "remote":
-        next_resume = _effective_resume_for_attempt(workflow, advance_after_feedback=True)
-        if not next_resume:
-            _archive(workflow, m.CandidateWorkflow.ARCHIVE_ALL_REJECTED, "全部可尝试志愿均已反馈未通过")
-            return attempt
-        _touch_workflow(workflow, next_resume, "ai")
-        from apps.pipeline.runner import create_run
-        from apps.pipeline.tasks import execute_runs_sequence_task
-        run = create_run("all", scope={"candidate_ids": [workflow.candidate_id], "retry_resume_id": next_resume.pk, "trigger": "feedback_rejected"})
-        transaction.on_commit(lambda: execute_runs_sequence_task.delay([run.pk]))
+    next_resume = _effective_resume_for_attempt(workflow, advance_after_feedback=True)
+    if not next_resume:
+        _archive(workflow, m.CandidateWorkflow.ARCHIVE_ALL_REJECTED, "全部可尝试志愿均已反馈未通过")
         return attempt
-    rules = school_admission.active_rules()
-    origin_run = (
-        attempt.capacity_reservation.run
-        if attempt.capacity_reservation_id
-        else None
-    )
-    created = _create_next_auto_attempt(
-        workflow,
-        rules,
-        mode=workflow.dispatch_strategy or attempt.match_mode or "rule",
-        processing_run=origin_run,
-        advance_after_feedback=True,
-    )
-    if not created and workflow.archive_reason == m.CandidateWorkflow.ARCHIVE_NO_NEXT_RESUME:
-        workflow.archive_reason = m.CandidateWorkflow.ARCHIVE_ALL_REJECTED
-        workflow.archive_detail = "全部可尝试志愿均已反馈未通过"
-        workflow.save(update_fields=["archive_reason", "archive_detail", "updated_at"])
+    _touch_workflow(workflow, next_resume, "ai")
+    from apps.pipeline.tasks import process_next_volunteer_task
+    candidate_id, resume_id, revision = workflow.candidate_id, next_resume.pk, workflow.revision
+    transaction.on_commit(lambda: process_next_volunteer_task.delay(candidate_id, resume_id, revision))
     return attempt
 
 

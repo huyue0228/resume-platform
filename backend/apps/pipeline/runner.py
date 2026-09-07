@@ -16,7 +16,7 @@ from apps.core.models import (
     ProcessingRunStage,
 )
 from apps.pipeline import ai_config
-from apps.pipeline.agent_kernel.contracts import build_runtime_pin
+from apps.pipeline.agent_kernel.task_contracts import runtime_pin
 
 from .cancellation import RunCancelled, raise_if_cancel_requested
 from .services import allocate, dedup
@@ -86,26 +86,42 @@ def _job_hc_coefficient():
     return value
 
 
-@transaction.atomic
 def create_run(step, scope=None, created_by=None):
     if step not in {"all", RESUME_PROCESS_STEP} and step not in STEP_FUNCS:
         raise ValueError(f"未知步骤: {step}")
-    mode = "ai"  # 数据库存量值保持兼容；新任务不存在可选运行模式。
+    # 网络探测在事务外完成，每个批次只探测一次；后续候选人共享冻结版本。
+    config = ai_config.get_ai_model_config() if "step4" in _stage_steps(step) else None
+    pin = runtime_pin() if config else None
+    return _create_run(step, scope, created_by, config, pin)
+
+
+@transaction.atomic
+def _create_run(step, scope, created_by, config, pin):
+    if step not in {"all", RESUME_PROCESS_STEP} and step not in STEP_FUNCS:
+        raise ValueError(f"未知步骤: {step}")
+    if pin and pin.model_config_revision != ai_config.current_ai_connection_fingerprint():
+        raise ValueError("发现版本期间模型连接已变化，请重新提交")
+    mode = "ai"  # 业务审计字段；新任务不存在可选运行模式。
     scope = deepcopy(scope or {})
     candidate_ids = _candidate_ids_for_run(step, scope)
+    expected_revision = scope.get("expected_workflow_revision")
+    if expected_revision is not None:
+        workflows = list(CandidateWorkflow.objects.select_for_update().filter(candidate_id__in=candidate_ids))
+        if len(workflows) != 1 or workflows[0].revision != expected_revision:
+            raise ValueError("续办前流程已被修改")
+        existing = ProcessingRun.objects.filter(scope__trigger="feedback_rejected",
+            scope__retry_resume_id=scope.get("retry_resume_id"),
+            scope__expected_workflow_revision=expected_revision,
+            scope_items__candidate_id=candidate_ids[0]).first()
+        if existing:
+            return existing
     # candidate_ids 保存在范围明细表；scope 只保留触发时的可审计筛选快照。
     scope.pop("candidate_ids", None)
-    config = ai_config.get_ai_model_config()
-    pin = build_runtime_pin(config)
-    from django.conf import settings
-    if settings.AGENT_KERNEL_MODE == "remote":
-        from apps.pipeline.agent_kernel.task_contracts import runtime_pin
-        pin = runtime_pin()
     versions = {
         "model_name": config.model_name,
         # 保留存量列名，新任务在此字段记录 Kernel 内置指令版本。
         "prompt_version": pin.instruction_version,
-        "decision_version": config.decision_version,
+        "decision_version": pin.policy_version,
         "kernel_build": pin.kernel_build,
         "protocol_version": pin.protocol_version,
         "toolset_version": pin.toolset_version,
@@ -113,7 +129,7 @@ def create_run(step, scope=None, created_by=None):
         "policy_version": pin.policy_version,
         "model_config_revision": pin.model_config_revision,
         "pin_id": pin.pin_id,
-    }
+    } if pin else {}
     coefficient = _job_hc_coefficient()
     run = ProcessingRun.objects.create(
         step=step,
@@ -168,11 +184,8 @@ def create_run(step, scope=None, created_by=None):
             for index, stage_step in enumerate(_stage_steps(step), start=1)
         ]
     )
-    from django.conf import settings
-    if settings.AGENT_KERNEL_MODE == "remote":
+    if pin:
         from apps.pipeline.agent_kernel.task_contracts import freeze_case
-        if settings.AGENT_KERNEL_ROLLOUT not in {"shadow", "review_only", "enforced"}:
-            raise ValueError("Agent Kernel rollout 配置无效")
         for item in run.scope_items.select_related("candidate"):
             item.kernel_snapshot = freeze_case(item.candidate, run)
             item.save(update_fields=["kernel_snapshot"])

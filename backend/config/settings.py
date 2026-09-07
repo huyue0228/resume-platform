@@ -105,22 +105,14 @@ if os.environ.get("FILE_UPLOAD_TEMP_DIR"):
     FILE_UPLOAD_TEMP_DIR = os.environ["FILE_UPLOAD_TEMP_DIR"]
 DATA_UPLOAD_MAX_MEMORY_SIZE = None
 
-# 扫描版 PDF 仅在 AI 正文抽取不足时进入本地 OCR；限制均可由部署环境覆盖。
-RESUME_OCR_MAX_PAGES = int(os.environ.get("RESUME_OCR_MAX_PAGES", "20"))
-RESUME_OCR_DPI = int(os.environ.get("RESUME_OCR_DPI", "200"))
-RESUME_OCR_TIMEOUT_SECONDS = int(
-    os.environ.get("RESUME_OCR_TIMEOUT_SECONDS", "120")
-)
-RESUME_OCR_CONCURRENCY = int(os.environ.get("RESUME_OCR_CONCURRENCY", "2"))
-
-# 独立 Agent Kernel。DEBUG 本地开发默认 embedded；非 DEBUG 默认必须走独立进程。
-AGENT_KERNEL_MODE = os.environ.get(
-    "AGENT_KERNEL_MODE", "embedded" if DEBUG else "remote"
-)
+# 仅保留独立 Kernel，不再提供 embedded 或旧 Python AI 运行模式。
+if "AGENT_KERNEL_MODE" in os.environ:
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured("AGENT_KERNEL_MODE 已删除，请移除此配置并使用独立 Kernel")
 AGENT_KERNEL_URL = os.environ.get("AGENT_KERNEL_URL", "http://127.0.0.1:8090")
 AGENT_KERNEL_TOKEN = os.environ.get("AGENT_KERNEL_TOKEN", "")
-AGENT_KERNEL_BUILD = os.environ.get("AGENT_KERNEL_BUILD", "dev")
-AGENT_KERNEL_ROLLOUT = os.environ.get("AGENT_KERNEL_ROLLOUT", "shadow")
+AGENT_KERNEL_BUILD = os.environ.get("AGENT_KERNEL_BUILD", "")
+AGENT_KERNEL_ROLLOUT = os.environ.get("AGENT_KERNEL_ROLLOUT", "review_only")
 AGENT_KERNEL_ALLOW_MOCK = DEBUG and env_bool("AGENT_KERNEL_ALLOW_MOCK", False)
 AGENT_KERNEL_DOCUMENT_SIGNING_KEY = os.environ.get("AGENT_KERNEL_DOCUMENT_SIGNING_KEY", AGENT_KERNEL_TOKEN)
 AGENT_KERNEL_MODEL_INSECURE_SKIP_VERIFY = env_bool(

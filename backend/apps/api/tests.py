@@ -12,6 +12,7 @@ from urllib.parse import quote
 from django.contrib.auth.models import Group, Permission
 from django.apps import apps as django_apps
 from django.core.files.uploadedfile import SimpleUploadedFile
+from apps.pipeline.test_support import KernelTestCase
 from django.test import TestCase, override_settings
 from django.utils import timezone
 import pandas as pd
@@ -31,7 +32,7 @@ from apps.ingestion.tabular_imports import (
     get_import_table_schema,
 )
 from apps.pipeline import ai_config
-from apps.pipeline.ai.service import AIServiceError
+from apps.pipeline.errors import AIServiceError
 from apps.pipeline.services import classify_school
 
 
@@ -62,7 +63,7 @@ def standard_import_template_bytes(template_type):
         "PAGE_SIZE": 20,
     }
 )
-class AgentDispatchDecisionApiTests(TestCase):
+class AgentDispatchDecisionApiTests(KernelTestCase):
     def setUp(self):
         ai_config.save_ai_connection_config(
             {
@@ -238,7 +239,7 @@ class AgentDispatchDecisionApiTests(TestCase):
         )
 
         with patch(
-            "apps.pipeline.services.allocate.ai_service.screen_resume",
+            "apps.pipeline.services.allocate.agent_gateway.evaluate_resume",
             side_effect=AIServiceError("pdf_missing", "缺少 PDF 简历文件"),
         ) as screen_resume:
             response = self.client.post(
@@ -292,7 +293,7 @@ class AgentDispatchDecisionApiTests(TestCase):
             score_breakdown={"major_match": 0.78},
         )
         with patch(
-            "apps.pipeline.services.allocate.ai_service.screen_resume",
+            "apps.pipeline.services.allocate.agent_gateway.evaluate_resume",
             return_value=result,
         ):
             response = self.client.post(f"/api/agent-decisions/{self.decision.id}/retry/")
@@ -318,7 +319,7 @@ class AgentDispatchDecisionApiTests(TestCase):
 
 
 @override_settings(REST_FRAMEWORK=rest_framework_test_settings())
-class PipelineRunApiTests(TestCase):
+class PipelineRunApiTests(KernelTestCase):
     def setUp(self):
         ensure_rbac_defaults()
         self.client = APIClient()
@@ -601,7 +602,7 @@ class PipelineRunApiTests(TestCase):
         "PAGE_SIZE": 20,
     }
 )
-class RbacApiTests(TestCase):
+class RbacApiTests(KernelTestCase):
     def setUp(self):
         ensure_rbac_defaults()
         self.client = APIClient()
@@ -1585,7 +1586,7 @@ class RbacApiTests(TestCase):
         self.assertIn("settings.manage_ai_connection", codes)
 
 
-class SchoolRuleConfigApiTests(TestCase):
+class SchoolRuleConfigApiTests(KernelTestCase):
     def setUp(self):
         ensure_rbac_defaults()
         self.client = APIClient()
@@ -1725,7 +1726,7 @@ class SchoolRuleConfigApiTests(TestCase):
         self.assertEqual([item["id"] for item in rule_response.data["results"]], [rule.id])
 
 
-class ListFilteringPaginationApiTests(TestCase):
+class ListFilteringPaginationApiTests(KernelTestCase):
     def setUp(self):
         ensure_rbac_defaults()
         self.client = APIClient()
@@ -3730,7 +3731,7 @@ class ListFilteringPaginationApiTests(TestCase):
         self.assertEqual((school.name_pinyin, school.name_pinyin_initials), ("beijingdaxue", "bjdx"))
 
 
-class JobExportApiTests(TestCase):
+class JobExportApiTests(KernelTestCase):
     def setUp(self):
         ensure_rbac_defaults()
         self.client = APIClient()
@@ -3852,7 +3853,7 @@ class JobExportApiTests(TestCase):
         self.assertEqual(forbidden.status_code, 403)
 
 
-class CandidateExportApiTests(TestCase):
+class CandidateExportApiTests(KernelTestCase):
     def setUp(self):
         ensure_rbac_defaults()
         self.client = APIClient()
@@ -4535,7 +4536,7 @@ class CandidateExportApiTests(TestCase):
         self.assertEqual(row["当前接收部门"], latest_department.name)
 
 
-class ResumeResultReportApiTests(TestCase):
+class ResumeResultReportApiTests(KernelTestCase):
     def setUp(self):
         ensure_rbac_defaults()
         self.client = APIClient()
@@ -4873,7 +4874,7 @@ class ResumeResultReportApiTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
 
-class ResumePreviewApiTests(TestCase):
+class ResumePreviewApiTests(KernelTestCase):
     def setUp(self):
         ensure_rbac_defaults()
         self.client = APIClient()
@@ -5067,7 +5068,7 @@ class ResumePreviewApiTests(TestCase):
         self.assertEqual(response.status_code, 404)
 
 
-class ImportApiTests(TestCase):
+class ImportApiTests(KernelTestCase):
     def setUp(self):
         ensure_rbac_defaults()
         self.client = APIClient()
@@ -5455,7 +5456,7 @@ class ImportApiTests(TestCase):
         mock_import_files.assert_called_once()
 
 
-class MasterDataCrudApiTests(TestCase):
+class MasterDataCrudApiTests(KernelTestCase):
     def setUp(self):
         ensure_rbac_defaults()
         self.client = APIClient()
@@ -5766,7 +5767,7 @@ class MasterDataCrudApiTests(TestCase):
         self.assertFalse(m.Contact.objects.filter(employee_no="VIEW001").exists())
 
 
-class ContactDeleteApiTests(TestCase):
+class ContactDeleteApiTests(KernelTestCase):
     def setUp(self):
         ensure_rbac_defaults()
         self.client = APIClient()
@@ -5911,7 +5912,7 @@ class ContactDeleteApiTests(TestCase):
         )
 
 
-class UserDeleteApiTests(TestCase):
+class UserDeleteApiTests(KernelTestCase):
     def setUp(self):
         ensure_rbac_defaults()
         self.client = APIClient()

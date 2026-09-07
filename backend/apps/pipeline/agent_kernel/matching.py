@@ -10,15 +10,14 @@ from apps.pipeline import ai_config
 from apps.pipeline.screening_types import ResumeScreeningOutput, ScreeningResult
 from apps.pipeline.errors import AIServiceError
 from resume_contracts.models import SCORE_WEIGHTS
-from . import legacy_baseline
 from .client import AgentKernelClient
-from .task_contracts import build_task, freeze_case, job_hash
+from .task_contracts import build_task, freeze_case, job_hash, pin_from_run, POLICY_VERSION
 
 
 def reusable_analysis(item, frozen, envelope):
     """仅容量/流程变化时复用已验证分析；内容、模型、画像上下文变化均失效。"""
     from .task_contracts import TaskResultV1
-    if not item or frozen["lane"] == "shadow" or not frozen.get("preflight"):
+    if not item or not frozen.get("preflight"):
         return None
     d = frozen["preflight"]
     if d["status"] != "ready":
@@ -36,7 +35,7 @@ def reusable_analysis(item, frozen, envelope):
     for previous in prior:
         if not previous.kernel_snapshot or content_key(previous.kernel_snapshot) != key:
             continue
-        # MCP 目录尚未纳入任务版本钉定，不能假定外部知识仍未变化。
+        # 工具目录已冻结，但外部知识正文尚无快照版本，不能假定内容仍未变化。
         if any(name.startswith("mcp.") for name in previous.kernel_result.get("manifest", {}).get("tool_versions", {})):
             continue
         payload = deepcopy(previous.kernel_result)
@@ -52,9 +51,20 @@ def prepare_run(run):
     """平台本地执行志愿、准入和岗位池构造，零外部调用。"""
     from apps.pipeline.cancellation import raise_if_cancel_requested
     from apps.pipeline.services.admission_snapshot import prepare_snapshot
-    for item in run.scope_items.select_related("candidate").exclude(kernel_snapshot={}):
+    if run.step == "step1":
+        return
+    try:
+        run_pin = pin_from_run(run)
+        if run_pin.policy_version != POLICY_VERSION:
+            raise ValueError("unsupported policy version")
+    except ValueError as exc:
+        raise AIServiceError("agent_snapshot_unavailable", "旧版本任务不再支持，请重新提交任务") from exc
+    for item in run.scope_items.select_related("candidate"):
         raise_if_cancel_requested(run)
         frozen = item.kernel_snapshot
+        if (not frozen or frozen.get("pin") != run_pin.model_dump()
+                or frozen.get("lane") not in {"review_only", "enforced"}):
+            raise AIServiceError("agent_snapshot_unavailable", "任务冻结版本缺失或不一致，请重新提交任务")
         snapshot = deepcopy(frozen["snapshot"])
         retry = (run.scope or {}).get("retry_resume_id")
         if retry:
@@ -71,6 +81,16 @@ def validate_result(envelope, result, frozen, resume):
     if (result.task_id != envelope.task_id or result.idempotency_key != envelope.idempotency_key
         or result.pin != envelope.pin or result.workflow_revision != envelope.snapshot["workflow"]["revision"]):
         reject("任务、版本或流程引用不一致")
+    def has_nul(value):
+        if isinstance(value, str):
+            return chr(0) in value
+        if isinstance(value, dict):
+            return any(has_nul(k) or has_nul(v) for k, v in value.items())
+        if isinstance(value, list):
+            return any(has_nul(v) for v in value)
+        return False
+    if has_nul(result.model_dump()):
+        reject("分析结果包含数据库不支持的 NUL 字符")
     if result.manifest.terminal_state != "DONE":
         raise AIServiceError("agent_incomplete", "候选人分析未完成，请人工处理或重试", safe_trace=result.safe_trace.model_dump(mode="json"))
     d = result.deterministic
@@ -136,7 +156,11 @@ def policy_output(result, match, frozen):
 
 def evaluate(resume, job, *, processing_run_id=None, cancelled=None, **kwargs):
     item = m.ProcessingRunScopeItem.objects.filter(run_id=processing_run_id, candidate=resume.candidate).first() if processing_run_id else None
-    frozen = item.kernel_snapshot if item and item.kernel_snapshot else freeze_case(resume.candidate)
+    if processing_run_id and (not item or not item.kernel_snapshot):
+        raise AIServiceError("agent_snapshot_unavailable", "任务没有当前协议冻结快照，请重新提交任务")
+    frozen = item.kernel_snapshot if item else freeze_case(resume.candidate)
+    if frozen["lane"] not in {"review_only", "enforced"}:
+        raise AIServiceError("agent_snapshot_unavailable", "旧 AI 任务不再支持，请重新提交任务")
     if frozen["pin"]["model_config_revision"] != ai_config.current_ai_connection_fingerprint():
         raise AIServiceError("agent_model_config_unavailable", "冻结模型版本已不可用，请重新提交任务")
     config = ai_config.get_ai_model_config()
@@ -152,28 +176,16 @@ def evaluate(resume, job, *, processing_run_id=None, cancelled=None, **kwargs):
     except AIServiceError as exc:
         if item:
             m.ProcessingRunScopeItem.objects.filter(pk=item.pk).update(kernel_result={"terminal_state": "FAILED", "code": exc.code, "safe_trace": exc.safe_trace})
-        if frozen["lane"] != "shadow":
-            raise
-        return legacy_baseline.screen_resume(resume, job, processing_run_id=processing_run_id, cancelled=cancelled, **kwargs)
+        raise
     if item:
         m.ProcessingRunScopeItem.objects.filter(pk=item.pk).update(kernel_result=result.model_dump(mode="json"))
-    if frozen["lane"] == "shadow":
-        # 明确选择的迁移基线，shadow 结果本身没有业务写权限。
-        baseline = legacy_baseline.screen_resume(resume, job, processing_run_id=processing_run_id, cancelled=cancelled, **kwargs)
-        if item:
-            matched = next((match for match in result.matches if frozen["job_ids"][match.job_ref] == job.pk), None)
-            frozen.setdefault("shadow_comparison", {}).update(
-                baseline_score=baseline.confidence, kernel_fixed_job_score=matched.score if matched else None,
-                kernel_top_score=result.matches[0].score if result.matches else None)
-            m.ProcessingRunScopeItem.objects.filter(pk=item.pk).update(kernel_snapshot=frozen)
-        return baseline
     match = result.matches[0]
     selected = m.Job.objects.select_related("department").get(pk=frozen["job_ids"][match.job_ref])
     output = policy_output(result, match, frozen)
     profile = m.ResumeProfile(resume=resume)  # 提交事务前不写画像。
     return ScreeningResult(profile=profile, output=output, job=selected, department=selected.department,
         confidence=match.score, score_breakdown=match.dimensions.model_dump(), model_name=config.model_name,
-        prompt_version=envelope.pin.instruction_version, decision_version=config.decision_version,
+        prompt_version=envelope.pin.instruction_version, decision_version=envelope.pin.policy_version,
         kernel_pin_id=envelope.pin.pin_id, kernel_build=envelope.pin.kernel_build,
         protocol_version=envelope.pin.protocol_version, toolset_version=envelope.pin.toolset_version,
         safe_trace=result.safe_trace.model_dump(mode="json"),

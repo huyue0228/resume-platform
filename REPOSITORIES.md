@@ -28,26 +28,36 @@ python manage.py runserver 127.0.0.1:8001 --settings=config.settings_mock
 
 ## 独立验证和发布
 
-- 平台：`cd backend && python -m resume_contracts.verify && python manage.py test apps.pipeline apps.ingestion apps.api apps.accounts`；前端 `npm run lint && npm test && npm run build`。
-- 内核：在自己的仓库执行 `make check build` 或 `make image KERNEL_VERSION=<version>`。
-- 协议：在自己的仓库执行 `make check`。两个消费者 CI 不要求检出协议仓。
-- Compose 只构建平台镜像；设置 `AGENT_KERNEL_IMAGE` 为已发布镜像（生产建议固定 digest），`AGENT_KERNEL_VERSION` 为该镜像报告的 build。
-- 离线发布仍用原脚本，但必须先加载/拉取指定内核镜像，并提供 `AGENT_KERNEL_IMAGE`、`AGENT_KERNEL_VERSION`。平台版本仍是 `APP_VERSION`。
-- `/v2/tasks/execute` 的路径保留，但旧 `resume-task/v1` 线协议已被新版本取代；升级前停止接单并排空旧版本任务，再部署一组已通过契约测试的版本。不支持进行中任务跨协议热升级。
+- 平台：`make check`；分别运行可用 `check-backend`、`check-frontend`、`check-release`。先安装各自 requirements/npm lock 依赖。本地虚拟环境可传入绝对路径的 `PYTHON`。
+- Kernel：`make check build`、`make package KERNEL_VERSION=<version>`、`make image`；无需 Django 或其他仓源码。
+- 协议：`make check package RELEASE_VERSION=v1.1.0`；先安装 build/setuptools/wheel。
+- 平台镜像：`make images APP_VERSION=v2.0.0 IMAGE_PREFIX=gitlab.internal:5000/resume/platform`。默认只构建到本机；发布需显式加 `PUSH=--push`。
+- 平台模板：`make package APP_VERSION=v2.0.0`；消费 `release/v2.0.0/images/` 中五个镜像记录，输出带双层校验的 `dist/resume-platform-v2.0.0.tar.gz`。该包不包含镜像，不是完整离线包。
+- 完整离线发布继续使用既有 Skill：预先加载独立 Kernel 镜像，不构建兄弟仓源码。
 
-## 交接前的安全检查
+三个仓均有薄的 GitLab 检查入口，镜像可用 CI Variables 指向公司镜像源。发布逻辑位于各仓 Makefile/tools；
+GitLab/GitHub 只负责调度、凭据和制品上传。暂不假定公司 GitLab 地址、Runner 或发布权限，也不自动部署。
 
-旧公开仓 `huyue0228/smart-resume-filter` 的历史包含 Kernel 源码，本次不修改其可见性、不覆盖或删除旧历史。新平台仓不继承它的历史；这只能隔离后续开发，不能撤回已经公开的内容。不要将本地旧 Git 备份、真实数据库、媒体、连接密钥交给外包。
-旧 Python AI 路径仅用于现存 embedded/shadow 基线，隔离在 `legacy_baseline.py` 之后；不是正式远端路径的失败降级。真实模型与 OCR 验收完成后再退役，不能在拆仓时直接删除以牺牲回归基线。
-模型连接仍由平台受控系统设置管理；真实连接与生产密钥不交给外包。简历仍使用只读共享卷和带摘要的短期授权；跨机器文档提供器不在本次迁移范围内。
+## 内部版本与公开协议
 
-## 协作与版本发布
+1. 平台调用认证的 `GET /v2/capabilities`，只检查支持的公开协议/结果结构及开发 Mock 隔离。
+2. Kernel 返回 build、完整冻结工具注册表的 SHA-256、嵌入指令的 SHA-256。平台注册自己的 policy_version。
+3. 每个新批次只发现一次版本，并冻结到 ProcessingRun 和候选人快照。执行任务必须使用完全相同的 pin。
+4. Kernel 更新后，旧 pin 不匹配会失败待处理；不自动改版本、不继续旧 AI 路径。排空旧任务后升级最安全。
+5. 平台默认不限定 Kernel 内部版本。部署可通过 `AGENT_KERNEL_BUILD` 显式锁定；
+   Compose 的 `AGENT_KERNEL_VERSION` 仍对应实际 image build，且与 `APP_VERSION` 独立。
+6. 工具/Prompt/Kernel 内部实现更新无需修改共享 SDK；公开字段、任务种类、证据格式或评分语义变化才升级协议并由双方验收。
 
-- 默认负责人为 `@huyue0228`。外包账号确认前不授权；确认后只授予平台仓协作权限。Kernel 源码不给外包，协议变更走双方评审。
-- 2026-09-07 已确认当前个人账户对私有仓规则集返回 403，需要 Pro；因此当前仅有责任人声明，没有强制审批保护。各仓已准备 `.github/branch-protection.json`，包含必需 CI、过期审批失效、CODEOWNERS 审批与禁止强推/删除。维护者升级后在每个仓执行 `gh api --method PUT repos/huyue0228/<仓名>/branches/main/protection --input .github/branch-protection.json` 并回读验证，再邀请外包。模板保留仓主管理员应急绕过；普通协作者不能绕过。若以后要求管理员同样受限，需先有第二名审核人并将 `enforce_admins` 设为 true。
-- 功能分支提交 PR，等待各仓 `check.yml` 通过。`.github/CODEOWNERS` 明确负责人，但只有 GitHub 分支保护启用后，审批才是强制门禁。个人私有仓的强制保护取决于账户套餐；不能用文件代替服务端权限。
-- `release.yml` 可手动执行演练：运行回归测试、构建并保留 Actions 产物，不发布镜像、不创建 Release。维护者从已合并的 `main` 提交推送 `vX.Y.Z`（或预发布标签）才自动发布。标签必须指向 main 历史；已发布版本不得覆盖。
-- 平台发布五种独立镜像（backend、frontend、postgres、redis、backup），Kernel 发布自己的镜像和 linux/amd64 二进制，协议仓发布 wheel/sdist。发布产物均有 SHA-256；镜像清单记录不可变 digest。只发布制品，不自动部署生产。
-- 平台 GHCR 镜像命名为 `ghcr.io/huyue0228/resume-platform-<component>:<tag>`；Kernel 为 `ghcr.io/huyue0228/resume-agent-kernel:<tag>`。私有仓 Actions 使用本仓 `GITHUB_TOKEN`，无需跨仓源码令牌；部署方拉私有镜像需另行提供最小只读 Packages 凭据。
-- 部署显式设置各 `*_IMAGE`（建议 digest）、`APP_VERSION` 和独立 `AGENT_KERNEL_VERSION`。平台可升级前后端而不重建 Kernel；Kernel 在协议兼容时单独升级。协议升级先发布 contracts，再在两个消费者 PR 同步固定副本、验证黄金样本，最后人工选定兼容版本组合上线。
-- 当前仍是迁移基线：真实模型、扫描件 OCR 和招聘黄金样本验收未完成；发布流程通过不代表可以切换 enforced。保留 shadow → review_only → enforced 的人工放行，不自动退回旧 AI 路径。
+旧 Python 简历筛选、embedded、shadow 与 Go `/v1/evaluate` 已删除。删除 `AGENT_KERNEL_MODE` 环境变量，
+只保留 `review_only → enforced`：默认前者，后者需真实模型/OCR 与黄金样本人工放行。
+不支持旧任务续跑，需重新提交当前版本任务；不删除已有业务数据或审计记录。
+
+## 维护和交接边界
+
+- 外包维护平台前后端、主数据、确定性政策与人工流程；你维护 Kernel 的文档、模型循环、工具和评测。
+- 协议仓由双方评审；外包使用合成 Mock 即可开发，不需要 Kernel 源码、真实简历或模型密钥。
+- 普通迭代只改所属仓；公共接口变更先更新协议，再在两个消费者通过合并请求同步固定快照。
+- 每仓独立版本与制品；已发布版本不可覆盖。部署明确记录平台版本、Kernel digest/build 和协议版本组合。
+- 变更先在验收环境验证，再安排生产窗口；停止接单、排空任务、备份数据库和媒体。保留 Compose project name 与数据卷，代码回退不代表数据库回退。
+- 模型连接测试、院校省份补全仍是平台功能；它们不是旧简历 AI 基线。
+- 不向外包交付本地 backups、旧 Git 历史、数据库、media 或生产配置。原公开仓历史不在本次清理范围内。

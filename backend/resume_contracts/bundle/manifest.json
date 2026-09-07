@@ -1,16 +1,18 @@
 {
   "files": {
-    "request.example.json": "db9fa72f9373b85a6f4bc28b0832a949ea0965c1ea8061aedd9b7981a0e5ed09",
-    "request.schema.json": "db6585c54e75f19a47baece77dbc07f350fea3cc9fefcc8ab646f381bb5f779b",
-    "response.example.json": "05ed7f421bbb885006e86323c0e88dd07ea5b482cf9c52a62616e4cd60c3efa1",
-    "response.schema.json": "9fca5a5d4d7444711383acbe27ad33bbe16abb1458a61c68359b8e1852035a3d"
+    "capabilities.example.json": "99b820739ae01f2e123c503f43e033a188939ddc70a0fc0ae8429aab8b1e0585",
+    "capabilities.schema.json": "82fdd06507266f1328fa1cb8d3e227acf7255ab51dc4ff710a7db8c7b86bdf1a",
+    "request.example.json": "673b20f5ebe9a6394b9212e5a62acac06d9f68edf5b9db2e8800b00184205988",
+    "request.schema.json": "eb5206605018fadcd89e94a795375e5054dbd0d10696aec355b7254eab6801ed",
+    "response.example.json": "41598e18249847dfd1925ce5c2c073663b87b9e6b2196eb73faf9cbd5e82b4b3",
+    "response.schema.json": "4a2f77684f2f99e270322bb4061703ffbfd1b775e5a65ec504600c1daba1559a"
   },
   "python": {
-    "__init__.py": "9bb519ee4e9eb06b46b80dfaa29ff72fd48597d7869dcb6682b8d791683be504",
-    "fixtures.py": "1632b9977f808eb8ca89d621b032ea05fcb57d1f746f99e104f6e9d60d419f4a",
-    "mock_server.py": "e188677f1d238cf957079444f2c6f3ba8686917abf349c617f695f081dd5a07c",
-    "models.py": "075a94d6579208dfee267f4ace79b4747fc8203549dc2e4c3fcc0ddfda28ee83",
-    "verify.py": "b20a5129270804ea14526af20d6fe04a0646e2137c187d80d340dba31efd8f72"
+    "__init__.py": "85ec0f463ce079a535876bf5fcbf4138494d1ac5db7a003ffe17d5ac708a461e",
+    "fixtures.py": "99216261ab11e1980a629f932eaad6afcd2561ae7c753f00c66540933e4d1d51",
+    "mock_server.py": "67414a01601aa05291702b38e7251a99ba73d7873b5df3868fee9d1d1fa90cf3",
+    "models.py": "05da355695682a8eec0b88163b1f2c6691c34c45361794530e1d863af56ab362",
+    "verify.py": "c22306c806dea591c4e7f1adaefad93421f65ca6190c00dfc3cab0461dbfa000"
   },
-  "version": "1.0.0"
+  "version": "1.1.0"
 }

@@ -6,7 +6,7 @@ from django.test import SimpleTestCase, TestCase
 
 from apps.pipeline import ai_config
 from apps.core import models as m
-from apps.pipeline.ai.schemas import ResumeScreeningOutput
+from apps.pipeline.screening_types import ResumeScreeningOutput
 from apps.pipeline.ai.structured_output import (
     AIServiceError,
     call_structured_model,

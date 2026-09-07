@@ -16,12 +16,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r backend/requirements.txt
-      - working-directory: backend
-        run: |
-          python -m resume_contracts.verify
-          python manage.py check
-          python manage.py makemigrations accounts core --check --dry-run
-          python manage.py test apps.pipeline apps.ingestion apps.api apps.accounts
+      - run: make check-backend check-release PYTHON=python
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -33,4 +28,5 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - working-directory: frontend
-        run: npm ci && npm run lint && npm test && npm run build
+        run: npm ci
+      - run: make check-frontend

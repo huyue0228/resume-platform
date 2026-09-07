@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel, ConfigDict, Field
 
 
-from apps.pipeline.screening_types import (ExperienceItem, EducationItem, ScoreBreakdown,
-    ResumeProfileOutput, DispatchRecommendationOutput, ResumeScreeningOutput)
+class ConnectionProbeOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ok: bool
 
 
 class SchoolProvinceItem(BaseModel):

@@ -2,14 +2,24 @@
 import hashlib
 import json
 
-from .models import AnalysisRequestV1, AnalysisResponseV1, PROTOCOL, SCORE_WEIGHTS
+from .models import AnalysisRequestV1, AnalysisResponseV1, KernelCapabilitiesV1, PROTOCOL, SCORE_WEIGHTS
 
 TEXT = "负责后端服务开发与测试工作，完成接口设计和自动化测试。\n" * 20
 
 
+def capabilities_fixture(**overrides):
+    values = dict(
+        task_kinds=["candidate.resume_job_match"], kernel_build="dev",
+        toolset_version="fixture-tools/v1", instruction_version="fixture-instructions/v1")
+    values.update(overrides)
+    return KernelCapabilitiesV1.model_validate(values)
+
+
 def request_fixture():
     return AnalysisRequestV1.model_validate(dict(task_id="fixture-task", idempotency_key="fixture-key", workflow_revision=1,
-        pin=dict(pin_id="fixture-pin", kernel_build="dev", model_config_revision="fixture-model"),
+        pin=dict(pin_id="fixture-pin", kernel_build="dev", model_config_revision="fixture-model",
+                 toolset_version="fixture-tools/v1", instruction_version="fixture-instructions/v1",
+                 policy_version="fixture-policy/v1"),
         model=dict(api_style="chat_json", base_url="http://127.0.0.1:9999/v1", model_name="fixture-model"),
         scope=dict(candidate=dict(ref="candidate-fixture", highest_major="软件工程", highest_education="本科"),
             volunteer_ref="volunteer-fixture", artifact=dict(path="resumes/fixture.pdf", checksum="a"*64, size_bytes=100,

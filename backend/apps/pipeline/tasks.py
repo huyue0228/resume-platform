@@ -14,7 +14,7 @@ from django.utils import timezone
 from apps.core import models as m
 
 from . import ai_config, runner
-from .ai import prompt_harness, school_province
+from .ai import school_prompts, school_province
 from .services import allocate
 
 
@@ -23,6 +23,26 @@ _LOCAL_ENRICHMENT_EXECUTOR = ThreadPoolExecutor(
     max_workers=1,
     thread_name_prefix="school-province-ai",
 )
+
+
+@shared_task
+def process_next_volunteer_task(candidate_id, resume_id, workflow_revision):
+    """反馈已提交后才发现 Kernel 版本；重复投递和人工变更不能重复续办。"""
+    from apps.pipeline.errors import AIServiceError
+    scope = {"candidate_ids": [candidate_id], "retry_resume_id": resume_id,
+             "trigger": "feedback_rejected", "expected_workflow_revision": workflow_revision}
+    if not m.CandidateWorkflow.objects.filter(candidate_id=candidate_id, revision=workflow_revision).exists():
+        return {"status": "skipped_manual_change"}
+    try:
+        run = runner.create_run("all", scope=scope)
+    except (AIServiceError, RuntimeError, ValueError) as exc:
+        with transaction.atomic():
+            workflow = m.CandidateWorkflow.objects.select_for_update().filter(candidate_id=candidate_id, revision=workflow_revision).first()
+            if workflow:
+                allocate._block_current_volunteer(workflow, "agent_kernel_unavailable", "下一志愿任务创建失败，请重新提交处理任务")
+        logger.warning("Next volunteer task creation failed candidate=%s error_type=%s", candidate_id, type(exc).__name__)
+        return {"status": "needs_attention"}
+    return {"status": "submitted", "run_id": run.pk, "runs": execute_runs_sequence_task([run.pk])}
 
 
 @shared_task
@@ -93,7 +113,7 @@ def _run_local_school_province_enrichment(school_ids, prompt_version):
 
 def submit_school_province_enrichment(school_ids):
     """生产投递 Celery；本地 eager 仍放入后台线程，避免阻塞导入响应。"""
-    prompt_version = prompt_harness.get_active_prompt_version()
+    prompt_version = school_prompts.SCHOOL_PROMPT_VERSION
     if settings.CELERY_TASK_ALWAYS_EAGER:
         _LOCAL_ENRICHMENT_EXECUTOR.submit(
             _run_local_school_province_enrichment,

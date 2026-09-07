@@ -1,13 +1,11 @@
 """候选人级任务协议和冻结快照；数据库主键只保存在控制面映射中。"""
 import hashlib
 import hmac
-import json
 import time
 import uuid
-from datetime import datetime
 from copy import deepcopy
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from django.conf import settings
 from pydantic import Field
@@ -16,13 +14,19 @@ from apps.core import models as m
 from apps.pipeline import ai_config
 from apps.pipeline.errors import AIServiceError
 from apps.ingestion.sources import RESUME_SUBDIR
-from resume_contracts.models import (PROTOCOL, TOOLSET, RESULT, POLICY, INSTRUCTIONS, TaskPinV1, TaskBudgetV1,
-    EvidenceV1, ClaimDetailsV1, ClaimV1, CandidateProfileV1, JobMatchV1, TaskSafeTraceV1,
-    TaskManifestV1 as PublicManifest, AnalysisResponseV1, StrictModel)
-from .contracts import KernelModelConfigV1, _pin_id
+from resume_contracts.models import (PROTOCOL, RESULT, ModelConfigV1, TaskPinV1, TaskBudgetV1,
+    AnalysisResponseV1, StrictModel)
+from .hashing import fingerprint as _pin_id
+
+POLICY_VERSION = "django-policy-gate/v2"
+
+def pin_from_run(run):
+    return TaskPinV1(pin_id=run.pin_id, kernel_build=run.kernel_build,
+        protocol_version=run.protocol_version, toolset_version=run.toolset_version,
+        result_schema_version=run.result_schema_version, policy_version=run.policy_version,
+        instruction_version=run.prompt_version, model_config_revision=run.model_config_revision)
 
 class TaskEnvelopeV1(StrictModel):
-    prepare_only: bool = False
     protocol_version: Literal[PROTOCOL] = PROTOCOL
     task_kind: Literal["candidate.resume_job_match"] = "candidate.resume_job_match"
     task_id: str
@@ -30,7 +34,7 @@ class TaskEnvelopeV1(StrictModel):
     trigger: str
     pin: TaskPinV1
     snapshot: dict
-    model: KernelModelConfigV1
+    model: ModelConfigV1
     budget: TaskBudgetV1 = Field(default_factory=TaskBudgetV1)
 
 
@@ -46,20 +50,19 @@ class DeterministicResultV1(StrictModel):
     status: str
 
 
-class LocalManifest(PublicManifest):
-    terminal_state: Literal["DONE", "FAILED", "BLOCKED", "PREPARED"]
-
-
 class TaskResultV1(AnalysisResponseV1):
     """平台内部持久化结构；deterministic 不属于引擎响应协议。"""
     deterministic: DeterministicResultV1
-    manifest: LocalManifest
 
 
 def runtime_pin():
-    payload = dict(kernel_build=settings.AGENT_KERNEL_BUILD, protocol_version=PROTOCOL,
-                   toolset_version=TOOLSET, result_schema_version=RESULT,
-                   policy_version=POLICY, instruction_version=INSTRUCTIONS,
+    from .client import AgentKernelClient
+    from .gateway import validate_runtime
+    validate_runtime()
+    caps = AgentKernelClient().capabilities()
+    payload = dict(kernel_build=caps.kernel_build, protocol_version=PROTOCOL,
+                   toolset_version=caps.toolset_version, result_schema_version=RESULT,
+                   policy_version=POLICY_VERSION, instruction_version=caps.instruction_version,
                    model_config_revision=ai_config.current_ai_connection_fingerprint())
     return TaskPinV1(pin_id=_pin_id(payload), **payload)
 
@@ -136,12 +139,12 @@ def freeze_case(candidate, run=None):
     return dict(snapshot=snapshot, volunteer_ids=volunteer_ids, job_ids=job_ids,
                 task_id=uuid.uuid4().hex,
                 rule_ids=rule_ids, tag_ids={v:k for k,v in tags.items()},
-                lane=settings.AGENT_KERNEL_ROLLOUT, pin=runtime_pin().model_dump(),
+                lane=settings.AGENT_KERNEL_ROLLOUT, pin=(pin_from_run(run) if run else runtime_pin()).model_dump(),
                 thresholds=dict(dispatch=ai_config.get_ai_runtime_config().dispatch_threshold,
                                 review=ai_config.get_ai_runtime_config().review_threshold))
 
 
-def build_task(frozen, model_config, workflow_revision, *, task_id, retry_resume_id=None, prepare_only=False):
+def build_task(frozen, model_config, workflow_revision, *, task_id, retry_resume_id=None):
     snapshot = deepcopy(frozen["snapshot"])
     snapshot["workflow"]["revision"] = workflow_revision
     if retry_resume_id:
@@ -153,9 +156,9 @@ def build_task(frozen, model_config, workflow_revision, *, task_id, retry_resume
         a = v["artifact"]; a["expires_at"] = expiry
         value = f'{a["path"]}\n{a["checksum"]}\n{a["size_bytes"]}\n{expiry}'
         a["signature"] = hmac.new(settings.AGENT_KERNEL_DOCUMENT_SIGNING_KEY.encode(), value.encode(), hashlib.sha256).hexdigest()
-    model = KernelModelConfigV1(api_style=model_config.api_style, base_url=model_config.base_url,
+    model = ModelConfigV1(api_style=model_config.api_style, base_url=model_config.base_url,
         model_name=model_config.model_name, structured_output_mode=ai_config.get_structured_output_mode(api_style=model_config.api_style),
         timeout_seconds=ai_config.get_ai_runtime_config().timeout_seconds, retry_count=ai_config.get_ai_runtime_config().retry_count,
         insecure_skip_verify=settings.AGENT_KERNEL_MODEL_INSECURE_SKIP_VERIFY)
-    return TaskEnvelopeV1(prepare_only=prepare_only, task_id=task_id, idempotency_key=_pin_id(dict(task_id=task_id, snapshot=snapshot, pin=frozen["pin"], prepare_only=prepare_only)),
+    return TaskEnvelopeV1( task_id=task_id, idempotency_key=_pin_id(dict(task_id=task_id, snapshot=snapshot, pin=frozen["pin"])),
                           trigger="processing_run", pin=frozen["pin"], snapshot=snapshot, model=model)

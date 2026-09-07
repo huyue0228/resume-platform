@@ -7,9 +7,9 @@ import logging
 from apps.pipeline import ai_config
 from apps.pipeline.regions import NORTH_PROVINCES, SOUTH_PROVINCES
 
-from . import concurrency, prompt_harness
+from . import concurrency, school_prompts
 from .schemas import SchoolProvinceOutput
-from .service import (
+from .model_connection import (
     _get_openai_client,
     _safe_model_error,
 )
@@ -33,20 +33,16 @@ def _prompt(
     school_names,
     *,
     prompt_version=None,
-    prompt_modules=None,
 ):
-    if prompt_modules is None:
-        _resolved_version, prompt_modules = prompt_harness.get_prompt_modules(
-            prompt_version
-        )
-    return prompt_harness.build_school_prompt(prompt_modules, school_names)
+    if prompt_version not in (None, school_prompts.SCHOOL_PROMPT_VERSION):
+        raise AIServiceError("school_prompt_unavailable", "院校补全指令版本已不可用，请重新提交")
+    return school_prompts.build_school_prompt(school_names)
 
 
 def call_school_province_model(
     school_names,
     *,
     prompt_version=None,
-    prompt_modules=None,
 ):
     """通过正式结构化调用路径返回模型原始 Pydantic 结果。"""
     names = list(dict.fromkeys(str(name or "").strip() for name in school_names))
@@ -56,7 +52,7 @@ def call_school_province_model(
     if len(names) > MAX_SCHOOLS_PER_REQUEST:
         raise ValueError(f"单次最多补全 {MAX_SCHOOLS_PER_REQUEST} 所院校")
 
-    model_config = ai_config.get_ai_model_config(prompt_version=prompt_version)
+    model_config = ai_config.get_ai_model_config()
     runtime_config = ai_config.get_ai_runtime_config()
     try:
         from openai import OpenAI
@@ -77,9 +73,8 @@ def call_school_province_model(
     system, user = _prompt(
         names,
         prompt_version=prompt_version,
-        prompt_modules=prompt_modules,
     )
-    system_with_protocol = prompt_harness.append_structured_output_protocol(
+    system_with_protocol = school_prompts.append_structured_output_protocol(
         system, SchoolProvinceOutput
     )
     return call_structured_model(
@@ -99,7 +94,6 @@ def infer_school_provinces(
     school_names,
     *,
     prompt_version=None,
-    prompt_modules=None,
 ):
     """返回 ``{院校名称: 标准省份简称}``，无把握或越界输出不会进入结果。"""
     names = list(dict.fromkeys(str(name or "").strip() for name in school_names))
@@ -107,7 +101,6 @@ def infer_school_provinces(
     output = call_school_province_model(
         names,
         prompt_version=prompt_version,
-        prompt_modules=prompt_modules,
     )
     requested_names = set(names)
     result = {}

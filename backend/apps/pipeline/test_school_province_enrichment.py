@@ -191,12 +191,12 @@ class SchoolProvinceTaskTests(TestCase):
 
         tasks.enrich_school_provinces_task.run(
             [school.id],
-            "resume-screening-v2",
+            "school-province/v1",
         )
 
         infer.assert_called_once_with(
             ["北京大学"],
-            prompt_version="resume-screening-v2",
+            prompt_version="school-province/v1",
         )
 
     @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
@@ -208,5 +208,5 @@ class SchoolProvinceTaskTests(TestCase):
         submit.assert_called_once_with(
             tasks._run_local_school_province_enrichment,
             [1, 2],
-            "kernel-instructions-v1",
+            "school-province/v1",
         )

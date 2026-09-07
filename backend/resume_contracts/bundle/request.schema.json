@@ -317,17 +317,19 @@
       "additionalProperties": false,
       "properties": {
         "instruction_version": {
-          "const": "resume-job-match-kernel/v1",
-          "default": "resume-job-match-kernel/v1",
+          "maxLength": 128,
+          "minLength": 1,
           "title": "Instruction Version",
           "type": "string"
         },
         "kernel_build": {
+          "maxLength": 128,
           "minLength": 1,
           "title": "Kernel Build",
           "type": "string"
         },
         "model_config_revision": {
+          "maxLength": 128,
           "minLength": 1,
           "title": "Model Config Revision",
           "type": "string"
@@ -338,8 +340,8 @@
           "type": "string"
         },
         "policy_version": {
-          "const": "django-policy-gate/v2",
-          "default": "django-policy-gate/v2",
+          "maxLength": 128,
+          "minLength": 1,
           "title": "Policy Version",
           "type": "string"
         },
@@ -356,8 +358,8 @@
           "type": "string"
         },
         "toolset_version": {
-          "const": "resume-job-match-tools/v1",
-          "default": "resume-job-match-tools/v1",
+          "maxLength": 128,
+          "minLength": 1,
           "title": "Toolset Version",
           "type": "string"
         }
@@ -365,6 +367,9 @@
       "required": [
         "pin_id",
         "kernel_build",
+        "toolset_version",
+        "policy_version",
+        "instruction_version",
         "model_config_revision"
       ],
       "title": "TaskPinV1",

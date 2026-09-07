@@ -127,10 +127,6 @@ STRUCTURED_OUTPUT_MODES = {
 class AIModelConfig:
     api_style: str
     model_name: str
-    prompt_version: str
-    decision_version: str
-    profile_version: str
-    parser_version: str
     api_key: str
     base_url: str
 
@@ -345,10 +341,10 @@ def is_ai_available():
     return (settings.DEBUG and settings.AGENT_KERNEL_ALLOW_MOCK) or is_ai_connection_tested()
 
 
-def get_ai_model_config(*, prompt_version=None):
+def get_ai_model_config():
     if settings.DEBUG and settings.AGENT_KERNEL_ALLOW_MOCK:
         return AIModelConfig(api_style="chat_json",model_name="contract-mock",base_url="http://127.0.0.1:1",
-            api_key="",prompt_version="mock-only",decision_version="mock-only",profile_version="mock-only",parser_version="mock-only")
+            api_key="")
     api_style = _connection_value("api_style")
     model_name = _connection_value("model_name")
     base_url = _connection_value("base_url")
@@ -358,17 +354,9 @@ def get_ai_model_config(*, prompt_version=None):
         raise ValueError("AI 模型连接的 api_style 必须是 responses 或 chat_json")
     validate_ai_base_url(base_url)
     saved_api_key = _connection_value("api_key")
-    if prompt_version is None:
-        from apps.pipeline.ai import prompt_harness
-
-        prompt_version = prompt_harness.get_active_prompt_version()
     return AIModelConfig(
         api_style=api_style,
         model_name=model_name,
-        prompt_version=prompt_version,
-        decision_version="decision-v1",
-        profile_version="profile-v1",
-        parser_version="pypdf-ocr-v2",
         api_key=decrypt_api_key(saved_api_key) if saved_api_key else "",
         base_url=base_url,
     )
