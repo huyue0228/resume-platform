@@ -87,8 +87,7 @@ KERNEL_IMAGE="${AGENT_KERNEL_IMAGE:-}"
 FRONTEND_IMAGE="smart-resume-filter-frontend:${VERSION}"
 POSTGRES_IMAGE="smart-resume-filter-postgres:16"
 REDIS_IMAGE="smart-resume-filter-redis:7"
-BACKUP_IMAGE="smart-resume-filter-backup:${VERSION}"
-IMAGES=("$KERNEL_IMAGE" "$BACKEND_IMAGE" "$FRONTEND_IMAGE" "$POSTGRES_IMAGE" "$REDIS_IMAGE" "$BACKUP_IMAGE")
+IMAGES=("$KERNEL_IMAGE" "$BACKEND_IMAGE" "$FRONTEND_IMAGE" "$POSTGRES_IMAGE" "$REDIS_IMAGE")
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "缺少命令：$1"
@@ -205,15 +204,13 @@ DJANGO_ALLOWED_HOSTS=localhost
 POSTGRES_DB=srf
 POSTGRES_USER=srf_user
 POSTGRES_PASSWORD=build-only-not-for-deployment
-RESTIC_PASSWORD=build-only-not-for-deployment
-BACKUP_TARGET_PATH=/tmp/smart-resume-release-backups
 EOF
 
 cd "$REPO_ROOT"
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   log "构建业务平台镜像，复用独立发布的内核镜像"
   docker compose --env-file "$BUILD_ENV" config --images
-  docker compose --env-file "$BUILD_ENV" build db redis backend frontend backup-scheduler
+  docker compose --env-file "$BUILD_ENV" build db redis backend frontend
 else
   log "跳过构建，复用同版本镜像"
 fi
@@ -232,8 +229,6 @@ render_template "${ASSET_DIR}/docker-compose.yml" "${PACKAGE_DIR}/docker-compose
 render_template "${ASSET_DIR}/env.example" "${PACKAGE_DIR}/.env.example"
 render_template "${ASSET_DIR}/README-offline-deploy.md" "${PACKAGE_DIR}/README-offline-deploy.md"
 render_template "${ASSET_DIR}/AGENT-offline-deploy-guide.md" "${PACKAGE_DIR}/AGENT-offline-deploy-guide.md"
-mkdir -p "${PACKAGE_DIR}/ops/backup"
-cp "${REPO_ROOT}/ops/backup/drill.sh" "${PACKAGE_DIR}/ops/backup/drill.sh"
 cp -R "${REPO_ROOT}/skills/smart-resume-offline-deploy" \
   "${PACKAGE_DIR}/smart-resume-offline-deploy-skill"
 check_usage_metrics_contract \

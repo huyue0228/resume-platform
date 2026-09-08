@@ -233,9 +233,8 @@ def save_ai_connection_config(payload):
     invalidate_ai_connection_test()
 
 
-def _connection_fingerprint():
-    """生成当前完整连接的不可逆指纹，不在任何接口中返回。"""
-    config = get_ai_model_config()
+def model_config_fingerprint(config):
+    """为同一次读取的完整连接计算指纹；不得通过接口或日志输出。"""
     payload = {
         "api_style": config.api_style,
         "model_name": config.model_name,
@@ -245,6 +244,10 @@ def _connection_fingerprint():
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
     ).hexdigest()
+
+
+def _connection_fingerprint():
+    return model_config_fingerprint(get_ai_model_config())
 
 
 def invalidate_ai_connection_test():
@@ -341,25 +344,40 @@ def is_ai_available():
     return (settings.DEBUG and settings.AGENT_KERNEL_ALLOW_MOCK) or is_ai_connection_tested()
 
 
-def get_ai_model_config():
+def get_ai_model_config(*, require_tested=False):
     if settings.DEBUG and settings.AGENT_KERNEL_ALLOW_MOCK:
         return AIModelConfig(api_style="chat_json",model_name="contract-mock",base_url="http://127.0.0.1:1",
             api_key="")
-    api_style = _connection_value("api_style")
-    model_name = _connection_value("model_name")
-    base_url = _connection_value("base_url")
+    from apps.core import models as m
+
+    # 保存连接会在一个事务内更新多行；一次查询避免读到新旧连接的混合值。
+    stored = dict(m.Config.objects.filter(
+        key__in=[*AI_CONNECTION_CONFIG_KEYS.values(), AI_CONNECTION_TEST_FINGERPRINT_KEY]
+    ).values_list("key", "value"))
+
+    def value(name):
+        item = stored.get(AI_CONNECTION_CONFIG_KEYS[name])
+        return item.get("value") if isinstance(item, dict) else item
+
+    api_style = value("api_style")
+    model_name = value("model_name")
+    base_url = value("base_url")
     if not all(isinstance(value, str) and value.strip() for value in [api_style, model_name, base_url]):
         raise ValueError("AI 模型连接尚未完成配置，请由管理员在系统设置中保存")
     if api_style not in ["responses", "chat_json"]:
         raise ValueError("AI 模型连接的 api_style 必须是 responses 或 chat_json")
     validate_ai_base_url(base_url)
-    saved_api_key = _connection_value("api_key")
-    return AIModelConfig(
+    saved_api_key = value("api_key")
+    config = AIModelConfig(
         api_style=api_style,
         model_name=model_name,
         api_key=decrypt_api_key(saved_api_key) if saved_api_key else "",
         base_url=base_url,
     )
+    if require_tested and stored.get(AI_CONNECTION_TEST_FINGERPRINT_KEY) != model_config_fingerprint(config):
+        from apps.pipeline.errors import AIServiceError
+        raise AIServiceError("ai_not_configured", "当前模型连接尚未测试通过，请在模型连接页面完成测试后重试")
+    return config
 
 
 def validate_ai_base_url(value):

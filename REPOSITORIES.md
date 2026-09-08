@@ -32,7 +32,7 @@ python manage.py runserver 127.0.0.1:8001 --settings=config.settings_mock
 - Kernel：`make check build`、`make package KERNEL_VERSION=<version>`、`make image`；无需 Django 或其他仓源码。
 - 协议：`make check package RELEASE_VERSION=v1.1.0`；先安装 build/setuptools/wheel。
 - 平台镜像：`make images APP_VERSION=v2.0.0 IMAGE_PREFIX=gitlab.internal:5000/resume/platform`。默认只构建到本机；发布需显式加 `PUSH=--push`。
-- 平台模板：`make package APP_VERSION=v2.0.0`；消费 `release/v2.0.0/images/` 中五个镜像记录，输出带双层校验的 `dist/resume-platform-v2.0.0.tar.gz`。该包不包含镜像，不是完整离线包。
+- 平台模板：`make package APP_VERSION=v2.0.0`；消费 `release/v2.0.0/images/` 中四个镜像记录，输出带双层校验的 `dist/resume-platform-v2.0.0.tar.gz`。该包不包含镜像，不是完整离线包。
 - 完整离线发布继续使用既有 Skill：预先加载独立 Kernel 镜像，不构建兄弟仓源码。
 
 三个仓均有薄的 GitLab 检查入口，镜像可用 CI Variables 指向公司镜像源。发布逻辑位于各仓 Makefile/tools；
@@ -58,6 +58,6 @@ GitLab/GitHub 只负责调度、凭据和制品上传。暂不假定公司 GitLa
 - 协议仓由双方评审；外包使用合成 Mock 即可开发，不需要 Kernel 源码、真实简历或模型密钥。
 - 普通迭代只改所属仓；公共接口变更先更新协议，再在两个消费者通过合并请求同步固定快照。
 - 每仓独立版本与制品；已发布版本不可覆盖。部署明确记录平台版本、Kernel digest/build 和协议版本组合。
-- 变更先在验收环境验证，再安排生产窗口；停止接单、排空任务、备份数据库和媒体。保留 Compose project name 与数据卷，代码回退不代表数据库回退。
+- 变更先在验收环境验证，再安排生产窗口；停止接单、排空任务。保留 Compose project name 与数据卷，代码回退不代表数据库回退。
 - 模型连接测试、院校省份补全仍是平台功能；它们不是旧简历 AI 基线。
 - 不向外包交付本地 backups、旧 Git 历史、数据库、media 或生产配置。原公开仓历史不在本次清理范围内。

@@ -1,8 +1,0 @@
-**
-!docker/
-!docker/backup/
-!docker/backup/Dockerfile
-!ops/
-!ops/backup/
-!ops/backup/container/
-!ops/backup/container/*.sh

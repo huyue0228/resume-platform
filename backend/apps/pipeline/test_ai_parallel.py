@@ -94,6 +94,7 @@ class AIParallelPipelineTests(KernelTestCase):
             }
         )
         self.department = m.Department.objects.create(name="并发技术部", level=2)
+        ai_config.mark_ai_connection_tested()
         self.job = m.Job.objects.create(
             department=self.department,
             public_name="后端工程师",

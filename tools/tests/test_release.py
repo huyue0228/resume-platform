@@ -31,6 +31,13 @@ class ReleaseTests(unittest.TestCase):
             self.assertNotIn(b"build:", content["compose.yml"])
             self.assertNotIn(b"AGENT_KERNEL_MODE:", content["compose.yml"])
             self.assertIn(b"AGENT_KERNEL_ROLLOUT=review_only", content["env.example"])
+            self.assertIn(b"AGENT_KERNEL_CA_BUNDLE=\n", content["env.example"])
+            self.assertIn(b"SSL_CERT_FILE: /etc/agent-kernel/model-ca.pem", content["compose.model-ca.yml"])
+            self.assertIn(b"create_host_path: false", content["compose.model-ca.yml"])
+            self.assertEqual(set(release.COMPONENTS), {"backend", "frontend", "postgres", "redis"})
+            for name in ("images.env", "compose.yml", "env.example"):
+                for removed in (b"BACKUP_", b"RESTIC_", b"backup-scheduler", b"profiles: [\"restore\"]"):
+                    self.assertNotIn(removed, content[name])
             for line in content["SHA256SUMS"].decode().splitlines():
                 digest, name = line.split("  ", 1)
                 self.assertEqual(hashlib.sha256(content[name]).hexdigest(), digest)

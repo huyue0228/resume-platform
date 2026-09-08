@@ -55,7 +55,7 @@ class TaskResultV1(AnalysisResponseV1):
     deterministic: DeterministicResultV1
 
 
-def runtime_pin():
+def runtime_pin(*, model_config=None):
     from .client import AgentKernelClient
     from .gateway import validate_runtime
     validate_runtime()
@@ -63,7 +63,8 @@ def runtime_pin():
     payload = dict(kernel_build=caps.kernel_build, protocol_version=PROTOCOL,
                    toolset_version=caps.toolset_version, result_schema_version=RESULT,
                    policy_version=POLICY_VERSION, instruction_version=caps.instruction_version,
-                   model_config_revision=ai_config.current_ai_connection_fingerprint())
+                   model_config_revision=ai_config.model_config_fingerprint(
+                       model_config if model_config is not None else ai_config.get_ai_model_config()))
     return TaskPinV1(pin_id=_pin_id(payload), **payload)
 
 
@@ -160,5 +161,9 @@ def build_task(frozen, model_config, workflow_revision, *, task_id, retry_resume
         model_name=model_config.model_name, structured_output_mode=ai_config.get_structured_output_mode(api_style=model_config.api_style),
         timeout_seconds=ai_config.get_ai_runtime_config().timeout_seconds, retry_count=ai_config.get_ai_runtime_config().retry_count,
         insecure_skip_verify=settings.AGENT_KERNEL_MODEL_INSECURE_SKIP_VERIFY)
-    return TaskEnvelopeV1( task_id=task_id, idempotency_key=_pin_id(dict(task_id=task_id, snapshot=snapshot, pin=frozen["pin"])),
-                          trigger="processing_run", pin=frozen["pin"], snapshot=snapshot, model=model)
+    # 模型使用本次执行的当前连接；协议仍记录实际使用的配置，供结果关联和缓存区分。
+    pin = {key: value for key, value in frozen["pin"].items() if key != "pin_id"}
+    pin["model_config_revision"] = ai_config.model_config_fingerprint(model_config)
+    pin["pin_id"] = _pin_id(pin)
+    return TaskEnvelopeV1( task_id=task_id, idempotency_key=_pin_id(dict(task_id=task_id, snapshot=snapshot, pin=pin)),
+                          trigger="processing_run", pin=pin, snapshot=snapshot, model=model)

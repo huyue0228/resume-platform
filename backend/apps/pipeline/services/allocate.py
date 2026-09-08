@@ -49,11 +49,12 @@ AI_ATTENTION_REASON_CODES = {
     "ai_reference_invalidated": "ai_reference_invalidated",
     "agent_model_config_unavailable": "ai_connection_error",
     "agent_kernel_unavailable": "ai_connection_error",
-    "agent_budget_exhausted": "ai_invalid_output",
+    "agent_budget_exhausted": "agent_budget_exhausted",
+    "agent_incomplete": "agent_incomplete",
     "agent_evidence_invalid": "ai_invalid_output",
     "agent_invalid_output": "ai_invalid_output",
     "job_responsibility_missing": "job_responsibility_missing",
-    "task_execution_error": "ai_connection_error",
+    "task_execution_error": "agent_incomplete",
 }
 
 
@@ -87,10 +88,12 @@ def _scope_result(item, *, status, result_type, reason_code="", message=""):
 def _ai_failure_result(error_code):
     if error_code == "llm_timeout":
         return "failed", RESULT_FAILED, "llm_timeout"
+    if error_code == "agent_cancelled":
+        return "cancelled", RESULT_CANCELLED, "cancelled"
     return (
         "needs_attention",
         RESULT_NEEDS_ATTENTION,
-        AI_ATTENTION_REASON_CODES.get(error_code, "ai_connection_error"),
+        AI_ATTENTION_REASON_CODES.get(error_code, "agent_incomplete"),
     )
 
 
@@ -877,6 +880,7 @@ def _create_agent_failure_decision(
     error_message,
     profile=None,
     safe_trace=None,
+    kernel_manifest=None,
 ):
     return m.AgentDispatchDecision.objects.create(
         workflow=workflow,
@@ -898,6 +902,7 @@ def _create_agent_failure_decision(
         error_code=error_code,
         error_message=error_message,
         safe_trace=safe_trace or {},
+        kernel_result={"manifest": kernel_manifest, "safe_trace": safe_trace or {}} if kernel_manifest else {},
         **_ai_audit_versions(getattr(workflow, "_processing_run", None)),
     )
 
@@ -950,6 +955,7 @@ def _process_ai_recommendation(
             error_message=exc.message,
             profile=exc.profile,
             safe_trace=exc.safe_trace,
+            kernel_manifest=exc.kernel_manifest,
         )
         _archive(
             workflow,
@@ -1397,6 +1403,7 @@ def process_ai_scope_item(run_id, scope_item_id):
                     error_message=ai_error.message,
                     profile=ai_error.profile,
                     safe_trace=ai_error.safe_trace,
+                    kernel_manifest=ai_error.kernel_manifest,
                 )
                 error_message = decision.error_message
             else:

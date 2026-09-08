@@ -14,6 +14,19 @@ from .client import AgentKernelClient
 from .task_contracts import build_task, freeze_case, job_hash, pin_from_run, POLICY_VERSION
 
 
+KERNEL_FAILURES = {
+    "task_timeout": ("llm_timeout", "候选人分析超时，请重试或调整分析时限"),
+    "task_cancelled": ("agent_cancelled", "候选人分析已取消"),
+    "budget_exhausted": ("agent_budget_exhausted", "候选人分析已达到轮次、工具调用或 token 预算限制，请人工处理或调整预算后重试"),
+    "document_invalid": ("pdf_parse_failed", "简历文档读取或解析失败，请检查简历文件"),
+    "model_connection_error": ("ai_connection_error", "Kernel 连接模型服务失败，请检查网络、模型凭据及容器 CA 配置"),
+    "model_rate_limited": ("ai_rate_limited", "模型服务限流，请稍后重试"),
+    "model_output_invalid": ("agent_invalid_output", "模型返回的工具调用格式不合法，请重试或检查模型兼容性"),
+    "materials_incomplete": ("agent_incomplete", "简历材料或证据不足，模型未能完成分析，请人工处理或补充材料后重试"),
+    "analysis_failed": ("agent_incomplete", "候选人分析未完成，请人工处理或重试"),
+}
+
+
 def reusable_analysis(item, frozen, envelope):
     """仅容量/流程变化时复用已验证分析；内容、模型、画像上下文变化均失效。"""
     from .task_contracts import TaskResultV1
@@ -22,18 +35,18 @@ def reusable_analysis(item, frozen, envelope):
     d = frozen["preflight"]
     if d["status"] != "ready":
         return None
-    def content_key(case):
+    def content_key(case, actual_pin):
         snapshot = case["snapshot"]
         preflight = case.get("preflight", {})
         volunteer = next((v for v in snapshot["volunteers"] if v["ref"] == preflight.get("current_volunteer_ref")), {})
         refs = set(preflight.get("job_refs", []))
-        return (case["pin"], snapshot["candidate"]["highest_major"], snapshot["candidate"]["highest_education"],
+        return (actual_pin, snapshot["candidate"]["highest_major"], snapshot["candidate"]["highest_education"],
                 volunteer.get("ref"), volunteer.get("artifact", {}).get("checksum"),
                 sorted((j["ref"], j["content_hash"]) for j in snapshot["jobs"] if j["ref"] in refs), snapshot.get("taxonomy", []))
-    key = content_key(frozen)
+    key = content_key(frozen, envelope.pin.model_dump())
     prior = m.ProcessingRunScopeItem.objects.filter(candidate=item.candidate, kernel_result__manifest__terminal_state="DONE").exclude(pk=item.pk).order_by("-pk")[:20]
     for previous in prior:
-        if not previous.kernel_snapshot or content_key(previous.kernel_snapshot) != key:
+        if not previous.kernel_snapshot or content_key(previous.kernel_snapshot, previous.kernel_result.get("pin")) != key:
             continue
         # 工具目录已冻结，但外部知识正文尚无快照版本，不能假定内容仍未变化。
         if any(name.startswith("mcp.") for name in previous.kernel_result.get("manifest", {}).get("tool_versions", {})):
@@ -92,7 +105,9 @@ def validate_result(envelope, result, frozen, resume):
     if has_nul(result.model_dump()):
         reject("分析结果包含数据库不支持的 NUL 字符")
     if result.manifest.terminal_state != "DONE":
-        raise AIServiceError("agent_incomplete", "候选人分析未完成，请人工处理或重试", safe_trace=result.safe_trace.model_dump(mode="json"))
+        code, message = KERNEL_FAILURES.get(result.manifest.failure_code, KERNEL_FAILURES["analysis_failed"])
+        raise AIServiceError(code, message, safe_trace=result.safe_trace.model_dump(mode="json"),
+                             kernel_manifest=result.manifest.model_dump(mode="json"))
     d = result.deterministic
     if frozen["volunteer_ids"].get(d.current_volunteer_ref) != resume.pk:
         reject("Kernel 与控制面当前志愿不一致")
@@ -161,9 +176,11 @@ def evaluate(resume, job, *, processing_run_id=None, cancelled=None, **kwargs):
     frozen = item.kernel_snapshot if item else freeze_case(resume.candidate)
     if frozen["lane"] not in {"review_only", "enforced"}:
         raise AIServiceError("agent_snapshot_unavailable", "旧 AI 任务不再支持，请重新提交任务")
-    if frozen["pin"]["model_config_revision"] != ai_config.current_ai_connection_fingerprint():
-        raise AIServiceError("agent_model_config_unavailable", "冻结模型版本已不可用，请重新提交任务")
-    config = ai_config.get_ai_model_config()
+    # 排队期间允许管理员更换模型；一次读取已验证的当前连接并用于本次调用。
+    try:
+        config = ai_config.get_ai_model_config(require_tested=True)
+    except (RuntimeError, ValueError) as exc:
+        raise AIServiceError("ai_not_configured", str(exc)) from exc
     envelope = build_task(frozen, config, resume.candidate.workflow.revision,
                           task_id=f'{frozen["task_id"]}-{item.attempt_count}' if item else uuid.uuid4().hex,
                           retry_resume_id=(item.run.scope or {}).get("retry_resume_id") if item else resume.pk)
@@ -175,7 +192,10 @@ def evaluate(resume, job, *, processing_run_id=None, cancelled=None, **kwargs):
         validate_result(envelope, result, frozen, resume)
     except AIServiceError as exc:
         if item:
-            m.ProcessingRunScopeItem.objects.filter(pk=item.pk).update(kernel_result={"terminal_state": "FAILED", "code": exc.code, "safe_trace": exc.safe_trace})
+            failure = {"terminal_state": "FAILED", "code": exc.code, "safe_trace": exc.safe_trace}
+            if exc.kernel_manifest:
+                failure["manifest"] = exc.kernel_manifest
+            m.ProcessingRunScopeItem.objects.filter(pk=item.pk).update(kernel_result=failure)
         raise
     if item:
         m.ProcessingRunScopeItem.objects.filter(pk=item.pk).update(kernel_result=result.model_dump(mode="json"))

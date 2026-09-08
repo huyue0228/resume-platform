@@ -22,12 +22,10 @@ ENV_FILE="${ENV_FILE:-.env}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 IMAGE_TAR="${IMAGE_TAR:-smart-resume-filter-images-amd64.tar}"
 DEPLOY_MODE="${DEPLOY_MODE:-auto}"
-PERSISTENT_SECRET_KEYS=(DJANGO_SECRET_KEY POSTGRES_PASSWORD RESTIC_PASSWORD)
+PERSISTENT_SECRET_KEYS=(DJANGO_SECRET_KEY POSTGRES_PASSWORD)
 GENERATED_SECRET_KEYS=("${PERSISTENT_SECRET_KEYS[@]}" USAGE_METRICS_TOKEN AGENT_KERNEL_TOKEN)
 
-compose() {
-  docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
-}
+source "$SKILL_DIR/scripts/compose.sh"
 
 choose() {
   local title="$1"
@@ -151,21 +149,6 @@ require_value() {
   fi
 }
 
-validate_backup_target() {
-  local path
-  require_value BACKUP_TARGET_PATH
-  path="$(env_value BACKUP_TARGET_PATH)"
-  [[ "$path" == /* && "$path" != "/" ]] || {
-    echo "BACKUP_TARGET_PATH 必须是异机挂载或外置磁盘上的绝对路径。"
-    exit 1
-  }
-  [[ -d "$path" && -w "$path" ]] || {
-    echo "备份目录不存在或不可写：${path}"
-    echo "请先把异机存储/外置磁盘挂载到该目录，或修改 ${ENV_FILE} 的 BACKUP_TARGET_PATH。"
-    exit 1
-  }
-}
-
 verify_checksums() {
   [[ -f SHA256SUMS ]] || return 0
   if command -v sha256sum >/dev/null; then
@@ -201,8 +184,9 @@ if [[ ! -f "$ENV_FILE" ]]; then
   cp .env.example "$ENV_FILE"
   chmod 600 "$ENV_FILE"
   initialize_secret_values
-  echo "已创建 ${ENV_FILE}。静态运行参数已预置，五项密钥已自动生成。"
-  echo "请确认 DJANGO_ALLOWED_HOSTS、生产域名 DNS/证书/HTTPS 反向代理，并确保 BACKUP_TARGET_PATH 对应的外置/异机存储已挂载。"
+  echo "已创建 ${ENV_FILE}。静态运行参数已预置，四项密钥已自动生成。"
+  echo "请确认 DJANGO_ALLOWED_HOSTS、生产域名 DNS/证书/HTTPS 反向代理。"
+  echo "模型路由器使用企业 CA 时，请配置 AGENT_KERNEL_CA_BUNDLE 为宿主机 CA PEM 文件路径；平台模型 TEST 通过不能证明 Kernel 的 TLS 校验通过。"
   echo "前端仅支持 W3 登录。请补齐 OAuth2 必填项并设置 W3_OAUTH2_ENABLED=True；下次执行会在 Docker 变更前校验且不显示密钥。"
   echo "OAuth2 必填键：CLIENT_ID、AUTHORIZE_URL、TOKEN_URL、USERINFO_URL、REDIRECT_URI、EMPLOYEE_NO_FIELD、EMAIL_FIELD、CLIENT_AUTH_METHOD、TIMEOUT_SECONDS、TRANSACTION_TTL_SECONDS（均使用 W3_OAUTH2_ 前缀）。"
   echo "CLIENT_AUTH_METHOD 为 client_secret_basic/client_secret_post 时还必须填写 W3_OAUTH2_CLIENT_SECRET；SCOPE 按 W3 要求填写。"
@@ -216,8 +200,6 @@ require_value USAGE_METRICS_TOKEN
 require_value AGENT_KERNEL_TOKEN
 require_value DJANGO_ALLOWED_HOSTS
 require_value POSTGRES_PASSWORD
-require_value RESTIC_PASSWORD
-validate_backup_target
 ENV_FILE="$ENV_FILE" bash "$SKILL_DIR/scripts/validate-w3-env.sh"
 
 case "$DEPLOY_MODE" in
@@ -259,8 +241,9 @@ if [[ "$DEPLOY_MODE" == "source" ]]; then
   fi
 fi
 
-for service in agent-kernel db redis backend worker ai-worker frontend backup-scheduler; do
-  if ! compose config --services | grep -Fxq "$service"; then
+configured_services="$(compose config --services)"
+for service in agent-kernel db redis backend worker ai-worker frontend; do
+  if ! grep -Fxq "$service" <<< "$configured_services"; then
     echo "Compose 缺少必需服务：${service}。Agent 处理需要 Kernel、default worker 和 ai-worker 同时运行。"
     exit 1
   fi
@@ -271,7 +254,13 @@ echo "- 部署模式：${DEPLOY_MODE}"
 [[ "$DEPLOY_MODE" == "offline" ]] && echo "- 导入镜像：${IMAGE_TAR}"
 [[ "$DEPLOY_MODE" == "source" ]] && echo "- 从当前源码构建项目镜像"
 echo "- 使用环境文件：${ENV_FILE}（不会显示其中的密钥）"
-echo "- 镜像、端口、并发、OCR、数据库标识、备份周期和保留策略已使用预设值"
+echo "- 镜像、端口、并发、OCR、数据库标识已使用预设值"
+if [[ -n "$(model_ca_bundle)" ]]; then
+  echo "- Agent Kernel：已启用企业 CA 只读挂载，文件必须可被容器内 agent 用户读取"
+else
+  echo "- Agent Kernel：使用镜像的系统 CA；企业模型路由器需要额外配置 AGENT_KERNEL_CA_BUNDLE"
+fi
+echo "- 模型 TEST 当前跳过 TLS 校验；部署后须完成一次真实 Agent 分析才能确认模型链路可用"
 if env_is_true W3_OAUTH2_ENABLED; then
   echo "- W3 OAuth2：登录必填配置和精确回调地址已校验；请确认 W3 平台登记值一致"
 else
@@ -312,7 +301,8 @@ if [[ "$HAS_EXISTING_DEPLOYMENT" == "false" ]]; then
 else
   echo "已有环境升级：跳过 init，保留现有基础数据和管理员配置。"
 fi
-compose up -d --wait --wait-timeout 180
+# 清理同项目中已从 Compose 移除的服务容器，保留数据卷。
+compose up -d --remove-orphans --wait --wait-timeout 180
 bash "$SKILL_DIR/scripts/verify.sh"
 
 FRONTEND_BIND="$(env_value FRONTEND_BIND)"

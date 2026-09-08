@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { ConfigProvider } from 'antd'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import ResumesPage from './ResumesPage'
@@ -7,6 +8,7 @@ import {
   exportAllocations,
   exportCandidates,
   fetchCandidates,
+  fetchAgentDecisions,
   fetchCandidateExportFields,
   fetchCandidateFilterOptions,
   bulkDispatchCandidates,
@@ -223,6 +225,12 @@ vi.mock('../components/SmartDataTable', () => ({
                 {columns.find((column) => column.dataIndex === 'entity')?.render?.(record.entity, record)}
               </span>
             )}
+            {tableId === 'candidate-ai-decisions' && (
+              <span data-testid={`confidence-${record.id}`}>
+                {columns.find((column) => column.dataIndex === 'confidence_score')
+                  ?.render?.(<span>预渲染节点</span>, record)}
+              </span>
+            )}
           </div>
         ))}
       </section>
@@ -294,6 +302,8 @@ describe('ResumesPage detail', () => {
     roleState.isSecondaryContact = false
     runProcess.mockReset()
     runProcess.mockResolvedValue({ success: true })
+    fetchAgentDecisions.mockReset()
+    fetchAgentDecisions.mockResolvedValue({ data: { results: [] } })
     fetchCandidateExportFields.mockReset()
     fetchCandidateExportFields.mockResolvedValue({ data: exportCatalog })
     exportCandidates.mockReset()
@@ -354,6 +364,24 @@ describe('ResumesPage detail', () => {
     transferAllocation.mockResolvedValue({ data: {} })
     fetchCandidates.mockReset()
     fetchCandidates.mockResolvedValue({ data: { count: 0, results: [] } })
+  })
+
+  it('renders raw confidence and hides failed or invalid values despite ProTable formatting', async () => {
+    fetchAgentDecisions.mockResolvedValue({ data: { results: [
+      { id: 1, confidence_score: null, error_code: 'agent_incomplete' },
+      { id: 2, confidence_score: 0.87 },
+      { id: 3, confidence_score: 0 },
+      { id: 4, confidence_score: NaN },
+      { id: 5, confidence_score: Infinity },
+      { id: 6, confidence_score: 0.9, error_code: 'agent_incomplete' },
+    ] } })
+    render(<MemoryRouter><ResumesPage /></MemoryRouter>)
+    await userEvent.click(screen.getByRole('button', { name: '打开候选人' }))
+    expect((await screen.findByTestId('confidence-1')).textContent).toBe('-')
+    expect(screen.getByTestId('confidence-2').textContent).toBe('87%')
+    expect(screen.getByTestId('confidence-3').textContent).toBe('0%')
+    for (const id of [4, 5, 6]) expect(screen.getByTestId(`confidence-${id}`).textContent).toBe('-')
+    expect(screen.queryByText('NaN%')).toBeNull()
   })
 
   it('removes detail filters and switches preview by volunteer row', async () => {
@@ -658,8 +686,6 @@ describe('ResumesPage detail', () => {
     await userEvent.click(screen.getByRole('button', { name: /处理简历/ }))
 
     const currentSelected = screen.getByRole('checkbox', { name: '当前选中（2）' })
-    expect(currentSelected.checked).toBe(false)
-    await userEvent.click(currentSelected)
     expect(currentSelected.checked).toBe(true)
 
     const rawStatus = screen.getByRole('checkbox', { name: '待处理' })
@@ -687,6 +713,47 @@ describe('ResumesPage detail', () => {
       },
     ))
     expect(screen.getByTestId('selected-count').textContent).toBe('0')
+  })
+
+  it('starts processing the table selection without requiring a second selection in the modal', async () => {
+    roleState.permissions = new Set(['pipeline.run', 'resume.import'])
+    render(<ConfigProvider theme={{ token: { motion: false } }}><MemoryRouter><ResumesPage /></MemoryRouter></ConfigProvider>)
+
+    expect(screen.getByTestId('table-candidates').dataset.selectable).toBe('true')
+    await userEvent.click(screen.getByRole('button', { name: '选择两名候选人' }))
+    await userEvent.click(screen.getByRole('button', { name: /处理简历/ }))
+
+    expect(screen.getByRole('checkbox', { name: '当前选中（2）' }).checked).toBe(true)
+    const startButton = screen.getByRole('button', { name: '开始处理' })
+    expect(startButton.disabled).toBe(false)
+    await userEvent.click(startButton)
+
+    await waitFor(() => expect(runProcess).toHaveBeenCalledOnce())
+    expect(runProcess.mock.calls[0][2]).toEqual({
+      scope: { candidate_ids: [1, 2], force_reprocess: true },
+    })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('allows users with processing permission to select candidates', () => {
+    roleState.permissions = new Set(['pipeline.run'])
+    render(<MemoryRouter><ResumesPage /></MemoryRouter>)
+    expect(screen.getByTestId('table-candidates').dataset.selectable).toBe('true')
+  })
+
+  it('keeps the selection and displays submission failures inside the processing modal', async () => {
+    roleState.permissions = new Set(['pipeline.run', 'resume.import'])
+    runProcess.mockResolvedValue({ success: false, error: 'Agent Kernel 或模型连接尚未就绪' })
+    render(<ConfigProvider theme={{ token: { motion: false } }}><MemoryRouter><ResumesPage /></MemoryRouter></ConfigProvider>)
+
+    await userEvent.click(screen.getByRole('button', { name: '选择两名候选人' }))
+    await userEvent.click(screen.getByRole('button', { name: /处理简历/ }))
+    await userEvent.click(screen.getByRole('button', { name: '开始处理' }))
+
+    expect(await screen.findByText('Agent Kernel 或模型连接尚未就绪')).toBeTruthy()
+    expect(screen.getByTestId('selected-count').textContent).toBe('2')
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /开始处理/ }).disabled).toBe(false)
   })
 
   it('submits status processing with the current table and task filters', async () => {

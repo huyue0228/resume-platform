@@ -4,7 +4,7 @@
 
 `docs/` 保留既有产品设计材料，供追溯历史决策；当前工程边界和运行约定以源码、迁移与 `AGENTS.md` 为准，不自动同步四份设计文档。
 
-当前实现已包含：候选人聚合简历库、批量删除、招聘分析看板、精确处理结果/原因筛选、可拖拽列宽、PDF 预览和筛选导出、W3 OAuth2 登录与项目 Token 会话、RBAC、加密增量备份与隔离恢复演练，以及真实 PDF/OCR 解析、Agent Kernel 只读工具循环、版本钉死、证据复核、后台智能路由审计和 HR 处置闭环。
+当前实现已包含：候选人聚合简历库、批量删除、招聘分析看板、精确处理结果/原因筛选、可拖拽列宽、PDF 预览和筛选导出、W3 OAuth2 登录与项目 Token 会话、RBAC，以及真实 PDF/OCR 解析、Agent Kernel 只读工具循环、版本钉死、证据复核、后台智能路由审计和 HR 处置闭环。
 
 > 上生产前仍需完成真实数据隐私评审、模型评测、容量压测和外部系统联调；本轮不包含 worker heartbeat 超时恢复、Prometheus/集中日志/告警、3 万条压测、CI 或浏览器 E2E。
 
@@ -116,24 +116,26 @@ git checkout --detach <交付说明中的发布标签或 commit>
 
 ### 3. 创建服务器 `.env`
 
-推荐直接使用项目部署脚本。首次运行会创建权限为 `600` 的 `.env`，自动生成五项独立随机密钥，然后退出等待确认目标服务器信息：
+推荐直接使用项目部署脚本。首次运行会创建权限为 `600` 的 `.env`，自动生成四项独立随机密钥，然后退出等待确认目标服务器信息：
 
 ```bash
 bash skills/smart-resume-offline-deploy/scripts/deploy.sh
 ```
 
-镜像版本、端口、Gunicorn/worker/OCR 参数、数据库名与用户、备份周期及保留策略均已预先写入模板。现场只需确认：
+镜像版本、端口、Gunicorn/worker/OCR 参数、数据库名与用户均已预先写入模板。现场只需确认：
 
 - `DJANGO_ALLOWED_HOSTS`：生产环境填写反向代理对外域名，多个值用英文逗号分隔。
-- `BACKUP_TARGET_PATH`：默认约定为 `/mnt/smart-resume-filter-backups`。先把异机共享目录或外置磁盘挂载到这里；现场挂载点不同才修改该值。脚本会拒绝不存在、不可写或非绝对路径。
+- `AGENT_KERNEL_CA_BUNDLE`：模型路由器使用企业 CA 时，填写现场 CA PEM 文件的宿主机绝对路径；部署脚本自动只读挂载到 `agent-kernel` 并设置 `SSL_CERT_FILE`。
 
-确认后再次运行同一命令即可部署。`DJANGO_SECRET_KEY`、`POSTGRES_PASSWORD`、`RESTIC_PASSWORD`、`USAGE_METRICS_TOKEN` 和 `AGENT_KERNEL_TOKEN` 由脚本从 `/dev/urandom` 自动生成且不回显。检测到旧容器或旧数据卷时，脚本绝不替换已有安全值；缺少新增的监控或 Kernel 密钥时只补齐缺失项。升级或灾后重建仍必须恢复原 `.env`，否则数据库可能无法连接，既有 AI 连接密文也可能无法解密。
+确认后再次运行同一命令即可部署。`DJANGO_SECRET_KEY`、`POSTGRES_PASSWORD`、`USAGE_METRICS_TOKEN` 和 `AGENT_KERNEL_TOKEN` 由脚本从 `/dev/urandom` 自动生成且不回显。检测到旧容器或旧数据卷时，脚本绝不替换已有安全值；缺少新增的监控或 Kernel 密钥时只补齐缺失项。升级时必须保留原 `.env`，否则数据库可能无法连接，既有 AI 连接密文也可能无法解密。
 
 系统生产只提供 W3 登录，因此 W3 OAuth2 是可用部署的必要条件。模板中的 `W3_OAUTH2_ENABLED=False` 只是首次生成 `.env` 的安全占位；正式部署前必须改为 `True`，填写 client id、授权/Token/UserInfo HTTPS 地址、工号和邮箱字段路径、客户端认证方式、超时、事务有效期，并把 `W3_OAUTH2_REDIRECT_URI` 设置为 W3 平台登记的精确地址，例如 `https://你的域名/api/auth/w3/callback/`。当前 W3 UserInfo 的工号和邮箱字段分别为顶层 `employeeNumber`、`email`，模板已预填；`tenantId`、`uuid`、`globalUserID` 不参与账号匹配。机密客户端还必须填写 client secret，scope 按 W3 要求填写。部署脚本会在任何 Docker 变更前强制 `DJANGO_DEBUG=False` 并校验 W3，DEBUG 开启、W3 关闭或配置不完整都会停止且不显示密钥。系统不提供本地密码登录，模板也不包含本地登录开关。
 
 源码部署到 ARM 服务器时才需要把 `DOCKER_PLATFORM` 改为 `linux/arm64`；离线发布包已经固定为 `linux/amd64`，`APP_VERSION` 也由发布脚本写入，不在部署现场决定。
 
 启用 Agent 处理前，使用管理员账号进入「系统设置 → AI 模型连接」完成连接配置并执行测试。页面配置 Base URL、可选访问令牌和 API 风格，并通过 OpenAI-compatible `GET /models` 获取模型 ID（也可直接输入），不配置服务商/Profile。模型连接只从系统设置中的数据库配置读取。API Key 非空时仅加密保存且不会回显；无鉴权内网服务可留空。模型或 Kernel 未就绪时，导入仍会成功并保留为待处理，不会回退到另一套隐式分配模式。
+
+**模型 TEST 成功不等于 Agent 模型链路可用。** 当前平台 TEST 使用 `verify=False`，而 Agent Kernel 默认校验 TLS；宿主机或 backend 拥有 CA，不代表 Kernel 容器也拥有。企业 CA 的挂载、权限、更新重建及真实 Agent 分析验收步骤见 [部署 Skill](skills/smart-resume-offline-deploy/SKILL.md)。
 
 `RUN_SEED_BASE` 默认保持 `0`。不要在长期运行环境里把它改成 `1`，否则每次 backend 重启都可能把配置页中的参数重置为种子默认值。首次初始化请使用下一节的一次性 `init` 命令。
 
@@ -147,7 +149,7 @@ docker compose --profile init run --rm init
 docker compose up -d
 ```
 
-首次执行 `docker compose build` 会下载基础镜像、安装依赖并生成 Agent Kernel、后端、前端、PostgreSQL、Redis、backup 六个项目镜像，时间会比较久。查看启动状态：
+首次执行 `docker compose build` 会下载基础镜像、安装依赖并生成后端、前端、PostgreSQL、Redis 四个平台镜像；Agent Kernel 使用独立发布的镜像，时间会比较久。查看启动状态：
 
 ```bash
 docker compose ps
@@ -259,7 +261,7 @@ git fetch origin
 git checkout main
 git pull --ff-only origin main
 docker compose build
-docker compose up -d
+docker compose up -d --remove-orphans
 docker compose ps
 ```
 
@@ -281,66 +283,6 @@ docker compose logs --tail=100 backend
 docker compose logs --tail=100 worker
 docker compose logs --tail=100 ai-worker
 ```
-
-### 9. 数据备份与恢复
-
-备份工具以独立镜像运行，内含 PostgreSQL client、restic 和校验脚本，不要求宿主机额外安装这些工具。`backup-scheduler` 启动后立即备份一次，之后默认每小时执行；每个加密快照同时包含：
-
-- PostgreSQL custom-format dump。
-- `media_data` 内的简历和上传文件。
-- 应用版本、数据库版本、备份时间、文件数量、大小和 SHA-256 清单。
-- `BACKUP_TARGET_PATH/status/` 下的最近尝试（含失败原因）、最近成功和 Prometheus 文本格式状态文件（本轮不部署 Prometheus/告警服务）。
-
-生产环境的 `RESTIC_PASSWORD` 由首次部署脚本自动生成，并把 `BACKUP_TARGET_PATH` 指向已挂载的异机或外置存储。仓库默认保留 48 个小时版本、30 个每日版本和 12 个每月版本。手工执行一次备份：
-
-```bash
-docker compose --profile backup run --rm backup
-```
-
-校验 restic 仓库、最新快照、数据库 dump 格式及 checksum：
-
-```bash
-docker compose --profile backup run --rm backup-verify
-```
-
-#### 隔离恢复演练（推荐）
-
-演练命令使用独立 Compose project、独立 PostgreSQL/media 卷和同一加密备份仓库，不覆盖生产数据：
-
-```bash
-bash ops/backup/drill.sh
-```
-
-演练依次恢复数据库和 media，运行迁移一致性、`manage.py check`、核心表/外键/简历文件检查，并启动恢复后的 backend 通过容器健康检查。报告写入 `BACKUP_TARGET_PATH/drill-reports/<UTC时间>.json`，包含开始/完成时间、快照、统计、状态和失败原因。建议每月执行一次隔离恢复演练，每季度另做一次整机恢复演练。
-
-#### 生产恢复（破坏性操作）
-
-恢复服务不会随正常启动自动运行。它默认恢复到 `srf_restore`，且任何恢复都要求 `CONFIRM_RESTORE=YES_I_UNDERSTAND`；目标库等于生产库时还必须设置 `ALLOW_PRODUCTION_OVERWRITE=YES`。恢复脚本发现目标库仍有活动连接时会拒绝执行。
-
-确认维护窗口和可用备份后，停止应用写入，再显式执行：
-
-```bash
-docker compose stop frontend backend worker ai-worker backup-scheduler
-CONFIRM_RESTORE=YES_I_UNDERSTAND \
-ALLOW_PRODUCTION_OVERWRITE=YES \
-RESTORE_DATABASE=srf \
-docker compose --profile restore run --rm restore
-docker compose run --rm -e RUN_MIGRATIONS=0 backend python manage.py migrate --check --plan
-docker compose run --rm -e RUN_MIGRATIONS=0 backend python manage.py check
-docker compose run --rm -e RUN_MIGRATIONS=0 backend python manage.py verify_restored_data
-docker compose up -d
-```
-
-把示例中的 `srf` 换成 `.env` 的真实 `POSTGRES_DB`。固定恢复顺序为数据库 → media → 完整性检查 → 应用启动 → 登录、列表、预览和分配流程冒烟。不得跳过确认变量或在应用仍写入时强制恢复。
-
-#### 四类灾难处置
-
-- **数据库损坏**：停止应用写入，保留现场卷，校验最新快照后按生产恢复流程同时恢复数据库和对应 media 版本。
-- **media 丢失**：先手工备份当前数据库；可恢复到隔离项目核对快照与数据库一致后，再在维护窗口恢复整套快照，避免数据库记录与文件版本错配。
-- **Docker 卷丢失**：重新创建空环境，用相同应用版本和 `DJANGO_SECRET_KEY` 恢复数据库、media，再执行完整性和业务冒烟。
-- **整机丢失**：在新主机安装 Docker，取回离线发布包、异机 restic 仓库及独立保管的密钥，配置 `.env` 后执行隔离演练，再切换为正式服务。
-
-`DJANGO_SECRET_KEY`、数据库密码和 restic 密码不会进入备份包，必须由独立密钥保管流程保存。缺少原 `DJANGO_SECRET_KEY` 时，数据库和简历仍可恢复，但既有 AI 连接密文无法保证解密，不能声称 AI 连接配置已完整恢复。本方案仍是单机 Compose + 异机/外置备份，不提供 PostgreSQL 或 Redis 高可用集群。
 
 ### 10. AI Agent 配置
 
@@ -377,7 +319,7 @@ docker compose logs --tail=200 agent-kernel
 上线前至少完成：
 
 - `.env` 不提交 Git，不复制到公开位置。
-- `.env` 权限为 `600`，且 `DJANGO_SECRET_KEY`、`POSTGRES_PASSWORD`、`RESTIC_PASSWORD`、`USAGE_METRICS_TOKEN`、`AGENT_KERNEL_TOKEN` 已由首次部署脚本分别生成强随机值。
+- `.env` 权限为 `600`，且 `DJANGO_SECRET_KEY`、`POSTGRES_PASSWORD`、`USAGE_METRICS_TOKEN`、`AGENT_KERNEL_TOKEN` 已由首次部署脚本分别生成强随机值。
 - `DJANGO_DEBUG=False`。
 - `DJANGO_ALLOWED_HOSTS` 只填写实际 IP/域名，避免长期使用 `*`。
 - PostgreSQL `5432` 和 Redis `6379` 不暴露到公网；如无外部访问需求，只允许内网或安全组限制。
@@ -412,7 +354,7 @@ docker compose down -v
 docker compose up -d
 ```
 
-真实数据环境不要执行 `down -v`。应先备份数据库，再在 PostgreSQL 内修改用户密码。
+真实数据环境不要执行 `down -v`。应在 PostgreSQL 内修改用户密码，并同步更新 `.env`。
 
 镜像构建慢：
 

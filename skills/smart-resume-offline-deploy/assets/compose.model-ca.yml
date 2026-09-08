@@ -1,0 +1,12 @@
+# 企业模型路由器使用私有 CA 时叠加到主 Compose；CA 文件由部署现场提供。
+services:
+  agent-kernel:
+    environment:
+      SSL_CERT_FILE: /etc/agent-kernel/model-ca.pem
+    volumes:
+      - type: bind
+        source: ${AGENT_KERNEL_CA_BUNDLE:?Set AGENT_KERNEL_CA_BUNDLE to the host CA PEM file}
+        target: /etc/agent-kernel/model-ca.pem
+        read_only: true
+        bind:
+          create_host_path: false

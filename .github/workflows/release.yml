@@ -51,7 +51,6 @@ jobs:
           - component: frontend
           - component: postgres
           - component: redis
-          - component: backup
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       COMPONENT: ${{ matrix.component }}

@@ -20,9 +20,7 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 
 [[ -f "$ENV_FILE" ]] || { echo "缺少 ${ENV_FILE}，无法确认目标部署。"; exit 1; }
 
-compose() {
-  docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
-}
+source "$SKILL_DIR/scripts/compose.sh"
 
 choose() {
   local title="$1"

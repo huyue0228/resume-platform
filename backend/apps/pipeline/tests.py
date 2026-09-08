@@ -25,6 +25,7 @@ class AllocationDesignContractTests(KernelTestCase):
             }
         )
         self.department = m.Department.objects.create(name="技术部", level=2)
+        ai_config.mark_ai_connection_tested()
         self.candidate = m.Candidate.objects.create(
             identity_hash="candidate-1",
             name="张三",
@@ -1649,6 +1650,7 @@ class JobCapacityAllocationTests(KernelTestCase):
             }
         )
         self.department_a = m.Department.objects.create(name="研发一部", level=2)
+        ai_config.mark_ai_connection_tested()
         self.department_b = m.Department.objects.create(name="研发二部", level=2)
         self.job_a = m.Job.objects.create(
             entity="GW", department=self.department_a,

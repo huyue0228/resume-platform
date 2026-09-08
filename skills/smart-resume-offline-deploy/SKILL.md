@@ -38,13 +38,37 @@ bash skills/smart-resume-offline-deploy/scripts/deploy.sh
 
 若 Skill 随离线包存放在包根目录下一层，则将上面的 `skills/smart-resume-offline-deploy` 改为实际 Skill 目录名。
 
-3. 镜像、端口、worker/OCR、数据库名/用户、备份周期和保留策略已经写入模板。脚本首次运行会创建权限为 `600` 的 `.env`，并自动生成互不复用的 `DJANGO_SECRET_KEY`、`POSTGRES_PASSWORD`、`RESTIC_PASSWORD`、`USAGE_METRICS_TOKEN` 和 `AGENT_KERNEL_TOKEN`，密钥不回显。部署人员需把实际域名写入 `DJANGO_ALLOWED_HOSTS`，按下一节完成 DNS、证书和 HTTPS 反向代理，确认异机/外置存储已经挂载到预设的 `/mnt/smart-resume-filter-backups`，并补齐 W3 OAuth2 配置；挂载点不同时只修改 `BACKUP_TARGET_PATH`。
+3. 镜像、端口、worker/OCR、数据库名/用户已经写入模板。脚本首次运行会创建权限为 `600` 的 `.env`，并自动生成互不复用的 `DJANGO_SECRET_KEY`、`POSTGRES_PASSWORD`、`USAGE_METRICS_TOKEN` 和 `AGENT_KERNEL_TOKEN`，密钥不回显。部署人员需把实际域名写入 `DJANGO_ALLOWED_HOSTS`，按下一节完成 DNS、证书和 HTTPS 反向代理，并补齐 W3 OAuth2 配置。
 4. `DEPLOY_MODE=auto`（默认）在存在 `smart-resume-filter-images-amd64.tar` 时选择离线模式，否则从当前源码构建。可显式指定 `DEPLOY_MODE=offline` 或 `DEPLOY_MODE=source`。
-5. 离线模式要求交付包内的 `docker-compose.yml` 只使用 `image:`，不得保留 `build:`；源码模式使用当前项目的 Compose 构建 Agent Kernel、后端、前端、PostgreSQL、Redis 和备份工具镜像。
+5. 离线模式要求交付包内的 `docker-compose.yml` 只使用 `image:`，不得保留 `build:`；源码模式使用当前项目的 Compose 构建后端、前端、PostgreSQL、Redis 镜像，并使用独立发布的 Agent Kernel 镜像。
 6. 首次部署才会执行 `init` 写入基础权限、账号和预置数据。检测到已有部署时，脚本只更新镜像并启动服务，迁移由 backend 自动完成，不会重置管理员在系统设置中维护的配置。
 7. 部署不决定 AI 功能是否启用、模型连接或 API Key。服务启动后，由拥有权限的管理员在「系统设置 → AI 模型连接」配置并测试；不要在部署对话、脚本参数或日志中提供 API Key。
 8. 生产只提供 W3 登录，因此 W3 OAuth2 是可用部署的必要条件。模板中的 `W3_OAUTH2_ENABLED=False` 只是首次生成 `.env` 时的安全占位；正式部署前必须通过安全渠道补齐配置并改为 `True`，同时保持 `DJANGO_DEBUG=False`。部署脚本会在任何 Docker 变更前执行校验，DEBUG 开启、W3 关闭、缺少必填项、端点非 HTTPS、客户端认证方式无效或回调路径不精确均立即停止。本地密码 API 与 Django Admin 路由均已删除；DEBUG 开发令牌不是生产应急入口。
 9. Grafana JSON 数据源使用 `GET /api/analytics/usage/overview/`，以 `.env` 中的 `USAGE_METRICS_TOKEN` 作为 `X-Usage-Metrics-Key` 请求头。密钥只通过安全配置注入，不写入面板 JSON、仓库、工单、对话或命令历史。
+
+### 模型路由器的企业 CA（Agent 分析前必须核对）
+
+平台「模型 TEST」在 backend 中执行，当前 HTTPX 客户端设置了 `verify=False`；实际 Agent 分析由 `agent-kernel` 发起模型请求，默认执行 TLS 校验。因此 TEST 成功、Kernel `/healthz` 正常均不能证明模型路由器的证书被 Kernel 信任。宿主机或 backend 已安装 CA，也不会自动传入独立的 Kernel 容器。
+
+模型路由器使用企业/私有 CA 时，使用现场已有的受信任 CA PEM 文件，包含所需根 CA 和中间 CA 证书；不要放入私钥。将宿主机文件的绝对路径写入 `.env`：
+
+```dotenv
+AGENT_KERNEL_CA_BUNDLE=/etc/company-ca/model-router-ca.pem
+AGENT_KERNEL_MODEL_INSECURE_SKIP_VERIFY=False
+```
+
+CA 文件应可被容器内非 root 的 `agent` 用户读取，例如公开 CA 文件权限为 `644`。部署、验证和卸载脚本检测到该配置后，会自动叠加 `assets/compose.model-ca.yml`，把文件只读挂载到 `/etc/agent-kernel/model-ca.pem`，并设置 `SSL_CERT_FILE`。挂载禁止自动创建宿主机路径，避免缺失的证书被当成目录创建。使用公网受信任证书时，此项可以留空。交付包包含挂载模板，现场 CA 文件单独提供。
+
+直接使用 Docker Compose 运维时，每次都必须带上同一份 CA 覆盖文件，否则可能重建为未挂载 CA 的容器。以下为源码目录命令；离线包中将 Skill 路径换成 `smart-resume-offline-deploy-skill`：
+
+```bash
+docker compose --project-name smart-resume-filter --env-file .env \
+  -f docker-compose.yml \
+  -f skills/smart-resume-offline-deploy/assets/compose.model-ca.yml \
+  up -d --force-recreate agent-kernel
+```
+
+沿用实际部署的 Compose project name。CA 内容更新后也要重建 Kernel 容器，确保进程重新加载信任库。`verify.sh` 会检查容器内 CA 文件可读且非空；这一步只验证挂载，不验证远端证书。管理员还须在系统设置完成模型 TEST，再从简历库提交一条真实 Agent 分析，确认模型调用和结果完成。若仍失败，核对路由器完整证书链、Base URL 域名与证书 SAN，以及服务器时间。
 
 ### 域名与 HTTPS 反向代理
 
@@ -123,7 +147,7 @@ server {
 
 模板已预填当前 UserInfo 映射 `W3_OAUTH2_EMPLOYEE_NO_FIELD=employeeNumber`、`W3_OAUTH2_EMAIL_FIELD=email`，并提供以下安全默认值，通常不修改：`W3_OAUTH2_FRONTEND_CALLBACK_URL=/login`、`W3_OAUTH2_USE_PKCE=True`。模板不含本地登录开关；`tenantId`、`uuid`、`globalUserID` 当前不参与账号匹配，也不落库。客户端密钥不得出现在对话、日志或截图中。
 
-检测到已有同项目容器或数据卷时，脚本不会替换已有安全密钥；`DJANGO_SECRET_KEY`、`POSTGRES_PASSWORD` 或 `RESTIC_PASSWORD` 缺失/仍为占位值时必须恢复原 `.env`。旧环境仅缺新增的 `USAGE_METRICS_TOKEN` 时，脚本会补齐该项且不修改其它密钥。
+检测到已有同项目容器或数据卷时，脚本不会替换已有安全密钥；`DJANGO_SECRET_KEY` 或 `POSTGRES_PASSWORD` 缺失/仍为占位值时必须恢复原 `.env`。旧环境仅缺新增的 `USAGE_METRICS_TOKEN` 时，脚本会补齐该项且不修改其它密钥。
 
 部署脚本会先显示部署前检查菜单；若检测到同项目已有容器，会说明升级会保留数据卷与配置并让操作者选择升级、仅查看状态或取消。
 
@@ -133,7 +157,7 @@ server {
 bash skills/smart-resume-offline-deploy/scripts/verify.sh
 ```
 
-成功条件：`db`、`redis`、`backend`、`worker`、`ai-worker`、`frontend`、`backup-scheduler` 均处于运行状态；`worker` 只消费 `default`，`ai-worker` 以 threads 池消费 `ai` 队列，备份调度默认每小时执行。backend 的 `manage.py check` 通过，frontend 的 `nginx -t` 通过。生产环境还必须从客户端网络访问 `https://生产域名/` 和 `https://生产域名/api/auth/w3/status/`，确认使用有效证书、HTTP 自动跳转 HTTPS、响应经过 frontend 且 W3 状态就绪；仅验证 `http://服务器IP:5173` 不视为生产验收完成。
+成功条件：`agent-kernel`、`db`、`redis`、`backend`、`worker`、`ai-worker`、`frontend` 均处于运行状态；`worker` 只消费 `default`，`ai-worker` 以 threads 池消费 `ai` 队列。backend 的 `manage.py check` 通过，frontend 的 `nginx -t` 通过。生产环境还必须从客户端网络访问 `https://生产域名/` 和 `https://生产域名/api/auth/w3/status/`，确认使用有效证书、HTTP 自动跳转 HTTPS、响应经过 frontend 且 W3 状态就绪；仅验证 `http://服务器IP:5173` 不视为生产验收完成。
 
 通过安全方式把监控密钥注入当前 shell 后，可做 Grafana 查询接口的最小验证：
 

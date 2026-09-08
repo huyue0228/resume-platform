@@ -1,5 +1,6 @@
 """候选人级 Kernel 的业务回归：冻结范围、完整排名和人工流程。"""
 from copy import deepcopy
+from dataclasses import replace
 from unittest.mock import patch
 
 from apps.pipeline.test_support import KernelTestCase
@@ -17,6 +18,7 @@ from apps.pipeline.services import allocate
 class CandidateKernelTests(KernelTestCase):
     def setUp(self):
         ai_config.save_ai_connection_config(dict(api_style="responses", model_name="test", base_url="https://model.internal/v1", api_key="test-key"))
+        ai_config.mark_ai_connection_tested()
         self.department = m.Department.objects.create(name="开发部", level=2)
         self.candidate = m.Candidate.objects.create(identity_hash="test-person", name="测试", phone="13800000000", household_province="北京")
         self.resume = m.Resume.objects.create(candidate=self.candidate, apply_id="A1", entity="GW", position_name="软件", volunteer_rank=1)
@@ -70,6 +72,61 @@ class CandidateKernelTests(KernelTestCase):
         result = self.response(envelope); result.task_id = "other"
         with self.assertRaises(AIServiceError):
             matching.validate_result(envelope, result, frozen, self.resume)
+
+    def test_failed_manifest_maps_to_specific_safe_error(self):
+        frozen = freeze_case(self.candidate)
+        envelope = build_task(frozen, ai_config.get_ai_model_config(), self.workflow.revision, task_id="failure-codes")
+        for failure, expected in [
+            ("budget_exhausted", "agent_budget_exhausted"),
+            ("task_timeout", "llm_timeout"),
+            ("task_cancelled", "agent_cancelled"),
+            ("document_invalid", "pdf_parse_failed"),
+            ("model_connection_error", "ai_connection_error"),
+            ("model_rate_limited", "ai_rate_limited"),
+            ("model_output_invalid", "agent_invalid_output"),
+            ("materials_incomplete", "agent_incomplete"),
+            ("analysis_failed", "agent_incomplete"),
+            ("", "agent_incomplete"),
+            ("unknown-private-detail", "agent_incomplete"),
+        ]:
+            with self.subTest(failure=failure):
+                result = self.response(envelope)
+                result.manifest.terminal_state = "FAILED"
+                result.manifest.failure_code = failure
+                result.manifest.warnings = ["private upstream warning"]
+                with self.assertRaises(AIServiceError) as error:
+                    matching.validate_result(envelope, result, frozen, self.resume)
+                self.assertEqual(error.exception.code, expected)
+                self.assertEqual(error.exception.kernel_manifest["failure_code"], failure)
+                self.assertEqual(error.exception.safe_trace["turns"], 3)
+                self.assertNotIn("private", error.exception.message)
+
+    def test_failed_analysis_preserves_manifest_without_partial_business_writes(self):
+        for failure, reason in [("budget_exhausted", "agent_budget_exhausted"), ("analysis_failed", "agent_incomplete")]:
+            with self.subTest(failure=failure):
+                run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+                def fail(envelope, **kwargs):
+                    result = self.response(envelope)
+                    result.manifest.terminal_state = "FAILED"
+                    result.manifest.failure_code = failure
+                    return result
+                with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.execute", side_effect=fail):
+                    runner.execute_run(run.pk)
+                item = run.scope_items.get()
+                self.assertEqual(item.status, "needs_attention")
+                self.assertEqual(item.reason_code, reason)
+                self.assertEqual(item.kernel_result["manifest"]["failure_code"], failure)
+                self.assertNotIn("profile", item.kernel_result)
+                decision = m.AgentDispatchDecision.objects.get(processing_run=run)
+                self.assertEqual(decision.error_code, reason)
+                self.assertEqual(decision.kernel_result["manifest"]["failure_code"], failure)
+                self.assertIsNone(decision.confidence_score)
+                self.assertFalse(m.ResumeProfile.objects.exists())
+                self.assertFalse(m.AssignmentAttempt.objects.exists())
+
+    def test_unknown_analysis_errors_are_not_labeled_connection_failures(self):
+        self.assertEqual(allocate._ai_failure_result("future_analysis_error")[2], "agent_incomplete")
+        self.assertEqual(allocate._ai_failure_result("agent_cancelled"), ("cancelled", "cancelled", "cancelled"))
 
     def test_school_rejection_never_calls_kernel(self):
         run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
@@ -229,6 +286,85 @@ class CandidateKernelTests(KernelTestCase):
         pin = run.scope_items.get().kernel_snapshot["pin"]
         self.assertEqual(pin["toolset_version"], run.toolset_version)
         self.assertEqual(pin["instruction_version"], run.prompt_version)
+
+    def test_model_change_during_discovery_keeps_submission_metadata_consistent(self):
+        from resume_contracts.fixtures import capabilities_fixture
+
+        def discover():
+            ai_config.save_ai_connection_config(dict(api_style="responses", model_name="changed",
+                base_url="https://model.internal/v1", api_key=""))
+            return capabilities_fixture()
+
+        with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.capabilities", side_effect=discover):
+            run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        self.assertEqual(run.model_name, "test")
+        self.assertFalse(run.model_config_revision == ai_config.current_ai_connection_fingerprint())
+        self.assertTrue(run.scope_items.get().kernel_snapshot["pin"]["model_config_revision"] == run.model_config_revision)
+
+    def test_evaluation_uses_the_same_model_config_it_validated(self):
+        run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        current = ai_config.get_ai_model_config()
+        changed = replace(current, model_name="changed", api_key="changed-test-key")
+        with patch.object(ai_config, "get_ai_model_config", side_effect=[current, changed]) as load, patch(
+            "apps.pipeline.agent_kernel.client.AgentKernelClient.execute", side_effect=self.response,
+        ) as execute:
+            matching.evaluate(self.resume, self.job, processing_run_id=run.pk)
+        self.assertEqual(load.call_count, 1)
+        self.assertEqual(execute.call_args.args[0].model.model_name, run.model_name)
+        self.assertTrue(execute.call_args.kwargs["model_api_key"] == current.api_key)
+
+    def test_resaving_identical_connection_keeps_frozen_run_usable(self):
+        run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        ai_config.save_ai_connection_config(dict(api_style="responses", model_name="test",
+            base_url="https://model.internal/v1/", api_key="test-key"))
+        ai_config.mark_ai_connection_tested()
+        self.assertTrue(run.model_config_revision == ai_config.current_ai_connection_fingerprint())
+        with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.execute", side_effect=self.response) as execute:
+            matching.evaluate(self.resume, self.job, processing_run_id=run.pk)
+        self.assertEqual(execute.call_count, 1)
+
+    def test_queued_task_uses_new_tested_connection_without_recreation(self):
+        old = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        ai_config.save_ai_connection_config(dict(api_style="responses", model_name="changed",
+            base_url="https://model.internal/v1", api_key="changed-test-key"))
+        ai_config.mark_ai_connection_tested()
+        with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.execute", side_effect=self.response) as execute:
+            result = matching.evaluate(self.resume, self.job, processing_run_id=old.pk)
+        envelope = execute.call_args.args[0]
+        self.assertEqual(envelope.model.model_name, "changed")
+        self.assertTrue(execute.call_args.kwargs["model_api_key"] == "changed-test-key")
+        self.assertTrue(envelope.pin.model_config_revision == ai_config.current_ai_connection_fingerprint())
+        self.assertFalse(envelope.pin.pin_id == old.pin_id)
+        self.assertEqual(result.model_name, "changed")
+        self.assertEqual(m.ProcessingRun.objects.count(), 1)
+
+    def test_queued_task_explains_when_current_connection_is_not_tested(self):
+        old = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        ai_config.save_ai_connection_config(dict(api_style="responses", model_name="changed",
+            base_url="https://model.internal/v1", api_key="changed-test-key"))
+        with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.execute") as execute:
+            with self.assertRaises(AIServiceError) as error:
+                matching.evaluate(self.resume, self.job, processing_run_id=old.pk)
+        self.assertEqual(error.exception.code, "ai_not_configured")
+        self.assertIn("尚未测试通过", error.exception.message)
+        self.assertFalse(execute.called)
+
+    def test_changed_model_does_not_reuse_results_from_a_different_executed_model(self):
+        old = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        ai_config.save_ai_connection_config(dict(api_style="responses", model_name="changed",
+            base_url="https://model.internal/v1", api_key="changed-test-key"))
+        ai_config.mark_ai_connection_tested()
+        with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.execute", side_effect=self.response) as execute:
+            runner.execute_run(old.pk)
+        self.assertEqual(execute.call_args.args[0].model.model_name, "changed")
+        ai_config.save_ai_connection_config(dict(api_style="responses", model_name="test",
+            base_url="https://model.internal/v1", api_key="test-key"))
+        ai_config.mark_ai_connection_tested()
+        new = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.execute", side_effect=self.response) as execute:
+            runner.execute_run(new.pk)
+        self.assertEqual(execute.call_count, 1)
+        self.assertFalse(new.scope_items.get().kernel_result["manifest"].get("reused_from_task_id"))
 
     def test_removed_task_snapshot_fails_before_deterministic_business_writes(self):
         run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})

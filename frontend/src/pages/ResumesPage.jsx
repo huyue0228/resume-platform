@@ -93,6 +93,8 @@ const REASON_CODE_OPTIONS = {
   ai_connection_error: 'AI 连接异常',
   ai_rate_limited: 'AI 限流',
   ai_invalid_output: 'AI 输出不合法',
+  agent_incomplete: 'AI 分析未完成',
+  agent_budget_exhausted: 'AI 分析预算耗尽',
   ai_reference_invalidated: 'AI 引用已失效',
   rule_assigned: '历史规则分配成功',
   ai_dispatched: 'AI 建议下发',
@@ -313,7 +315,7 @@ export default function ResumesPage() {
   const canTransfer = hasPermission('attempt.transfer_department')
     && (!contact || contact.can_delegate !== false)
   const canExport = hasPermission('resume.view') || hasPermission('attempt.export')
-  const canSelectCandidates = canDispatch || canTransfer || canExport || canImport
+  const canSelectCandidates = canRunPipeline || canDispatch || canTransfer || canExport || canImport
   const { run } = useProcessRunner()
   const [detailRecord, setDetailRecord] = useState(null)
   const [previewRecord, setPreviewRecord] = useState(null)
@@ -325,6 +327,7 @@ export default function ResumesPage() {
   const [exportTarget, setExportTarget] = useState(null)
   const [processing, setProcessing] = useState(false)
   const [processModalOpen, setProcessModalOpen] = useState(false)
+  const [processError, setProcessError] = useState('')
   const [processStatusSelection, setProcessStatusSelection] = useState([])
   const [processCurrentSelected, setProcessCurrentSelected] = useState(false)
   const [processCandidateSnapshot, setProcessCandidateSnapshot] = useState([])
@@ -817,8 +820,9 @@ export default function ResumesPage() {
 
   const handleProcessSelectedStatuses = () => {
     setProcessCandidateSnapshot([...selectedRowKeys])
-    setProcessCurrentSelected(false)
+    setProcessCurrentSelected(selectedRowKeys.length > 0)
     setProcessStatusSelection([])
+    setProcessError('')
     setProcessModalOpen(true)
   }
 
@@ -839,6 +843,7 @@ export default function ResumesPage() {
       message.warning('请先勾选当前选中或需要处理的简历状态')
       return
     }
+    setProcessError('')
     setProcessing(true)
     try {
       const scope = buildResumeProcessingScope({
@@ -860,6 +865,8 @@ export default function ResumesPage() {
           setSelectedCandidates([])
           actionRef.current?.clearSelected?.()
         }
+      } else {
+        setProcessError(r.error || '提交处理任务失败，请重试')
       }
     } finally {
       setProcessing(false)
@@ -1406,6 +1413,7 @@ export default function ResumesPage() {
       <ResumeProcessModal
         open={processModalOpen}
         processing={processing}
+        error={processError}
         processCurrentSelected={processCurrentSelected}
         processCandidateCount={processCandidateSnapshot.length}
         processStatusSelection={processStatusSelection}
@@ -1700,7 +1708,13 @@ export default function ResumesPage() {
                     title: '置信度',
                     dataIndex: 'confidence_score',
                     width: 90,
-                    render: (value) => (value == null ? '-' : `${Math.round(value * 100)}%`),
+                    // ProTable 的第一个参数是已渲染节点，数值必须从原始记录读取。
+                    render: (_, decision) => (
+                      !decision.error_code && typeof decision.confidence_score === 'number'
+                      && Number.isFinite(decision.confidence_score)
+                        ? `${Math.round(decision.confidence_score * 100)}%`
+                        : '-'
+                    ),
                   },
                   {
                     title: '固定评估岗位',

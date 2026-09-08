@@ -9,12 +9,14 @@ trap 'rm -rf "$TEST_ROOT"' EXIT
 
 PACKAGE_ROOT="${TEST_ROOT}/package"
 FAKE_BIN="${TEST_ROOT}/bin"
-mkdir -p "$PACKAGE_ROOT" "$FAKE_BIN" "${TEST_ROOT}/backups"
+mkdir -p "$PACKAGE_ROOT" "$FAKE_BIN"
 touch "${PACKAGE_ROOT}/docker-compose.yml"
 
 cat > "${FAKE_BIN}/docker" <<'EOF'
 #!/usr/bin/env bash
 set -eu
+
+[[ -z "${FAKE_DOCKER_LOG:-}" ]] || printf '%s\n' "$*" >> "$FAKE_DOCKER_LOG"
 
 if [[ "${1:-}" == "compose" && "${2:-}" == "version" ]]; then
   exit 0
@@ -30,9 +32,23 @@ if [[ "${1:-}" == "volume" && "${2:-}" == "ls" ]]; then
   [[ -z "${FAKE_EXISTING_RESOURCES:-}" ]] || printf '%s\n' "existing-volume"
   exit 0
 fi
-if [[ "${1:-}" == "compose" && "$*" == *"config --services"* ]]; then
-  printf 'agent-kernel\ndb\nredis\nbackend\nworker\nai-worker\nfrontend\nbackup-scheduler\n'
-  exit 0
+if [[ "${1:-}" == "compose" ]]; then
+  case "$*" in
+    *"config --services"|*"ps --status running --services")
+      # 分段输出，稳定暴露 grep -q 提前退出在 pipefail 下引起的 SIGPIPE 误报。
+      printf 'agent-kernel\n'
+      sleep 0.02
+      printf 'db\nredis\nbackend\nworker\nai-worker\nfrontend\n'
+      exit 0 ;;
+    *"ps -aq")
+      [[ -z "${FAKE_EXISTING_RESOURCES:-}" ]] || printf '%s\n' "existing-container"
+      exit 0 ;;
+    *"exec -T agent-kernel sh -c "*)
+      [[ -z "${FAKE_CA_UNREADABLE:-}" ]]
+      exit $? ;;
+    *"config --images"|*" build"|*" up -d --remove-orphans --wait --wait-timeout 180"|*" ps"|*"exec -T backend python manage.py check"|*"exec -T frontend nginx -t")
+      exit 0 ;;
+  esac
 fi
 
 echo "测试 Docker 替身收到未预期命令。" >&2
@@ -76,7 +92,7 @@ if ! run_deploy 1 "$first_output"; then
 fi
 
 secret_values=()
-for key in DJANGO_SECRET_KEY POSTGRES_PASSWORD RESTIC_PASSWORD USAGE_METRICS_TOKEN AGENT_KERNEL_TOKEN; do
+for key in DJANGO_SECRET_KEY POSTGRES_PASSWORD USAGE_METRICS_TOKEN AGENT_KERNEL_TOKEN; do
   value="$(env_value "${PACKAGE_ROOT}/.env" "$key")"
   assert_random_secret "$key" "$value"
   grep -Fq "$value" "$first_output" && {
@@ -91,6 +107,11 @@ for key in DJANGO_SECRET_KEY POSTGRES_PASSWORD RESTIC_PASSWORD USAGE_METRICS_TOK
   done
   secret_values+=("$value")
 done
+
+if grep -Eq '^(RESTIC_|BACKUP_)' "${PACKAGE_ROOT}/.env"; then
+  echo "失败：首次部署仍生成备份配置。"
+  exit 1
+fi
 
 env_mode="$(stat -f '%Lp' "${PACKAGE_ROOT}/.env" 2>/dev/null || stat -c '%a' "${PACKAGE_ROOT}/.env")"
 [[ "$env_mode" == "600" ]] || {
@@ -110,8 +131,6 @@ DJANGO_SECRET_KEY=existing-django-secret
 DJANGO_DEBUG=False
 DJANGO_ALLOWED_HOSTS=resume.example.com
 POSTGRES_PASSWORD=existing-postgres-secret
-RESTIC_PASSWORD=existing-restic-secret
-BACKUP_TARGET_PATH=${TEST_ROOT}/backups
 W3_OAUTH2_ENABLED=True
 W3_OAUTH2_CLIENT_ID=client-id
 W3_OAUTH2_CLIENT_SECRET=client-secret
@@ -141,8 +160,7 @@ kernel_token="$(env_value "${PACKAGE_ROOT}/.env" AGENT_KERNEL_TOKEN)"
 assert_random_secret AGENT_KERNEL_TOKEN "$kernel_token"
 for existing_pair in \
   "DJANGO_SECRET_KEY=existing-django-secret" \
-  "POSTGRES_PASSWORD=existing-postgres-secret" \
-  "RESTIC_PASSWORD=existing-restic-secret"; do
+  "POSTGRES_PASSWORD=existing-postgres-secret"; do
   existing_key="${existing_pair%%=*}"
   existing_value="${existing_pair#*=}"
   [[ "$(env_value "${PACKAGE_ROOT}/.env" "$existing_key")" == "$existing_value" ]] || {
@@ -166,6 +184,42 @@ fi
   exit 1
 }
 
+deploy_output="${TEST_ROOT}/deploy.log"
+docker_log="${TEST_ROOT}/docker.log"
+if ! run_deploy $'1\n1\n1' "$deploy_output" FAKE_EXISTING_RESOURCES=1 FAKE_DOCKER_LOG="$docker_log"; then
+  echo "失败：无备份配置的七服务升级或验证异常退出。"
+  sed -n '1,120p' "$deploy_output"
+  exit 1
+fi
+grep -Fq 'up -d --remove-orphans --wait --wait-timeout 180' "$docker_log" || {
+  echo "失败：升级没有清理已移除的服务容器。"
+  exit 1
+}
+grep -Fq '部署验证通过。' "$deploy_output" || {
+  echo "失败：升级未完成七服务验证。"
+  exit 1
+}
+if grep -Eq -- '--profile init|volume rm|down|--volumes' "$docker_log"; then
+  echo "失败：升级重跑了初始化或删除数据。"
+  exit 1
+fi
+
+ca_output="${TEST_ROOT}/ca.log"
+ca_docker_log="${TEST_ROOT}/ca-docker.log"
+if ! run_deploy $'1\n1\n1' "$ca_output" FAKE_EXISTING_RESOURCES=1 \
+  FAKE_DOCKER_LOG="$ca_docker_log" AGENT_KERNEL_CA_BUNDLE=/etc/company-ca/router.pem; then
+  echo "失败：企业 CA 升级或容器内可读检查异常退出。"
+  exit 1
+fi
+grep -Fq 'assets/compose.model-ca.yml' "$ca_docker_log"
+grep -Fq 'exec -T agent-kernel sh -c' "$ca_docker_log"
+if run_deploy $'1\n1\n1' "${TEST_ROOT}/ca-unreadable.log" FAKE_EXISTING_RESOURCES=1 \
+  FAKE_CA_UNREADABLE=1 AGENT_KERNEL_CA_BUNDLE=/etc/company-ca/router.pem; then
+  echo "失败：容器内 CA 不可读时不应通过部署验证。"
+  exit 1
+fi
+grep -Fq 'CA 文件不存在、为空或 agent 用户不可读' "${TEST_ROOT}/ca-unreadable.log"
+
 sed 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=auto-generate-on-first-deploy/' \
   "${PACKAGE_ROOT}/.env" > "${PACKAGE_ROOT}/.env.invalid"
 mv "${PACKAGE_ROOT}/.env.invalid" "${PACKAGE_ROOT}/.env"
@@ -188,4 +242,4 @@ grep -Fq "请恢复原 .env" "$blocked_output" || {
   exit 1
 }
 
-echo "部署随机密钥生成、升级补齐、非轮换和旧密钥保护测试通过。"
+echo "部署四项密钥生成、升级补齐、非轮换、旧密钥保护、七服务升级和企业 CA 挂载验证测试通过。"

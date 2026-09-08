@@ -12,7 +12,7 @@ export function useProcessRunner() {
       normalizedSteps[0]?.step === 'step1' &&
       normalizedSteps[1]?.step === 'step2'
     const step = isResumeProcess ? 'resume_process' : normalizedSteps[0]?.step
-    if (!step) return { success: false }
+    if (!step) return { success: false, error: '未选择处理步骤' }
     setSubmitting(true)
     try {
       const scope = normalizedSteps[0]?.scope || options.scope
@@ -20,9 +20,12 @@ export function useProcessRunner() {
         step,
         ...(scope ? { scope } : {}),
       })
+      window.dispatchEvent(new Event('srf:processing-run-created'))
       return { success: true, run: data }
-    } catch {
-      return { success: false }
+    } catch (error) {
+      const detail = error?.response?.data?.detail || error?.response?.data?.message
+        || error?.message || '提交处理任务失败，请重试'
+      return { success: false, error: String(detail) }
     } finally {
       setSubmitting(false)
     }

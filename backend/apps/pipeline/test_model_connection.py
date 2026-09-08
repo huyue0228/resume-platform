@@ -15,6 +15,12 @@ class ModelConnectionTests(TestCase):
         self.addCleanup(service.close_cached_ai_clients)
         ai_config.save_ai_connection_config(dict(api_style="responses", model_name="test", base_url="https://model.internal/v1", api_key="test-key"))
 
+    def test_connection_fields_are_read_in_one_database_snapshot(self):
+        with self.assertNumQueries(1):
+            config = ai_config.get_ai_model_config()
+        self.assertEqual(config.model_name, "test")
+        self.assertTrue(config.api_key == "test-key")
+
     def test_openai_client_disables_ssl_verification(self):
         http_client = Mock()
         client = SimpleNamespace(

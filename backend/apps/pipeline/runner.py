@@ -91,7 +91,7 @@ def create_run(step, scope=None, created_by=None):
         raise ValueError(f"未知步骤: {step}")
     # 网络探测在事务外完成，每个批次只探测一次；后续候选人共享冻结版本。
     config = ai_config.get_ai_model_config() if "step4" in _stage_steps(step) else None
-    pin = runtime_pin() if config else None
+    pin = runtime_pin(model_config=config) if config else None
     return _create_run(step, scope, created_by, config, pin)
 
 
@@ -99,8 +99,6 @@ def create_run(step, scope=None, created_by=None):
 def _create_run(step, scope, created_by, config, pin):
     if step not in {"all", RESUME_PROCESS_STEP} and step not in STEP_FUNCS:
         raise ValueError(f"未知步骤: {step}")
-    if pin and pin.model_config_revision != ai_config.current_ai_connection_fingerprint():
-        raise ValueError("发现版本期间模型连接已变化，请重新提交")
     mode = "ai"  # 业务审计字段；新任务不存在可选运行模式。
     scope = deepcopy(scope or {})
     candidate_ids = _candidate_ids_for_run(step, scope)
