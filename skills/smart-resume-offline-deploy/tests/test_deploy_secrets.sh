@@ -116,7 +116,10 @@ if grep -Eq '^(RESTIC_|BACKUP_)' "${PACKAGE_ROOT}/.env"; then
   exit 1
 fi
 
-env_mode="$(stat -f '%Lp' "${PACKAGE_ROOT}/.env" 2>/dev/null || stat -c '%a' "${PACKAGE_ROOT}/.env")"
+# GNU stat 的 -f 即使失败也可能先输出文件系统信息；失败结果必须丢弃。
+if ! env_mode="$(stat -c '%a' "${PACKAGE_ROOT}/.env" 2>/dev/null)"; then
+  env_mode="$(stat -f '%Lp' "${PACKAGE_ROOT}/.env")"
+fi
 [[ "$env_mode" == "600" ]] || {
   echo "失败：.env 权限应为 600，实际为 ${env_mode}。"
   exit 1

@@ -272,7 +272,9 @@ if [[ "$COPY_TO_DRIVE" -eq 1 ]]; then
 fi
 
 ARCHIVE_SHA="$(shasum -a 256 "$ARCHIVE_PATH" | awk '{print $1}')"
-ARCHIVE_SIZE="$(stat -f '%z' "$ARCHIVE_PATH" 2>/dev/null || stat -c '%s' "$ARCHIVE_PATH")"
+if ! ARCHIVE_SIZE="$(stat -c '%s' "$ARCHIVE_PATH" 2>/dev/null)"; then
+  ARCHIVE_SIZE="$(stat -f '%z' "$ARCHIVE_PATH")"
+fi
 
 log "发布完成"
 printf '版本：%s\n本地包：%s\n校验文件：%s\n大小：%s bytes\nSHA-256：%s\n' \
