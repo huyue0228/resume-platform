@@ -1,7 +1,7 @@
 name: ${COMPOSE_PROJECT_NAME:-smart-resume-filter}
 
 x-backend-env: &backend-env
-  DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
+  PLATFORM_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
   USAGE_METRICS_TOKEN: ${USAGE_METRICS_TOKEN:?Set USAGE_METRICS_TOKEN in .env}
   DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
   DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?Set DJANGO_ALLOWED_HOSTS in .env}
@@ -25,15 +25,12 @@ x-backend-env: &backend-env
   POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
   POSTGRES_HOST: db
   POSTGRES_PORT: 5432
-  CELERY_BROKER_URL: redis://redis:6379/0
-  CELERY_RESULT_BACKEND: redis://redis:6379/1
-  CELERY_TASK_ALWAYS_EAGER: "False"
+  REDIS_URL: redis://redis:6379/0
   FILE_UPLOAD_TEMP_DIR: ${FILE_UPLOAD_TEMP_DIR:-/app/media/tmp_uploads}
   AGENT_KERNEL_URL: http://agent-kernel:8090
   AGENT_KERNEL_TOKEN: ${AGENT_KERNEL_TOKEN:?Set AGENT_KERNEL_TOKEN in .env}
   AGENT_KERNEL_BUILD: ${AGENT_KERNEL_VERSION:?Set AGENT_KERNEL_VERSION}
   AGENT_KERNEL_ROLLOUT: ${AGENT_KERNEL_ROLLOUT:-review_only}
-  AGENT_KERNEL_DOCUMENT_SIGNING_KEY: ${AGENT_KERNEL_DOCUMENT_SIGNING_KEY:-${AGENT_KERNEL_TOKEN}}
   AGENT_KERNEL_MODEL_INSECURE_SKIP_VERIFY: ${AGENT_KERNEL_MODEL_INSECURE_SKIP_VERIFY:-False}
 
 services:
@@ -43,11 +40,7 @@ services:
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     environment:
       AGENT_KERNEL_ADDRESS: :8090
-      AGENT_KERNEL_DOCUMENT_ROOT: /app/media
-      AGENT_KERNEL_DOCUMENT_SIGNING_KEY: ${AGENT_KERNEL_DOCUMENT_SIGNING_KEY:-${AGENT_KERNEL_TOKEN}}
       AGENT_KERNEL_TOKEN: ${AGENT_KERNEL_TOKEN:?Set AGENT_KERNEL_TOKEN in .env}
-    volumes:
-      - media_data:/app/media:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/healthz"]
       interval: 5s
@@ -95,15 +88,11 @@ services:
       <<: *backend-env
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-1}
       RUN_SEED_BASE: ${RUN_SEED_BASE:-0}
-      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
-      GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-1800}
-      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
-      AI_WORKER_CONCURRENCY: ${AI_WORKER_CONCURRENCY:-20}
-    # 独立进程：Nginx、Gunicorn、default/prefork、ai/threads。
+    # Go 程序提供 React 页面、业务 API 与后台任务。
     init: true
     restart: unless-stopped
     stop_grace_period: 120s
-    command: python application.py
+    command: serve
     ports:
       - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-5173}:80"
     volumes:
@@ -116,7 +105,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "application.py", "--healthcheck"]
+      test: ["CMD", "resume-platform", "healthcheck"]
       interval: 30s
       timeout: 12s
       start_period: 60s
@@ -130,7 +119,7 @@ services:
       <<: *backend-env
       RUN_MIGRATIONS: "1"
       RUN_SEED_BASE: "1"
-    command: python manage.py check
+    command: init
     volumes:
       - media_data:/app/media
     depends_on:

@@ -254,13 +254,13 @@ echo "- 部署模式：${DEPLOY_MODE}"
 [[ "$DEPLOY_MODE" == "offline" ]] && echo "- 导入镜像：${IMAGE_TAR}"
 [[ "$DEPLOY_MODE" == "source" ]] && echo "- 从当前源码构建项目镜像"
 echo "- 使用环境文件：${ENV_FILE}（不会显示其中的密钥）"
-echo "- 镜像、端口、并发、OCR、数据库标识已使用预设值"
+echo "- 镜像、端口、并发、文本提取、数据库标识已使用预设值"
 if [[ -n "$(model_ca_bundle)" ]]; then
   echo "- Agent Kernel：已启用企业 CA 只读挂载，文件必须可被容器内 agent 用户读取"
 else
   echo "- Agent Kernel：使用镜像的系统 CA；企业模型路由器需要额外配置 AGENT_KERNEL_CA_BUNDLE"
 fi
-echo "- 模型 TEST 当前跳过 TLS 校验；部署后须完成一次真实 Agent 分析才能确认模型链路可用"
+echo "- 平台模型 TEST 与 Kernel 均默认校验 TLS；部署后须完成一次真实 Agent 分析才能确认模型链路可用"
 if env_is_true W3_OAUTH2_ENABLED; then
   echo "- W3 OAuth2：登录必填配置和精确回调地址已校验；请确认 W3 平台登记值一致"
 else

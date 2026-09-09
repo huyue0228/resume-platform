@@ -1,0 +1,119 @@
+{
+  "idempotency_key": "fixture-key",
+  "manifest": {
+    "covered_jobs": [
+      "job-a",
+      "job-b"
+    ],
+    "failure_code": "",
+    "input_hash": "74013c341827bce79b7d3ce89cf5f6a3499c57907476acf574f0eff8c5d11115",
+    "ocr_pages": 0,
+    "resume_checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "reused_from_task_id": "",
+    "terminal_state": "DONE",
+    "tool_versions": {},
+    "warnings": [
+      "MOCK_ONLY"
+    ]
+  },
+  "matches": [
+    {
+      "confidence": 0.8,
+      "dimensions": {
+        "experience_evidence": 0.8,
+        "job_requirement": 0.8,
+        "major_match": 0.8,
+        "resume_quality": 0.8,
+        "skills_match": 0.8
+      },
+      "evidence": [
+        {
+          "end_line": 1,
+          "page": 1,
+          "quote": "负责后端服务开发与测试工作",
+          "start_line": 1
+        }
+      ],
+      "job_ref": "job-a",
+      "rank": 1,
+      "reason": "合成测试结果，仅用于开发验收",
+      "risks": [],
+      "score": 0.8
+    },
+    {
+      "confidence": 0.8,
+      "dimensions": {
+        "experience_evidence": 0.8,
+        "job_requirement": 0.8,
+        "major_match": 0.8,
+        "resume_quality": 0.8,
+        "skills_match": 0.8
+      },
+      "evidence": [
+        {
+          "end_line": 1,
+          "page": 1,
+          "quote": "负责后端服务开发与测试工作",
+          "start_line": 1
+        }
+      ],
+      "job_ref": "job-b",
+      "rank": 2,
+      "reason": "合成测试结果，仅用于开发验收",
+      "risks": [],
+      "score": 0.8
+    }
+  ],
+  "pin": {
+    "instruction_version": "fixture-instructions/v1",
+    "kernel_build": "dev",
+    "model_config_revision": "fixture-model",
+    "pin_id": "fixture-pin",
+    "policy_version": "fixture-policy/v1",
+    "protocol_version": "resume-analysis/v2",
+    "result_schema_version": "resume-job-match/v1",
+    "toolset_version": "fixture-tools/v1"
+  },
+  "profile": {
+    "claims": [
+      {
+        "confidence": 0.0,
+        "details": {
+          "degree": "",
+          "major": "",
+          "name": "",
+          "period": "",
+          "role": "",
+          "school_name": ""
+        },
+        "evidence": [
+          {
+            "end_line": 1,
+            "page": 1,
+            "quote": "负责后端服务开发与测试工作",
+            "start_line": 1
+          }
+        ],
+        "kind": "project",
+        "summary": "示例后端项目"
+      }
+    ],
+    "risks": [],
+    "source_text": "负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n"
+  },
+  "protocol_version": "resume-analysis/v2",
+  "safe_trace": {
+    "finished_at": null,
+    "input_tokens": 0,
+    "kernel_build": "",
+    "output_tokens": 0,
+    "started_at": null,
+    "status": "",
+    "tool_call_count": 0,
+    "tool_calls": [],
+    "trace_id": "",
+    "turns": 0
+  },
+  "task_id": "fixture-task",
+  "workflow_revision": 1
+}

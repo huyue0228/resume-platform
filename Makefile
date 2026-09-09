@@ -5,13 +5,19 @@ PLATFORM ?= linux/amd64
 COMPONENT ?= app
 PUSH ?=
 IMAGES_DIR ?= release/$(APP_VERSION)/images
-.PHONY: check check-backend check-frontend check-release images image package
+.PHONY: check check-backend check-frontend check-release build frontend-assets images image package
 check: check-backend check-frontend check-release
 check-backend:
-	cd backend && $(PYTHON) -m resume_contracts.verify
-	cd backend && $(PYTHON) manage.py check
-	cd backend && $(PYTHON) manage.py makemigrations accounts core --check --dry-run
-	cd backend && $(PYTHON) manage.py test apps.pipeline apps.ingestion apps.api apps.accounts
+	go test -race ./...
+	go vet ./...
+	go build -o dist/resume-platform ./cmd/resume-platform
+build: frontend-assets
+	mkdir -p dist
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o dist/resume-platform ./cmd/resume-platform
+frontend-assets:
+	cd frontend && npm run build
+	find internal/web/assets -mindepth 1 ! -name .keep -delete
+	cp -R frontend/dist/. internal/web/assets/
 check-frontend:
 	cd frontend && npm run lint && npm test && npm run build
 check-release:

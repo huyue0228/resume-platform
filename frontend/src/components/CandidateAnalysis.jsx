@@ -13,7 +13,7 @@ const DIMENSIONS = [
 ]
 const CLAIM_LABELS = {
   education: '教育背景', project: '项目经历', internship: '实习经历', skill: '专业技能',
-  certificate: '证书与资质', major_direction: '专业方向', agent_experience: '智能体专项经历', risk: '需要核实',
+  certificate: '证书与资质', major_direction: '专业方向', agent_experience: '智能体经历', risk: '需要核实',
 }
 const OUTCOMES = {
   dispatch: ['可进入下发', 'success'], review: ['需要人工复核', 'warning'], archive: ['暂不进入分配', 'default'],

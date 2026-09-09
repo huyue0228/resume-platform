@@ -9,17 +9,6 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class FrontendDeliveryTests(unittest.TestCase):
-    def test_media_paths_are_denied_before_regex_locations(self):
-        config = (ROOT / "frontend/nginx.conf").read_text()
-        for location in (r"=\s+/media", r"\^~\s+/media/"):
-            match = re.search(r"location\s+" + location + r"\s*\{([^{}]*)\}", config)
-            self.assertIsNotNone(match, "必须同时拒绝 /media 和优先于正则匹配的 /media/")
-            self.assertRegex(match.group(1), r"\breturn\s+404\s*;")
-            self.assertNotRegex(match.group(1), r"\b(alias|root|proxy_pass)\s")
-        self.assertNotIn("alias /usr/share/nginx/media", config)
-        self.assertRegex(config, r"location\s+/api/\s*\{\s*proxy_pass\s+http://127.0.0.1:8000/api/;")
-        self.assertIn("try_files $uri $uri/ /index.html;", config)
-
     def test_resume_fetches_use_authenticated_api_client(self):
         client = (ROOT / "frontend/src/api/client.js").read_text()
         self.assertIn("baseURL: '/api'", client)
@@ -48,13 +37,13 @@ class FrontendDeliveryTests(unittest.TestCase):
         self.assertIn("downloadBlob(state.blob, filename)", preview)
         self.assertNotIn("/media/", preview)
 
-    def test_offline_nginx_check_does_not_depend_on_external_backend_dns(self):
+    def test_offline_go_check_does_not_depend_on_database_or_model(self):
         script = (ROOT / "skills/smart-resume-offline-release/scripts/release.sh").read_text()
         commands = [shlex.split(line) for line in script.splitlines()
-                    if line.startswith("docker run ") and "--entrypoint nginx" in line]
+                    if line.startswith("docker run ") and '"$APP_IMAGE" check' in line]
         self.assertEqual(len(commands), 1)
         self.assertNotIn("--add-host", commands[0])
-        self.assertEqual(commands[0][-1], "-t")
+        self.assertEqual(commands[0][-1], "check")
 
 
 if __name__ == "__main__":

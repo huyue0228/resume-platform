@@ -8,7 +8,7 @@ ASSET_DIR="${SKILL_DIR}/assets"
 
 VERSION="$(date '+%Y%m%d-%H%M')-amd64"
 DRIVE_PATH="/Volumes/ZiTai"
-COPY_TO_DRIVE=1
+COPY_TO_DRIVE=0
 SKIP_BUILD=0
 CHECK_ONLY=0
 TARGET_PLATFORM="linux/amd64"
@@ -45,6 +45,7 @@ while [[ $# -gt 0 ]]; do
     --drive)
       [[ $# -ge 2 ]] || die "--drive 缺少参数"
       DRIVE_PATH="$2"
+      COPY_TO_DRIVE=1
       shift 2
       ;;
     --no-copy)
@@ -84,9 +85,9 @@ KERNEL_VERSION="${AGENT_KERNEL_VERSION:-}"
 KERNEL_IMAGE="${AGENT_KERNEL_IMAGE:-}"
 [[ "$KERNEL_VERSION" =~ ^[A-Za-z0-9._-]+$ && -n "$KERNEL_IMAGE" ]] || die "拆仓后必须提供 AGENT_KERNEL_VERSION 和已发布的 AGENT_KERNEL_IMAGE"
 [[ "$KERNEL_IMAGE" =~ ^[A-Za-z0-9._/:@-]+$ ]] || die "AGENT_KERNEL_IMAGE 格式无效"
-POSTGRES_IMAGE="smart-resume-filter-postgres:16"
-REDIS_IMAGE="smart-resume-filter-redis:7"
-IMAGES=("$KERNEL_IMAGE" "$APP_IMAGE" "$POSTGRES_IMAGE" "$REDIS_IMAGE")
+POSTGRES_RELEASE_IMAGE="smart-resume-filter-postgres:16"
+REDIS_RELEASE_IMAGE="smart-resume-filter-redis:7"
+IMAGES=("$KERNEL_IMAGE" "$APP_IMAGE" "$POSTGRES_RELEASE_IMAGE" "$REDIS_RELEASE_IMAGE")
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "缺少命令：$1"
@@ -116,7 +117,7 @@ check_usage_metrics_contract() {
 
 check_prerequisites() {
   log "检查发布环境"
-  [[ -f "${REPO_ROOT}/AGENTS.md" && -f "${REPO_ROOT}/backend/manage.py" && -f "${REPO_ROOT}/frontend/package.json" ]] || \
+  [[ -f "${REPO_ROOT}/AGENTS.md" && -f "${REPO_ROOT}/cmd/resume-platform/main.go" && -f "${REPO_ROOT}/frontend/package.json" ]] || \
     die "必须从 smart-resume 项目 Skill 执行"
   [[ -f "${REPO_ROOT}/docker-compose.yml" ]] || die "缺少仓库 docker-compose.yml"
   [[ -d "${REPO_ROOT}/skills/smart-resume-offline-deploy" ]] || die "缺少部署 Skill"
@@ -218,9 +219,8 @@ log "检查镜像架构和容器配置"
 for image_name in "${IMAGES[@]}"; do
   check_image_architecture "$image_name"
 done
-docker run --rm --platform "$TARGET_PLATFORM" -e RUN_MIGRATIONS=0 -e RUN_SEED_BASE=0 "$APP_IMAGE" python manage.py check
+docker run --rm --platform "$TARGET_PLATFORM" -e RUN_MIGRATIONS=0 -e RUN_SEED_BASE=0 "$APP_IMAGE" check
 docker run --rm --platform "$TARGET_PLATFORM" --entrypoint /bin/sh "$KERNEL_IMAGE" -c 'test -x /usr/local/bin/agent-kernel'
-docker run --rm --platform "$TARGET_PLATFORM" --entrypoint nginx "$APP_IMAGE" -t
 
 log "组装离线包"
 mkdir -p "$PACKAGE_DIR"

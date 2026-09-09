@@ -41,10 +41,12 @@ for service in agent-kernel db redis app; do
     exit 1
   fi
 done
-compose exec -T app python application.py --healthcheck
-compose exec -T app python manage.py check
-compose exec -T app nginx -t
+compose exec -T app /usr/local/bin/resume-platform healthcheck
+compose exec -T app /usr/local/bin/resume-platform check
 if [[ -n "$(model_ca_bundle)" ]]; then
+  compose exec -T app sh -c 'test -r "$SSL_CERT_FILE" && test -s "$SSL_CERT_FILE"' || {
+    echo "平台 CA 文件不可读，请检查挂载和权限。"; exit 1;
+  }
   compose exec -T agent-kernel sh -c 'test -r "$SSL_CERT_FILE" && test -s "$SSL_CERT_FILE"' || {
     echo "Agent Kernel 的 CA 文件不存在、为空或 agent 用户不可读，请检查挂载和文件权限。"
     exit 1

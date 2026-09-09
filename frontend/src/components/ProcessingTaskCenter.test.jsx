@@ -96,7 +96,7 @@ describe('ProcessingTaskCenter', () => {
     const run = taskWithNodes('step4', 'running')
     run.activity = { processing: 3, queued: 12, waiting_conflict: 1 }
     showTask(run)
-    expect(await screen.findByText(/正在分析 3 名 · 待分析 12 名/)).toBeTruthy()
+    expect(await screen.findByText(/正在处理 3 名 · 待处理 12 名/)).toBeTruthy()
     expect(screen.getByText(/等待其他任务释放 1 名/)).toBeTruthy()
     expect(screen.getByText('下一步：汇总处理结果')).toBeTruthy()
   })

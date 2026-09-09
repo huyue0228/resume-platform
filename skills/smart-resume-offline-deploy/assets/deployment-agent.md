@@ -2,7 +2,7 @@
 
 仅使用以下固定菜单与操作者交互。等待用户回复单个编号；其它输入时重复原菜单，不作解释性推断。
 
-部署前先核验服务器 CPU、Docker Compose v2、`.env` 的目标环境项和部署模式。纯镜像离线模式当前仅支持 `x86_64/amd64`；源码构建模式支持 amd64/arm64，但 `.env` 中的 `DOCKER_PLATFORM` 必须与服务器一致。存在镜像 tar 时可使用纯镜像离线模式；否则使用当前源码构建模式。离线模式的 Compose 必须是纯 `image:`，不得有 `build:`。首次创建 `.env` 时，脚本自动生成 Django、PostgreSQL、使用频率监控和 Agent Kernel 四项独立随机密钥并设置 `600` 权限，不得要求用户在对话中发送密钥。部署人员必须确认 `DJANGO_ALLOWED_HOSTS` 和 W3 OAuth2 登录配置。生产部署必须先完成域名 DNS、可信 TLS 证书和 HTTPS 反向代理或企业网关：所有路径统一转发到 app 暴露端口，由 Nginx 转发 `/api` 到同容器 API，不直接暴露内部 API 端口；保留 Host，并设置 X-Real-IP、X-Forwarded-For、X-Forwarded-Proto=https。同机反代建议 app 暴露端口绑定 127.0.0.1；异机网关只允许从受控内网和防火墙访问 frontend。生产仅支持 W3 登录，所以正式部署前必须设置 `DJANGO_DEBUG=False`、`W3_OAUTH2_ENABLED=True`，并通过安全渠道核验 client id、authorize/token/userinfo HTTPS 地址、精确 redirect URI、工号/邮箱字段路径、客户端认证方式、超时和事务有效期；当前 UserInfo 顶层字段映射固定预填为 `employeeNumber` / `email`，`tenantId`、`uuid`、`globalUserID` 不参与账号匹配。机密客户端还必须配置 client secret。客户端密钥不得进入对话或日志。本地密码 API、Django Admin 路由和本地登录开关均不存在；DEBUG 开发令牌不得作为生产兜底。部署脚本必须在 Docker 变更前执行校验，DEBUG 开启、W3 关闭、配置不完整、端点非 HTTPS、客户端认证方式无效或回调 URI 不精确均停止部署。生产验收必须从客户端网络检查 HTTPS 域名、证书、HTTP 到 HTTPS 跳转和 W3 状态，仅访问服务器 IP:5173 不算完成。
+部署前先核验服务器 CPU、Docker Compose v2、`.env` 的目标环境项和部署模式。纯镜像离线模式当前仅支持 `x86_64/amd64`；源码构建模式支持 amd64/arm64，但 `.env` 中的 `DOCKER_PLATFORM` 必须与服务器一致。存在镜像 tar 时可使用纯镜像离线模式；否则使用当前源码构建模式。离线模式的 Compose 必须是纯 `image:`，不得有 `build:`。首次创建 `.env` 时，脚本自动生成平台、PostgreSQL、使用频率监控和 Agent Kernel 四项独立随机密钥并设置 `600` 权限，不得要求用户在对话中发送密钥。部署人员必须确认 `DJANGO_ALLOWED_HOSTS` 和 W3 OAuth2 登录配置。生产部署必须先完成域名 DNS、可信 TLS 证书和 HTTPS 反向代理或企业网关：所有路径统一转发到 app 暴露端口，由 Go 同时提供页面和 `/api`；保留 Host，并设置 X-Real-IP、X-Forwarded-For、X-Forwarded-Proto=https。同机反代建议 app 暴露端口绑定 127.0.0.1；异机网关只允许从受控内网和防火墙访问 frontend。生产仅支持 W3 登录，所以正式部署前必须设置 `DJANGO_DEBUG=False`、`W3_OAUTH2_ENABLED=True`，并通过安全渠道核验 client id、authorize/token/userinfo HTTPS 地址、精确 redirect URI、工号/邮箱字段路径、客户端认证方式、超时和事务有效期；当前 UserInfo 顶层字段映射固定预填为 `employeeNumber` / `email`，`tenantId`、`uuid`、`globalUserID` 不参与账号匹配。机密客户端还必须配置 client secret。客户端密钥不得进入对话或日志。本地密码 API、Django Admin 路由和本地登录开关均不存在；DEBUG 开发令牌不得作为生产兜底。部署脚本必须在 Docker 变更前执行校验，DEBUG 开启、W3 关闭、配置不完整、端点非 HTTPS、客户端认证方式无效或回调 URI 不精确均停止部署。生产验收必须从客户端网络检查 HTTPS 域名、证书、HTTP 到 HTTPS 跳转和 W3 状态，仅访问服务器 IP:5173 不算完成。
 
 ```text
 [部署前检查]
@@ -38,6 +38,6 @@
 2. 取消
 ```
 
-首次部署才执行 `init`；已有部署升级时不得重复 seed 基础数据或覆盖管理员配置。完成后报告 app、agent-kernel、db、redis 四个常驻服务状态、前端访问地址和 `verify.sh` 结果；app 内部的 default 与 ai 队列进程都必须通过健康检查，Agent Kernel 必须保持运行。失败时保留日志路径，不执行数据清理。部署流程不配置 AI 连接；AI 模型连接由管理员在系统设置配置与测试，不得在部署交互中索要 API Key。需要 Grafana 时，以安全方式把 `USAGE_METRICS_TOKEN` 配置为 `X-Usage-Metrics-Key`，查询 `/api/analytics/usage/overview/`；不得输出密钥字面值或写入面板 JSON、仓库和工单。
+首次部署才执行 `init`；已有部署升级时不得重复 seed 基础数据或覆盖管理员配置。完成后报告 app、agent-kernel、db、redis 四个常驻服务状态、前端访问地址和 `verify.sh` 结果；Go HTTP、PostgreSQL 与 Redis 健康检查必须通过，Agent Kernel 必须保持运行。失败时保留日志路径，不执行数据清理。部署流程不配置 AI 连接；AI 模型连接由管理员在系统设置配置与测试，不得在部署交互中索要 API Key。需要 Grafana 时，以安全方式把 `USAGE_METRICS_TOKEN` 配置为 `X-Usage-Metrics-Key`，查询 `/api/analytics/usage/overview/`；不得输出密钥字面值或写入面板 JSON、仓库和工单。
 
-模型路由器使用企业 CA 时，必须配置 `AGENT_KERNEL_CA_BUNDLE`，让部署脚本只读挂载 CA PEM 文件并向 Kernel 设置 `SSL_CERT_FILE`。宿主机/backend 的 CA 不会自动进入 Kernel 容器。平台模型 TEST 当前跳过 TLS 校验，因此不能将 TEST 通过视为 Kernel 证书验证通过；核对 CA 文件对 `agent` 用户可读、更新后重建 Kernel，并完成一次真实 Agent 分析，才能报告 Agent 模型链路验收通过。操作细节见 `../SKILL.md` 的企业 CA 小节。
+模型路由器使用企业 CA 时，必须配置 `AGENT_KERNEL_CA_BUNDLE`，让部署脚本只读挂载 CA PEM 文件并向 app 和 Kernel 分别设置 `SSL_CERT_FILE`。宿主机的 CA 不会自动进入 Kernel 容器。平台模型 TEST 与 Kernel 分析均默认校验 TLS；TEST 通过仍不能代替 Kernel 完整模型链路验收；核对 CA 文件对 `agent` 用户可读、更新后重建 app 与 Kernel，并完成一次真实 Agent 分析，才能报告 Agent 模型链路验收通过。操作细节见 `../SKILL.md` 的企业 CA 小节。

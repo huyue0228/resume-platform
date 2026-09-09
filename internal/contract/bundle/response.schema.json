@@ -1,0 +1,568 @@
+{
+  "$defs": {
+    "CandidateProfileV1": {
+      "additionalProperties": false,
+      "properties": {
+        "claims": {
+          "items": {
+            "$ref": "#/$defs/ClaimV1"
+          },
+          "minItems": 1,
+          "title": "Claims",
+          "type": "array"
+        },
+        "risks": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Risks",
+          "type": "array"
+        },
+        "source_text": {
+          "default": "",
+          "maxLength": 1000000,
+          "title": "Source Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claims",
+        "risks"
+      ],
+      "title": "CandidateProfileV1",
+      "type": "object"
+    },
+    "ClaimDetailsV1": {
+      "additionalProperties": false,
+      "properties": {
+        "degree": {
+          "default": "",
+          "title": "Degree",
+          "type": "string"
+        },
+        "major": {
+          "default": "",
+          "title": "Major",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        },
+        "period": {
+          "default": "",
+          "title": "Period",
+          "type": "string"
+        },
+        "role": {
+          "default": "",
+          "title": "Role",
+          "type": "string"
+        },
+        "school_name": {
+          "default": "",
+          "title": "School Name",
+          "type": "string"
+        }
+      },
+      "title": "ClaimDetailsV1",
+      "type": "object"
+    },
+    "ClaimV1": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "details": {
+          "$ref": "#/$defs/ClaimDetailsV1"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceV1"
+          },
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "education",
+            "project",
+            "internship",
+            "skill",
+            "certificate",
+            "major_direction",
+            "agent_experience",
+            "risk"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "summary",
+        "evidence"
+      ],
+      "title": "ClaimV1",
+      "type": "object"
+    },
+    "EvidenceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "end_line": {
+          "minimum": 1,
+          "title": "End Line",
+          "type": "integer"
+        },
+        "page": {
+          "minimum": 1,
+          "title": "Page",
+          "type": "integer"
+        },
+        "quote": {
+          "minLength": 8,
+          "title": "Quote",
+          "type": "string"
+        },
+        "start_line": {
+          "minimum": 1,
+          "title": "Start Line",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "quote",
+        "page",
+        "start_line",
+        "end_line"
+      ],
+      "title": "EvidenceV1",
+      "type": "object"
+    },
+    "JobMatchV1": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "dimensions": {
+          "$ref": "#/$defs/ScoreBreakdown"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceV1"
+          },
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "job_ref": {
+          "title": "Job Ref",
+          "type": "string"
+        },
+        "rank": {
+          "minimum": 1,
+          "title": "Rank",
+          "type": "integer"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "risks": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Risks",
+          "type": "array"
+        },
+        "score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "job_ref",
+        "dimensions",
+        "confidence",
+        "evidence",
+        "risks",
+        "reason",
+        "score",
+        "rank"
+      ],
+      "title": "JobMatchV1",
+      "type": "object"
+    },
+    "ScoreBreakdown": {
+      "additionalProperties": false,
+      "properties": {
+        "experience_evidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Experience Evidence",
+          "type": "number"
+        },
+        "job_requirement": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Job Requirement",
+          "type": "number"
+        },
+        "major_match": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Major Match",
+          "type": "number"
+        },
+        "resume_quality": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Resume Quality",
+          "type": "number"
+        },
+        "skills_match": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Skills Match",
+          "type": "number"
+        }
+      },
+      "required": [
+        "major_match",
+        "skills_match",
+        "experience_evidence",
+        "job_requirement",
+        "resume_quality"
+      ],
+      "title": "ScoreBreakdown",
+      "type": "object"
+    },
+    "TaskManifestV1": {
+      "additionalProperties": false,
+      "properties": {
+        "covered_jobs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Covered Jobs",
+          "type": "array"
+        },
+        "failure_code": {
+          "default": "",
+          "title": "Failure Code",
+          "type": "string"
+        },
+        "input_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Input Hash",
+          "type": "string"
+        },
+        "ocr_pages": {
+          "minimum": 0,
+          "title": "Ocr Pages",
+          "type": "integer"
+        },
+        "resume_checksum": {
+          "title": "Resume Checksum",
+          "type": "string"
+        },
+        "reused_from_task_id": {
+          "default": "",
+          "title": "Reused From Task Id",
+          "type": "string"
+        },
+        "terminal_state": {
+          "enum": [
+            "DONE",
+            "FAILED"
+          ],
+          "title": "Terminal State",
+          "type": "string"
+        },
+        "tool_versions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Tool Versions",
+          "type": "object"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "input_hash",
+        "resume_checksum",
+        "covered_jobs",
+        "tool_versions",
+        "warnings",
+        "terminal_state",
+        "ocr_pages"
+      ],
+      "title": "TaskManifestV1",
+      "type": "object"
+    },
+    "TaskPinV1": {
+      "additionalProperties": false,
+      "properties": {
+        "instruction_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Instruction Version",
+          "type": "string"
+        },
+        "kernel_build": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Kernel Build",
+          "type": "string"
+        },
+        "model_config_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Model Config Revision",
+          "type": "string"
+        },
+        "pin_id": {
+          "minLength": 1,
+          "title": "Pin Id",
+          "type": "string"
+        },
+        "policy_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Policy Version",
+          "type": "string"
+        },
+        "protocol_version": {
+          "const": "resume-analysis/v2",
+          "default": "resume-analysis/v2",
+          "title": "Protocol Version",
+          "type": "string"
+        },
+        "result_schema_version": {
+          "const": "resume-job-match/v1",
+          "default": "resume-job-match/v1",
+          "title": "Result Schema Version",
+          "type": "string"
+        },
+        "toolset_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Toolset Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pin_id",
+        "kernel_build",
+        "toolset_version",
+        "policy_version",
+        "instruction_version",
+        "model_config_revision"
+      ],
+      "title": "TaskPinV1",
+      "type": "object"
+    },
+    "TaskSafeTraceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "finished_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Finished At"
+        },
+        "input_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "kernel_build": {
+          "default": "",
+          "title": "Kernel Build",
+          "type": "string"
+        },
+        "output_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "status": {
+          "default": "",
+          "maxLength": 32,
+          "title": "Status",
+          "type": "string"
+        },
+        "tool_call_count": {
+          "default": 0,
+          "maximum": 512,
+          "minimum": 0,
+          "title": "Tool Call Count",
+          "type": "integer"
+        },
+        "tool_calls": {
+          "items": {
+            "$ref": "#/$defs/TaskToolTraceV1"
+          },
+          "title": "Tool Calls",
+          "type": "array"
+        },
+        "trace_id": {
+          "default": "",
+          "title": "Trace Id",
+          "type": "string"
+        },
+        "turns": {
+          "maximum": 64,
+          "minimum": 0,
+          "title": "Turns",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "turns"
+      ],
+      "title": "TaskSafeTraceV1",
+      "type": "object"
+    },
+    "TaskToolTraceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": {
+          "minimum": 0,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "item_count": {
+          "minimum": 0,
+          "title": "Item Count",
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 200,
+          "title": "Name",
+          "type": "string"
+        },
+        "status": {
+          "maxLength": 64,
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "status",
+        "duration_ms",
+        "item_count"
+      ],
+      "title": "TaskToolTraceV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "idempotency_key": {
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "manifest": {
+      "$ref": "#/$defs/TaskManifestV1"
+    },
+    "matches": {
+      "items": {
+        "$ref": "#/$defs/JobMatchV1"
+      },
+      "title": "Matches",
+      "type": "array"
+    },
+    "pin": {
+      "$ref": "#/$defs/TaskPinV1"
+    },
+    "profile": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CandidateProfileV1"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "protocol_version": {
+      "const": "resume-analysis/v2",
+      "default": "resume-analysis/v2",
+      "title": "Protocol Version",
+      "type": "string"
+    },
+    "safe_trace": {
+      "$ref": "#/$defs/TaskSafeTraceV1"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "workflow_revision": {
+      "minimum": 0,
+      "title": "Workflow Revision",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "task_id",
+    "idempotency_key",
+    "pin",
+    "workflow_revision",
+    "matches",
+    "manifest",
+    "safe_trace"
+  ],
+  "title": "AnalysisResponseV2",
+  "type": "object"
+}

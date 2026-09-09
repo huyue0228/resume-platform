@@ -18,6 +18,7 @@ import {
 import { cancelPipelineRun } from '../api/services'
 import useProcessingRuns from './useProcessingRuns'
 import './ProcessingTaskCenter.css'
+import TaskMaterials from './TaskMaterials'
 
 const ACTIVE_STATUSES = new Set(['pending', 'running', 'waiting_conflict', 'cancelling'])
 const STATUS_META = {
@@ -393,7 +394,7 @@ function TaskTable({ runs, cancellingId, onCancel, onOpenCandidates }) {
         pagination={false}
         expandable={{
           rowExpandable: (run) => Boolean(run.stages?.length),
-          expandedRowRender: (run) => <TaskExecutionNodes run={run} />,
+          expandedRowRender: (run) => <><TaskExecutionNodes run={run} /><TaskMaterials run={run} /></>,
           expandIcon: ({ expanded, onExpand, record }) => record.stages?.length ? (
             <Button type="text" size="small" icon={expanded ? <UpOutlined /> : <DownOutlined />}
               aria-label={`${expanded ? '收起' : '展开'}任务 ${record.id} 的执行节点`}
@@ -470,11 +471,12 @@ function TaskCard({ run, cancellingId, onCancel, onOpenCandidates }) {
 
         {run.activity ? (
           <Typography.Text type="secondary" className="processing-task-activity">
-            正在分析 {run.activity.processing} 名 · 待分析 {run.activity.queued} 名
+            正在处理 {run.activity.processing} 名 · 待处理 {run.activity.queued} 名
             {run.activity.waiting_conflict ? ` · 等待其他任务释放 ${run.activity.waiting_conflict} 名` : ''}
           </Typography.Text>
         ) : null}
         <TaskExecutionNodes run={run} />
+        <TaskMaterials run={run} />
 
         {scopeSummary ? (
           <Typography.Text type="secondary" className="processing-task-scope">

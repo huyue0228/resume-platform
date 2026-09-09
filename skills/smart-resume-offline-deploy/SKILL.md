@@ -22,7 +22,7 @@ description: 在 Linux 服务器上部署、验证、卸载海纳智聘。支持
 
 - `scripts/deploy.sh`：校验、导入镜像、初始化数据库、启动并验证服务。
 - `scripts/validate-w3-env.sh`：校验生产 `DJANGO_DEBUG=False`、W3 已启用，并检查登录必填配置、HTTPS 端点、字段路径、客户端认证方式和精确回调 URI；任何失败都发生在 Docker 变更前。
-- `scripts/verify.sh`：检查服务状态、Django 配置和 Nginx 配置。
+- `scripts/verify.sh`：检查服务状态、Go 运行依赖、协议和嵌入的 React 资源。
 - `scripts/uninstall.sh`：停止并卸载服务；默认保留数据库和上传文件。
 - `assets/deployment-agent.md`：部署时必须执行的确认与交付口径。
 - `assets/uninstall-agent.md`：卸载时必须执行的风险确认口径。
@@ -38,7 +38,7 @@ bash skills/smart-resume-offline-deploy/scripts/deploy.sh
 
 若 Skill 随离线包存放在包根目录下一层，则将上面的 `skills/smart-resume-offline-deploy` 改为实际 Skill 目录名。
 
-3. 镜像、端口、worker/OCR、数据库名/用户已经写入模板。脚本首次运行会创建权限为 `600` 的 `.env`，并自动生成互不复用的 `DJANGO_SECRET_KEY`、`POSTGRES_PASSWORD`、`USAGE_METRICS_TOKEN` 和 `AGENT_KERNEL_TOKEN`，密钥不回显。部署人员需把实际域名写入 `DJANGO_ALLOWED_HOSTS`，按下一节完成 DNS、证书和 HTTPS 反向代理，并补齐 W3 OAuth2 配置。
+3. 镜像、端口、Go 后台并发/文本提取、数据库名/用户已经写入模板。脚本首次运行会创建权限为 `600` 的 `.env`，并自动生成互不复用的 `DJANGO_SECRET_KEY`、`POSTGRES_PASSWORD`、`USAGE_METRICS_TOKEN` 和 `AGENT_KERNEL_TOKEN`，密钥不回显。部署人员需把实际域名写入 `DJANGO_ALLOWED_HOSTS`，按下一节完成 DNS、证书和 HTTPS 反向代理，并补齐 W3 OAuth2 配置。
 4. `DEPLOY_MODE=auto`（默认）在存在 `smart-resume-filter-images-amd64.tar` 时选择离线模式，否则从当前源码构建。可显式指定 `DEPLOY_MODE=offline` 或 `DEPLOY_MODE=source`。
 5. 离线模式要求交付包内的 `docker-compose.yml` 只使用 `image:`，不得保留 `build:`；源码模式使用当前项目的 Compose 构建 app、PostgreSQL、Redis 镜像，并使用独立发布的 Agent Kernel 镜像。
 6. 首次部署才会执行 `init` 写入基础权限、账号和预置数据。检测到已有部署时，脚本只更新镜像并启动服务，迁移由 app 自动完成，不会重置管理员在系统设置中维护的配置。
@@ -48,7 +48,7 @@ bash skills/smart-resume-offline-deploy/scripts/deploy.sh
 
 ### 模型路由器的企业 CA（Agent 分析前必须核对）
 
-平台「模型 TEST」在 backend 中执行，当前 HTTPX 客户端设置了 `verify=False`；实际 Agent 分析由 `agent-kernel` 发起模型请求，默认执行 TLS 校验。因此 TEST 成功、Kernel `/healthz` 正常均不能证明模型路由器的证书被 Kernel 信任。宿主机或 backend 已安装 CA，也不会自动传入独立的 Kernel 容器。
+平台「模型 TEST」和 Kernel 实际分析均默认校验 TLS。两者分别运行在 app 与 agent-kernel 容器中，需要各自信任模型路由器的证书。模型 TEST 成功和 Kernel `/healthz` 正常仍不能代替真实 Agent 分析验收。
 
 模型路由器使用企业/私有 CA 时，使用现场已有的受信任 CA PEM 文件，包含所需根 CA 和中间 CA 证书；不要放入私钥。将宿主机文件的绝对路径写入 `.env`：
 
@@ -57,7 +57,7 @@ AGENT_KERNEL_CA_BUNDLE=/etc/company-ca/model-router-ca.pem
 AGENT_KERNEL_MODEL_INSECURE_SKIP_VERIFY=False
 ```
 
-CA 文件应可被容器内非 root 的 `agent` 用户读取，例如公开 CA 文件权限为 `644`。部署、验证和卸载脚本检测到该配置后，会自动叠加 `assets/compose.model-ca.yml`，把文件只读挂载到 `/etc/agent-kernel/model-ca.pem`，并设置 `SSL_CERT_FILE`。挂载禁止自动创建宿主机路径，避免缺失的证书被当成目录创建。使用公网受信任证书时，此项可以留空。交付包包含挂载模板，现场 CA 文件单独提供。
+CA 文件应可被容器内非 root 的 `agent` 用户读取，例如公开 CA 文件权限为 `644`。部署、验证和卸载脚本检测到该配置后，会自动叠加 `assets/compose.model-ca.yml`，把文件分别只读挂载到 app 的 `/etc/resume-platform/model-ca.pem` 和 Kernel 的 `/etc/agent-kernel/model-ca.pem`，并设置各自的 `SSL_CERT_FILE`。挂载禁止自动创建宿主机路径，避免缺失的证书被当成目录创建。使用公网受信任证书时，此项可以留空。交付包包含挂载模板，现场 CA 文件单独提供。
 
 直接使用 Docker Compose 运维时，每次都必须带上同一份 CA 覆盖文件，否则可能重建为未挂载 CA 的容器。以下为源码目录命令；离线包中将 Skill 路径换成 `smart-resume-offline-deploy-skill`：
 
@@ -65,10 +65,10 @@ CA 文件应可被容器内非 root 的 `agent` 用户读取，例如公开 CA �
 docker compose --project-name smart-resume-filter --env-file .env \
   -f docker-compose.yml \
   -f skills/smart-resume-offline-deploy/assets/compose.model-ca.yml \
-  up -d --force-recreate agent-kernel
+  up -d --force-recreate app agent-kernel
 ```
 
-沿用实际部署的 Compose project name。CA 内容更新后也要重建 Kernel 容器，确保进程重新加载信任库。`verify.sh` 会检查容器内 CA 文件可读且非空；这一步只验证挂载，不验证远端证书。管理员还须在系统设置完成模型 TEST，再从简历库提交一条真实 Agent 分析，确认模型调用和结果完成。若仍失败，核对路由器完整证书链、Base URL 域名与证书 SAN，以及服务器时间。
+沿用实际部署的 Compose project name。CA 内容更新后也要重建 app 与 Kernel 容器，确保进程重新加载信任库。`verify.sh` 会检查容器内 CA 文件可读且非空；这一步只验证挂载，不验证远端证书。管理员还须在系统设置完成模型 TEST，再从简历库提交一条真实 Agent 分析，确认模型调用和结果完成。若仍失败，核对路由器完整证书链、Base URL 域名与证书 SAN，以及服务器时间。
 
 ### 域名与 HTTPS 反向代理
 
@@ -79,17 +79,16 @@ W3 生产回调必须使用完整 HTTPS 域名，因此生产部署默认需要�
   -> https://海纳智聘域名:443
   -> HTTPS 反向代理或企业网关
   -> http://app宿主机地址:5173
-  -> app 容器 Nginx
-  -> /api/* 转发到 app 内的 127.0.0.1:8000
+  -> app 容器内 Go 程序（React 页面与 /api/*）
 ```
 
 部署人员必须完成以下事项：
 
 1. 将生产域名 DNS 解析到反向代理或企业网关。
 2. 为域名配置受客户端信任且未过期的 TLS 证书；80 端口只允许跳转到 HTTPS，不把 OAuth2 回调降级到 HTTP。
-3. 反向代理把 `/`、`/api/`、`/media/` 等所有路径统一转发到 app 暴露端口，不直接暴露或绕过 frontend 去访问 backend 的 `8000`。
+3. 反向代理把 `/`、`/api/`、`/media/` 等所有路径统一转发到 app 暴露端口。
 4. 转发时保留 `Host`，并设置 `X-Real-IP`、`X-Forwarded-For`、`X-Forwarded-Proto=https`；上传大小不得低于业务文件要求，读写超时建议不低于 1800 秒。
-5. 同机反代时建议设置 `FRONTEND_BIND=127.0.0.1`，避免绕过 HTTPS 直接访问容器端口。若企业网关位于其它机器，则 frontend 只绑定受控内网地址，并用防火墙仅允许网关访问；API 只在 app 内监听 `127.0.0.1:8000`。
+5. 同机反代时建议设置 `FRONTEND_BIND=127.0.0.1`，避免绕过 HTTPS 直接访问容器端口。若企业网关位于其它机器，则 frontend 只绑定受控内网地址，并用防火墙仅允许网关访问。
 6. `.env` 中 `DJANGO_ALLOWED_HOSTS` 填生产域名，`W3_OAUTH2_REDIRECT_URI` 必须填写并在 W3 平台登记为同一域名下的 `https://生产域名/api/auth/w3/callback/`，域名、协议、端口和路径必须逐字一致。
 
 同机 Nginx 外层反代可参考：
@@ -157,7 +156,7 @@ server {
 bash skills/smart-resume-offline-deploy/scripts/verify.sh
 ```
 
-成功条件：`app`、`agent-kernel`、`db`、`redis` 四个常驻服务均处于运行状态；app 的 `application.py --healthcheck` 验证 Web、API、default 与 ai 两个队列进程，容器内 `manage.py check`、`nginx -t` 通过。默认 NAME 为 `smart-resume-filter-app`、`-agent-kernel`、`-postgres`、`-redis`，可用 `COMPOSE_PROJECT_NAME` 指定统一前缀；升级必须沿用原项目名。生产环境还必须从客户端网络访问 `https://生产域名/` 和 `https://生产域名/api/auth/w3/status/`，确认使用有效证书、HTTP 自动跳转 HTTPS、响应经过 frontend 且 W3 状态就绪；仅验证 `http://服务器IP:5173` 不视为生产验收完成。
+成功条件：`app`、`agent-kernel`、`db`、`redis` 四个常驻服务均处于运行状态；app 的 `resume-platform healthcheck` 验证 HTTP、PostgreSQL 与 Redis，容器内 `resume-platform check` 验证 Go 运行依赖、协议和嵌入的 React 资源。默认 NAME 为 `smart-resume-filter-app`、`-agent-kernel`、`-postgres`、`-redis`，可用 `COMPOSE_PROJECT_NAME` 指定统一前缀；升级必须沿用原项目名。生产环境还必须从客户端网络访问 `https://生产域名/` 和 `https://生产域名/api/auth/w3/status/`，确认使用有效证书、HTTP 自动跳转 HTTPS、响应经过 frontend 且 W3 状态就绪；仅验证 `http://服务器IP:5173` 不视为生产验收完成。
 
 通过安全方式把监控密钥注入当前 shell 后，可做 Grafana 查询接口的最小验证：
 

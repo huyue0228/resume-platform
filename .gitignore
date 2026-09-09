@@ -13,11 +13,11 @@ build/
 release/
 backups/
 
-# 后端运行时产物
+# 运行时产物与嵌入前端的可重建文件
 *.sqlite3
-backend/media/
-backend/media.mock/
-backend/sample_data/
+media/
+internal/web/assets/*
+!internal/web/assets/.keep
 
 # 个人会议纪要，不纳入版本控制
 纪要.md

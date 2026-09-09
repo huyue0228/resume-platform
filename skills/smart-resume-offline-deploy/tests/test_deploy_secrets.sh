@@ -44,9 +44,12 @@ if [[ "${1:-}" == "compose" ]]; then
       [[ -z "${FAKE_EXISTING_RESOURCES:-}" ]] || printf '%s\n' "existing-container"
       exit 0 ;;
     *"exec -T agent-kernel sh -c "*)
-      [[ -z "${FAKE_CA_UNREADABLE:-}" ]]
+      [[ "${FAKE_CA_UNREADABLE:-}" != "kernel" ]]
       exit $? ;;
-    *"config --images"|*" build"|*" up -d --remove-orphans --wait --wait-timeout 180"|*" ps"|*"exec -T app python application.py --healthcheck"|*"exec -T app python manage.py check"|*"exec -T app nginx -t")
+    *"exec -T app sh -c "*)
+      [[ "${FAKE_CA_UNREADABLE:-}" != "app" ]]
+      exit $? ;;
+    *"config --images"|*" build"|*" up -d --remove-orphans --wait --wait-timeout 180"|*" ps"|*"exec -T app /usr/local/bin/resume-platform healthcheck"|*"exec -T app /usr/local/bin/resume-platform check")
       exit 0 ;;
   esac
 fi
@@ -213,12 +216,14 @@ if ! run_deploy $'1\n1\n1' "$ca_output" FAKE_EXISTING_RESOURCES=1 \
 fi
 grep -Fq 'assets/compose.model-ca.yml' "$ca_docker_log"
 grep -Fq 'exec -T agent-kernel sh -c' "$ca_docker_log"
-if run_deploy $'1\n1\n1' "${TEST_ROOT}/ca-unreadable.log" FAKE_EXISTING_RESOURCES=1 \
-  FAKE_CA_UNREADABLE=1 AGENT_KERNEL_CA_BUNDLE=/etc/company-ca/router.pem; then
-  echo "失败：容器内 CA 不可读时不应通过部署验证。"
-  exit 1
-fi
-grep -Fq 'CA 文件不存在、为空或 agent 用户不可读' "${TEST_ROOT}/ca-unreadable.log"
+for unreadable_service in app kernel; do
+  if run_deploy $'1\n1\n1' "${TEST_ROOT}/ca-unreadable-${unreadable_service}.log" FAKE_EXISTING_RESOURCES=1 \
+    FAKE_CA_UNREADABLE="$unreadable_service" AGENT_KERNEL_CA_BUNDLE=/etc/company-ca/router.pem; then
+    echo "失败：容器内 CA 不可读时不应通过部署验证。"
+    exit 1
+  fi
+  grep -Eq '平台 CA 文件不可读|CA 文件不存在、为空或 agent 用户不可读' "${TEST_ROOT}/ca-unreadable-${unreadable_service}.log"
+done
 
 sed 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=auto-generate-on-first-deploy/' \
   "${PACKAGE_ROOT}/.env" > "${PACKAGE_ROOT}/.env.invalid"

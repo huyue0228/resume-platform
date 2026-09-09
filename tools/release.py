@@ -86,7 +86,7 @@ def package(version_name, images_dir, output_dir=None):
         for source, name in [(assets / "docker-compose.yml", "compose.yml"),
                 (ROOT / "skills/smart-resume-offline-deploy/assets/compose.model-ca.yml", "compose.model-ca.yml"),
                 (ROOT / "ops/delivery/README.md", "README.md"),
-                (ROOT / "backend/resume_contracts/bundle/manifest.json", "contract-manifest.json")]:
+                (ROOT / "internal/contract/bundle/manifest.json", "contract-manifest.json")]:
             shutil.copyfile(source, staging / name)
         env = (assets / "env.example").read_text().replace("__APP_VERSION__", version_name)
         env = env.replace("__AGENT_KERNEL_VERSION__", "").replace("__AGENT_KERNEL_IMAGE__", "")

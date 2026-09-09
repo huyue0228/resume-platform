@@ -1,14 +1,30 @@
 # 内网可在 GitLab CI/CD Variables 覆盖镜像和依赖镜像源；不需要另外两个源码仓。
 stages: [check]
 variables:
+  GO_CI_IMAGE: "golang:1.25"
   PYTHON_CI_IMAGE: "python:3.12"
   NODE_CI_IMAGE: "node:22"
 backend:
   stage: check
+  image: $GO_CI_IMAGE
+  services:
+    - name: postgres:16
+      alias: postgres
+    - name: redis:7
+      alias: redis
+  variables:
+    POSTGRES_DB: resume_ci_verify
+    POSTGRES_USER: resume_verify
+    POSTGRES_PASSWORD: verification-only
+    TEST_DATABASE_URL: "postgres://resume_verify:verification-only@postgres:5432/resume_ci_verify?sslmode=disable"
+    TEST_REDIS_URL: "redis://redis:6379/0"
+  script:
+    - make check-backend
+release-check:
+  stage: check
   image: $PYTHON_CI_IMAGE
   script:
-    - pip install -r backend/requirements.txt
-    - make check-backend check-release PYTHON=python
+    - make check-release PYTHON=python
 frontend:
   stage: check
   image: $NODE_CI_IMAGE
