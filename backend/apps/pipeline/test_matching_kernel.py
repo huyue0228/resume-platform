@@ -47,6 +47,8 @@ class CandidateKernelTests(KernelTestCase):
 
     def test_full_pipeline_ranking_and_live_capacity(self):
         run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        runner.initialize_run(run)
+        matching.prepare_run(run)
         frozen = run.scope_items.get().kernel_snapshot
         best_ref = sorted(frozen["job_ids"])[0]
         best_id = frozen["job_ids"][best_ref]
@@ -130,6 +132,8 @@ class CandidateKernelTests(KernelTestCase):
 
     def test_school_rejection_never_calls_kernel(self):
         run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        runner.initialize_run(run)
+        matching.prepare_run(run)
         item=run.scope_items.get()
         item.kernel_snapshot["snapshot"]["admission_rules"]=[dict(ref="test-rule",priority=0,first_tag_refs=[],highest_tag_refs=[],educations=[])]
         item.save(update_fields=["kernel_snapshot"])
@@ -274,6 +278,8 @@ class CandidateKernelTests(KernelTestCase):
         next_run = m.ProcessingRun.objects.latest("pk")
         self.assertNotEqual(next_run.pk, run.pk)
         self.assertEqual(next_run.scope["retry_resume_id"], second.pk)
+        runner.initialize_run(next_run)
+        matching.prepare_run(next_run)
         frozen = next_run.scope_items.get().kernel_snapshot
         rejected = [v for v in frozen["snapshot"]["volunteers"] if v["rejected"]]
         self.assertEqual(frozen["volunteer_ids"][rejected[0]["ref"]], self.resume.pk)
@@ -282,6 +288,8 @@ class CandidateKernelTests(KernelTestCase):
         from resume_contracts.fixtures import capabilities_fixture
         with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.capabilities", side_effect=capabilities_fixture) as discover:
             run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+            runner.initialize_run(run)
+            matching.prepare_run(run)
         self.assertEqual(discover.call_count, 1)
         pin = run.scope_items.get().kernel_snapshot["pin"]
         self.assertEqual(pin["toolset_version"], run.toolset_version)
@@ -297,12 +305,16 @@ class CandidateKernelTests(KernelTestCase):
 
         with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.capabilities", side_effect=discover):
             run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+            runner.initialize_run(run)
+            matching.prepare_run(run)
         self.assertEqual(run.model_name, "test")
         self.assertFalse(run.model_config_revision == ai_config.current_ai_connection_fingerprint())
         self.assertTrue(run.scope_items.get().kernel_snapshot["pin"]["model_config_revision"] == run.model_config_revision)
 
     def test_evaluation_uses_the_same_model_config_it_validated(self):
         run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        runner.initialize_run(run)
+        matching.prepare_run(run)
         current = ai_config.get_ai_model_config()
         changed = replace(current, model_name="changed", api_key="changed-test-key")
         with patch.object(ai_config, "get_ai_model_config", side_effect=[current, changed]) as load, patch(
@@ -315,6 +327,8 @@ class CandidateKernelTests(KernelTestCase):
 
     def test_resaving_identical_connection_keeps_frozen_run_usable(self):
         run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        runner.initialize_run(run)
+        matching.prepare_run(run)
         ai_config.save_ai_connection_config(dict(api_style="responses", model_name="test",
             base_url="https://model.internal/v1/", api_key="test-key"))
         ai_config.mark_ai_connection_tested()
@@ -325,6 +339,8 @@ class CandidateKernelTests(KernelTestCase):
 
     def test_queued_task_uses_new_tested_connection_without_recreation(self):
         old = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        runner.initialize_run(old)
+        matching.prepare_run(old)
         ai_config.save_ai_connection_config(dict(api_style="responses", model_name="changed",
             base_url="https://model.internal/v1", api_key="changed-test-key"))
         ai_config.mark_ai_connection_tested()
@@ -340,6 +356,8 @@ class CandidateKernelTests(KernelTestCase):
 
     def test_queued_task_explains_when_current_connection_is_not_tested(self):
         old = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        runner.initialize_run(old)
+        matching.prepare_run(old)
         ai_config.save_ai_connection_config(dict(api_style="responses", model_name="changed",
             base_url="https://model.internal/v1", api_key="changed-test-key"))
         with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.execute") as execute:
@@ -368,6 +386,8 @@ class CandidateKernelTests(KernelTestCase):
 
     def test_removed_task_snapshot_fails_before_deterministic_business_writes(self):
         run = runner.create_run("all", {"candidate_ids": [self.candidate.pk]})
+        runner.initialize_run(run)
+        matching.prepare_run(run)
         run.scope_items.update(kernel_snapshot={})
         with patch("apps.pipeline.agent_kernel.client.AgentKernelClient.execute") as execute:
             runner.execute_run(run.pk)
@@ -413,5 +433,8 @@ class CandidateKernelTests(KernelTestCase):
         attempt.refresh_from_db()
         self.workflow.refresh_from_db()
         self.assertEqual(attempt.feedback_result, "rejected")
-        self.assertEqual(result["status"], "needs_attention")
-        self.assertEqual(self.workflow.block_reason, "agent_kernel_unavailable")
+        self.assertEqual(result["status"], "submitted")
+        next_run = m.ProcessingRun.objects.get(pk=result["run_id"])
+        self.assertEqual(next_run.status, "failed")
+        self.assertEqual(next_run.stages.get(step="initialize").status, "failed")
+        self.assertTrue(all(stage.status == "skipped" for stage in next_run.stages.filter(sequence__gt=2)))

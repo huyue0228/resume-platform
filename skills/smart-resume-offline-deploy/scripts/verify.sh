@@ -27,7 +27,7 @@ command -v docker >/dev/null || { echo "未找到 docker。"; exit 1; }
 docker compose version >/dev/null || { echo "未找到 Docker Compose v2。"; exit 1; }
 compose config --images >/dev/null
 configured_services="$(compose config --services)"
-for service in agent-kernel db redis backend worker ai-worker frontend; do
+for service in agent-kernel db redis app; do
   if ! grep -Fxq "$service" <<< "$configured_services"; then
     echo "Compose 缺少必需服务：${service}"
     exit 1
@@ -35,14 +35,15 @@ for service in agent-kernel db redis backend worker ai-worker frontend; do
 done
 compose ps
 running_services="$(compose ps --status running --services)"
-for service in agent-kernel db redis backend worker ai-worker frontend; do
+for service in agent-kernel db redis app; do
   if ! grep -Fxq "$service" <<< "$running_services"; then
     echo "服务未处于运行状态：${service}"
     exit 1
   fi
 done
-compose exec -T backend python manage.py check
-compose exec -T frontend nginx -t
+compose exec -T app python application.py --healthcheck
+compose exec -T app python manage.py check
+compose exec -T app nginx -t
 if [[ -n "$(model_ca_bundle)" ]]; then
   compose exec -T agent-kernel sh -c 'test -r "$SSL_CERT_FILE" && test -s "$SSL_CERT_FILE"' || {
     echo "Agent Kernel 的 CA 文件不存在、为空或 agent 用户不可读，请检查挂载和文件权限。"

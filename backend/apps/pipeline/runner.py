@@ -1,4 +1,5 @@
 """流水线编排：单步、上传后主流程或一键全流程，记录共享 ProcessingRun。"""
+import logging
 from copy import deepcopy
 
 from django.conf import settings
@@ -20,6 +21,9 @@ from apps.pipeline.agent_kernel.task_contracts import runtime_pin
 
 from .cancellation import RunCancelled, raise_if_cancel_requested
 from .services import allocate, dedup
+from .progress import STAGE_LABELS, begin_stage, finish_stage, stop_stages
+
+logger = logging.getLogger(__name__)
 
 STEP_FUNCS = {
     "step1": lambda mode, scope, run: dedup.run(scope),
@@ -33,12 +37,7 @@ STEP_FUNCS = {
 }
 
 RESUME_PROCESS_STEP = "resume_process"
-STAGE_LABELS = {
-    "step1": "查重与志愿排序",
-    "step2": "院校分类与学历/院校准入",
-    "step3": "Policy Gate 与固定业务引用",
-    "step4": "Agent Kernel 证据化筛选与分配",
-}
+
 
 STEP_ORDER = ["step1", "step2", "step3", "step4"]
 
@@ -89,16 +88,11 @@ def _job_hc_coefficient():
 def create_run(step, scope=None, created_by=None):
     if step not in {"all", RESUME_PROCESS_STEP} and step not in STEP_FUNCS:
         raise ValueError(f"未知步骤: {step}")
-    # 网络探测在事务外完成，每个批次只探测一次；后续候选人共享冻结版本。
-    config = ai_config.get_ai_model_config() if "step4" in _stage_steps(step) else None
-    pin = runtime_pin(model_config=config) if config else None
-    return _create_run(step, scope, created_by, config, pin)
+    return _create_run(step, scope, created_by)
 
 
 @transaction.atomic
-def _create_run(step, scope, created_by, config, pin):
-    if step not in {"all", RESUME_PROCESS_STEP} and step not in STEP_FUNCS:
-        raise ValueError(f"未知步骤: {step}")
+def _create_run(step, scope, created_by):
     mode = "ai"  # 业务审计字段；新任务不存在可选运行模式。
     scope = deepcopy(scope or {})
     candidate_ids = _candidate_ids_for_run(step, scope)
@@ -115,45 +109,19 @@ def _create_run(step, scope, created_by, config, pin):
             return existing
     # candidate_ids 保存在范围明细表；scope 只保留触发时的可审计筛选快照。
     scope.pop("candidate_ids", None)
-    versions = {
-        "model_name": config.model_name,
-        # 保留存量列名，新任务在此字段记录 Kernel 内置指令版本。
-        "prompt_version": pin.instruction_version,
-        "decision_version": pin.policy_version,
-        "kernel_build": pin.kernel_build,
-        "protocol_version": pin.protocol_version,
-        "toolset_version": pin.toolset_version,
-        "result_schema_version": pin.result_schema_version,
-        "policy_version": pin.policy_version,
-        "model_config_revision": pin.model_config_revision,
-        "pin_id": pin.pin_id,
-    } if pin else {}
-    coefficient = _job_hc_coefficient()
     run = ProcessingRun.objects.create(
         step=step,
         mode=mode,
         scope=scope,
         scope_summary=_scope_summary(scope, candidate_ids),
         status="pending",
+        total_count=len(candidate_ids),
+        params={"runtime_initialization": "pending", "snapshot_preparation": "pending"},
+        current_stage="queued", message="任务已提交，等待后台开始处理",
         created_by=created_by if getattr(created_by, "is_authenticated", False) else None,
         created_by_username_snapshot=(
             created_by.username if getattr(created_by, "is_authenticated", False) else ""
         ),
-        job_hc_coefficient_snapshot=coefficient,
-        **versions,
-    )
-    ProcessingRunJobCapacity.objects.bulk_create(
-        [
-            ProcessingRunJobCapacity(
-                run=run,
-                job=job,
-                headcount_snapshot=job.headcount,
-                coefficient_snapshot=coefficient,
-                capacity=job.headcount * coefficient,
-            )
-            for job in Job.objects.filter(is_active=True).order_by("id")
-        ],
-        batch_size=1000,
     )
     workflow_revisions = dict(
         CandidateWorkflow.objects.filter(candidate_id__in=candidate_ids).values_list(
@@ -178,23 +146,73 @@ def _create_run(step, scope, created_by, config, pin):
                 sequence=index,
                 step=stage_step,
                 label=STAGE_LABELS[stage_step],
+                status="running" if stage_step == "queued" else "pending",
+                total_count=1 if stage_step in {"queued", "initialize", "finalize"} else len(candidate_ids),
+                started_at=run.created_at if stage_step == "queued" else None,
             )
-            for index, stage_step in enumerate(_stage_steps(step), start=1)
+            for index, stage_step in enumerate(
+                ["queued", "initialize"] + (["preparing"] if step != "step1" else []) + _stage_steps(step) + ["finalize"], start=1
+            )
         ]
     )
-    if pin:
-        from apps.pipeline.agent_kernel.task_contracts import freeze_case
-        for item in run.scope_items.select_related("candidate"):
-            item.kernel_snapshot = freeze_case(item.candidate, run)
-            item.save(update_fields=["kernel_snapshot"])
+    # HTTP 提交只保存选中范围和节点计划。服务检查、逐份读取 PDF、生成分析输入由
+    # worker 在 prepare_run 中完成，不能让大批量材料准备阻塞任务入队。
     return run
+
+
+def initialize_run(run):
+    """后台检查服务并初始化执行配置；旧任务继续使用已记录的版本。"""
+    if (run.params or {}).get("runtime_initialization") != "pending":
+        return
+    raise_if_cancel_requested(run)
+    config = ai_config.get_ai_model_config(require_tested=True) if "step4" in _stage_steps(run.step) else None
+    pin = runtime_pin(model_config=config) if config else None
+    versions = {
+        "model_name": config.model_name,
+        # 保留存量列名，新任务在此字段记录 Kernel 内置指令版本。
+        "prompt_version": pin.instruction_version,
+        "decision_version": pin.policy_version,
+        "kernel_build": pin.kernel_build,
+        "protocol_version": pin.protocol_version,
+        "toolset_version": pin.toolset_version,
+        "result_schema_version": pin.result_schema_version,
+        "policy_version": pin.policy_version,
+        "model_config_revision": pin.model_config_revision,
+        "pin_id": pin.pin_id,
+    } if pin else {}
+    # 网络握手结束后才进入短事务，岗位配额与版本一起保存。
+    with transaction.atomic():
+        locked = ProcessingRun.objects.select_for_update().get(pk=run.pk)
+        raise_if_cancel_requested(locked)
+        if locked.params.get("runtime_initialization") != "pending":
+            run.refresh_from_db()
+            return
+        coefficient = _job_hc_coefficient()
+        ProcessingRunJobCapacity.objects.bulk_create(
+            [
+                ProcessingRunJobCapacity(
+                    run=run,
+                    job=job,
+                    headcount_snapshot=job.headcount,
+                    coefficient_snapshot=coefficient,
+                    capacity=job.headcount * coefficient,
+                )
+                for job in Job.objects.filter(is_active=True).order_by("id")
+            ],
+            batch_size=1000,
+        )
+        for field, value in versions.items():
+            setattr(locked, field, value)
+        locked.job_hc_coefficient_snapshot = coefficient
+        locked.params = {**locked.params, "runtime_initialization": "complete"}
+        locked.save(update_fields=[*versions, "job_hc_coefficient_snapshot", "params"])
+    run.refresh_from_db()
 
 
 def _run_scope(run):
     scope = deepcopy(run.scope or {})
     candidate_ids = list(run.scope_items.order_by("candidate_id").values_list("candidate_id", flat=True))
-    if candidate_ids:
-        scope["candidate_ids"] = candidate_ids
+    scope["candidate_ids"] = candidate_ids
     return scope
 
 
@@ -284,6 +302,7 @@ def prepare_ai_stage(run, scope):
     stage.archive_count = 0
     stage.skipped_count = 0
     stage.cancelled_count = 0
+    stage.message = f"等待后台分析 {len(candidate_ids)} 名候选人，分析结果将逐份保存"
     stage.save()
     return stage
 
@@ -380,10 +399,16 @@ def finalize_ai_run_if_complete(run_id):
     """以 ScopeItem 为权威来源收口运行；未全部终态时保持运行中。"""
     with transaction.atomic():
         run = ProcessingRun.objects.select_for_update().get(pk=run_id)
+        if run.status not in {"running", "cancelling", "waiting_conflict"}:
+            return True
+        if run.current_stage != "step4":
+            return False
         total = run.scope_items.count()
         terminal = run.scope_items.filter(status__in=AI_SCOPE_TERMINAL_STATUSES).count()
         if terminal < total:
             return False
+        if not run.cancel_requested_at:
+            begin_stage(run, "finalize", message="正在汇总候选人处理结果")
         success = run.scope_items.filter(status="success").count()
         completed = run.scope_items.filter(
             result_type=ProcessingRunScopeItem.RESULT_COMPLETED
@@ -477,6 +502,10 @@ def finalize_ai_run_if_complete(run_id):
         stage.message = run.message
         stage.finished_at = now
         stage.save()
+        if run.cancel_requested_at:
+            stop_stages(run.id, status="cancelled", message=run.message)
+        else:
+            finish_stage(run, "finalize", message=run.message)
         return True
 
 
@@ -518,8 +547,15 @@ def execute_run(run_id):
     async_ai_scheduled = False
     try:
         messages = []
+        finish_stage(run, "queued", message="后台已领取任务")
+        begin_stage(run, "initialize")
+        initialize_run(run)
+        finish_stage(run, "initialize", message="处理服务及本次配置已就绪")
         from apps.pipeline.agent_kernel.matching import prepare_run
-        prepare_run(run)
+        if step != "step1":
+            begin_stage(run, "preparing", total=run.total_count)
+            prepare_run(run)
+            finish_stage(run, "preparing", message=f"已准备 {run.total_count} 名候选人的材料")
         for stage in _stage_steps(step):
             if stage == "step4" and mode == "ai":
                 prepare_ai_stage(run, scope)
@@ -539,6 +575,7 @@ def execute_run(run_id):
             run.refresh_from_db()
             return run
         message = " | ".join(messages)
+        begin_stage(run, "finalize", message="正在汇总处理结果")
         run.refresh_from_db()
         run.status = (
             "partial_failed"
@@ -548,18 +585,22 @@ def execute_run(run_id):
             else "success"
         )
         run.message = message
+        finish_stage(run, "finalize", message=message)
     except RunCancelled:
         run.refresh_from_db()
         run.status = "cancelled"
         run.message = "任务已取消；已完成的候选人处理结果已保留"
         run.cancelled_at = run.cancelled_at or timezone.now()
-        run.stages.filter(status="running").update(
-            status="cancelled", finished_at=run.cancelled_at
-        )
-    except Exception as exc:  # noqa: BLE001 - 记录失败信息供前端展示
+        stop_stages(run.id, status="cancelled", message=run.message)
+    except Exception as exc:  # noqa: BLE001 - 错误写回节点，HTTP 提交不等待处理
+        from .errors import AIServiceError
         run.status = "failed"
-        run.message = f"{type(exc).__name__}: {exc}"
+        label = STAGE_LABELS.get(run.current_stage, "后台处理")
+        detail = str(exc) if isinstance(exc, (AIServiceError, ValueError)) else "处理异常，请联系管理员查看后台日志"
+        run.message = f"{label}失败：{detail}"
         run.error = run.message
+        stop_stages(run.id, status="failed", message=run.message)
+        logger.warning("Processing run failed run_id=%s stage=%s error_type=%s", run.id, run.current_stage, type(exc).__name__)
     run.finished_at = timezone.now()
     run.last_heartbeat_at = run.finished_at
     run.current_stage = ""

@@ -1,9 +1,12 @@
 """新内核适配与 Django Policy；模型结果不包含业务动作。"""
+import time
 import uuid
 from copy import deepcopy
 from dataclasses import replace
 
 from django.conf import settings
+from django.db.models import Prefetch
+from django.utils import timezone
 
 from apps.core import models as m
 from apps.pipeline import ai_config
@@ -11,7 +14,7 @@ from apps.pipeline.screening_types import ResumeScreeningOutput, ScreeningResult
 from apps.pipeline.errors import AIServiceError
 from resume_contracts.models import SCORE_WEIGHTS
 from .client import AgentKernelClient
-from .task_contracts import build_task, freeze_case, job_hash, pin_from_run, POLICY_VERSION
+from .task_contracts import build_task, case_context, freeze_case, job_hash, pin_from_run, POLICY_VERSION
 
 
 KERNEL_FAILURES = {
@@ -61,7 +64,7 @@ def reusable_analysis(item, frozen, envelope):
 
 
 def prepare_run(run):
-    """平台本地执行志愿、准入和岗位池构造，零外部调用。"""
+    """worker 准备材料并执行本地准入；HTTP 提交不读取简历文件。"""
     from apps.pipeline.cancellation import raise_if_cancel_requested
     from apps.pipeline.services.admission_snapshot import prepare_snapshot
     if run.step == "step1":
@@ -72,9 +75,38 @@ def prepare_run(run):
             raise ValueError("unsupported policy version")
     except ValueError as exc:
         raise AIServiceError("agent_snapshot_unavailable", "旧版本任务不再支持，请重新提交任务") from exc
-    for item in run.scope_items.select_related("candidate"):
+    pending = (run.params or {}).get("snapshot_preparation") == "pending"
+    context = None
+    buffered, prepared = [], 0
+    last_flush = time.monotonic()
+
+    def flush():
+        nonlocal last_flush
+        if buffered:
+            m.ProcessingRunScopeItem.objects.bulk_update(buffered, ["kernel_snapshot"], batch_size=100)
+            buffered.clear()
+        # 只更新准备进度，不覆盖用户并发提交的取消状态。
+        m.ProcessingRun.objects.filter(pk=run.pk, cancel_requested_at__isnull=True).update(
+            current_stage="preparing", last_heartbeat_at=timezone.now(),
+            message=f"正在准备候选人材料（{prepared}/{run.total_count}）",
+        )
+        run.stages.filter(step="preparing", status="running").update(
+            processed_count=prepared, message=f"已准备 {prepared} / {run.total_count} 名候选人的材料",
+        )
+        last_flush = time.monotonic()
+
+    raise_if_cancel_requested(run)
+    flush()
+    items = run.scope_items.select_related("candidate__workflow").prefetch_related(
+        Prefetch("candidate__resumes", queryset=m.Resume.objects.order_by("id"), to_attr="kernel_resumes"),
+    ).order_by("candidate_id")
+    for item in items.iterator(chunk_size=100):
         raise_if_cancel_requested(run)
         frozen = item.kernel_snapshot
+        if not frozen and pending:
+            if context is None:
+                context = case_context(run)
+            frozen = freeze_case(item.candidate, run, context=context)
         if (not frozen or frozen.get("pin") != run_pin.model_dump()
                 or frozen.get("lane") not in {"review_only", "enforced"}):
             raise AIServiceError("agent_snapshot_unavailable", "任务冻结版本缺失或不一致，请重新提交任务")
@@ -85,7 +117,14 @@ def prepare_run(run):
                 (ref for ref, pk in frozen["volunteer_ids"].items() if pk == retry), "invalid-retry")
         frozen["preflight"] = prepare_snapshot(snapshot)
         item.kernel_snapshot = frozen
-        item.save(update_fields=["kernel_snapshot"])
+        buffered.append(item)
+        prepared += 1
+        if len(buffered) >= 100 or time.monotonic() - last_flush >= 2:
+            flush()
+    flush()
+    if pending:
+        run.params = {**run.params, "snapshot_preparation": "complete"}
+        run.save(update_fields=["params"])
 
 
 def validate_result(envelope, result, frozen, resume):

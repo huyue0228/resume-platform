@@ -27,14 +27,14 @@ class ReleaseTests(unittest.TestCase):
             archive = release.package("test-v1", images, root / "output")
             with tarfile.open(archive) as tar:
                 content = {x.name: tar.extractfile(x).read() for x in tar.getmembers()}
-            self.assertIn(b"gitlab.internal:5000/resume/platform-backend@sha256:", content["images.env"])
+            self.assertIn(b"gitlab.internal:5000/resume/platform-app@sha256:", content["images.env"])
             self.assertNotIn(b"build:", content["compose.yml"])
             self.assertNotIn(b"AGENT_KERNEL_MODE:", content["compose.yml"])
             self.assertIn(b"AGENT_KERNEL_ROLLOUT=review_only", content["env.example"])
             self.assertIn(b"AGENT_KERNEL_CA_BUNDLE=\n", content["env.example"])
             self.assertIn(b"SSL_CERT_FILE: /etc/agent-kernel/model-ca.pem", content["compose.model-ca.yml"])
             self.assertIn(b"create_host_path: false", content["compose.model-ca.yml"])
-            self.assertEqual(set(release.COMPONENTS), {"backend", "frontend", "postgres", "redis"})
+            self.assertEqual(set(release.COMPONENTS), {"app", "postgres", "redis"})
             for name in ("images.env", "compose.yml", "env.example"):
                 for removed in (b"BACKUP_", b"RESTIC_", b"backup-scheduler", b"profiles: [\"restore\"]"):
                     self.assertNotIn(removed, content[name])
@@ -48,7 +48,7 @@ class ReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             images = self.images(root)
-            backend = images / "backend.json"
+            backend = images / "app.json"
             data = json.loads(backend.read_text())
             data["commit"] = "b"*40
             backend.write_text(json.dumps(data))

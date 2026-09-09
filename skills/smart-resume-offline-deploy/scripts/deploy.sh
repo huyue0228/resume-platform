@@ -242,9 +242,9 @@ if [[ "$DEPLOY_MODE" == "source" ]]; then
 fi
 
 configured_services="$(compose config --services)"
-for service in agent-kernel db redis backend worker ai-worker frontend; do
+for service in agent-kernel db redis app; do
   if ! grep -Fxq "$service" <<< "$configured_services"; then
-    echo "Compose 缺少必需服务：${service}。Agent 处理需要 Kernel、default worker 和 ai-worker 同时运行。"
+    echo "Compose 缺少必需服务：${service}。Agent 处理需要 Kernel 和包含 Web/API/default/ai 进程的 app 同时运行。"
     exit 1
   fi
 done

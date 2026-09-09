@@ -263,9 +263,9 @@ def _candidate_queryset(scope):
     scope = scope or {}
     candidate_filters = scope.get("candidate_filters") or {}
     qs = m.Candidate.objects.prefetch_related("resumes")
-    candidate_ids = scope.get("candidate_ids") or []
-    if candidate_ids:
-        qs = qs.filter(id__in=candidate_ids)
+    if "candidate_ids" in scope:
+        # 后台使用提交时选中的固定范围，不再次根据已变化的页面状态筛选。
+        return qs.filter(id__in=scope["candidate_ids"] or [])
     if candidate_filters:
         qs = analytics_scope.apply_candidate_drilldown(qs, candidate_filters)
         qs = system_status.apply_candidate_filters(qs, candidate_filters)

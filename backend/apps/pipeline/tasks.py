@@ -25,6 +25,18 @@ _LOCAL_ENRICHMENT_EXECUTOR = ThreadPoolExecutor(
 )
 
 
+def enqueue_runs(run_ids, *, task_id):
+    """HTTP 仅发送消息；即使本地开启 eager，也不在请求线程执行流水线。"""
+    app = execute_runs_sequence_task.app
+    transport = {**app.conf.broker_transport_options,
+                 "socket_connect_timeout": 3, "socket_timeout": 3, "max_retries": 0}
+    with app.connection_for_write(connect_timeout=3, transport_options=transport) as broker:
+        return app.send_task(
+            execute_runs_sequence_task.name, args=[run_ids], task_id=task_id,
+            queue="default", ignore_result=True, retry=False, connection=broker,
+        )
+
+
 @shared_task
 def process_next_volunteer_task(candidate_id, resume_id, workflow_revision):
     """反馈已提交后才发现 Kernel 版本；重复投递和人工变更不能重复续办。"""
@@ -144,6 +156,8 @@ def dispatch_ai_run_task(self, run_id):
             run = m.ProcessingRun.objects.select_for_update().get(pk=run_id)
             if run.status not in {"running", "cancelling", "waiting_conflict"}:
                 return run.status
+            if run.current_stage != "step4":
+                return "not_ready"
             if run.cancel_requested_at:
                 runner.cancel_unstarted_ai_items(run_id)
                 runner.finalize_ai_run_if_complete(run_id)
@@ -204,6 +218,8 @@ def dispatch_ai_run_task(self, run_id):
                 error="ai_task_dispatch_failed",
                 finished_at=now,
             )
+            from .progress import stop_stages
+            stop_stages(run_id, status="failed", message="AI 候选人任务无法投递，请检查后台队列服务")
             return "failed"
         raise self.retry(countdown=2)
 

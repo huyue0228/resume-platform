@@ -53,7 +53,7 @@ function formatDuration(value) {
 function progressOf(run) {
   const stages = run.stages || []
   if (stages.length) {
-    const completed = stages.filter((stage) => ['success', 'needs_attention', 'partial_failed', 'cancelled'].includes(stage.status)).length
+    const completed = stages.filter((stage) => ['success', 'needs_attention', 'partial_failed'].includes(stage.status)).length
     const active = stages.find((stage) => stage.status === 'running')
     const activePart = active?.total_count
       ? Math.min(1, Number(active.processed_count || 0) / Number(active.total_count))
@@ -63,6 +63,85 @@ function progressOf(run) {
   return run.total_count
     ? Math.round(Math.min(100, (Number(run.processed_count || 0) / Number(run.total_count)) * 100))
     : 0
+}
+
+const NODE_STATUS = {
+  pending: { label: '待执行', color: 'default' },
+  running: { label: '进行中', color: 'processing' },
+  success: { label: '已完成', color: 'success' },
+  needs_attention: { label: '已完成 · 需处理', color: 'warning' },
+  partial_failed: { label: '已完成 · 部分失败', color: 'warning' },
+  failed: { label: '失败', color: 'error' },
+  cancelled: { label: '已取消', color: 'default' },
+  skipped: { label: '未执行', color: 'default' },
+}
+
+function currentNode(run) {
+  return (run.stages || []).find((node) => node.step === run.current_stage)
+    || (run.stages || []).find((node) => node.status === 'running')
+}
+
+function nextNode(run) {
+  if (!ACTIVE_STATUSES.has(run.status) || run.status === 'cancelling') return null
+  return (run.stages || []).find((node) => node.status === 'pending')
+}
+
+function stageCounter(run) {
+  const node = currentNode(run)
+  if (node) return node.total_count > 1 ? `${node.processed_count || 0} / ${node.total_count}` : null
+  return run.total_count ? `${run.processed_count || 0} / ${run.total_count}` : null
+}
+
+function TaskExecutionNodes({ run }) {
+  const nodes = run.stages || []
+  if (!nodes.length) return null
+  const active = currentNode(run)
+  const next = nextNode(run)
+  return (
+    <section className="processing-task-nodes" aria-label={`任务 ${run.id} 的执行节点`}>
+      <div className="processing-task-nodes-heading">
+        <Typography.Text strong>任务节点</Typography.Text>
+        <Typography.Text type="secondary">
+          {run.status === 'cancelling' ? '正在停止，后续节点不会继续执行'
+            : next ? `下一步：${next.label}`
+              : ACTIVE_STATUSES.has(run.status) ? '当前为最后一个节点'
+                : ['failed', 'cancelled'].includes(run.status) ? '任务已停止' : '全部节点已结束'}
+        </Typography.Text>
+      </div>
+      <ol className="processing-task-node-list">
+        {nodes.map((node, index) => {
+          const state = NODE_STATUS[node.status] || { label: node.status, color: 'default' }
+          const isCurrent = node === active
+          const completed = ['success', 'needs_attention', 'partial_failed'].includes(node.status)
+          return (
+            <li key={node.step} className={`processing-task-node is-${node.status}`}
+              aria-current={isCurrent ? 'step' : undefined}>
+              <span className="processing-task-node-mark" aria-hidden="true">
+                {node.status === 'running' ? <SyncOutlined spin />
+                  : completed ? <CheckCircleOutlined />
+                    : node.status === 'failed' ? <ExclamationCircleOutlined /> : index + 1}
+              </span>
+              <div className="processing-task-node-body">
+                <div className="processing-task-node-title">
+                  <span>{node.label}</span>
+                  <Tag color={state.color} bordered={false}>
+                    {node.step === 'queued' && node.status === 'running' ? '排队中' : state.label}
+                  </Tag>
+                </div>
+                <div className="processing-task-node-description">{node.error || node.message || node.description}</div>
+                {node.started_at && node.step !== 'queued' ? (
+                  <div className="processing-task-node-metrics">
+                    {node.total_count > 1 ? <span>已处理 {node.processed_count || 0} / {node.total_count}</span> : null}
+                    {node.elapsed_seconds != null ? <span>耗时 {formatDuration(node.elapsed_seconds)}</span> : null}
+                  </div>
+                ) : null}
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+    </section>
+  )
 }
 
 function taskTitle(run) {
@@ -240,16 +319,17 @@ function TaskTable({ runs, cancellingId, onCancel, onOpenCandidates }) {
       },
     },
     {
-      title: '当前阶段',
+      title: '当前与下一步',
       key: 'stage',
       width: 210,
       render: (_, run) => {
-        const stage = (run.stages || []).find((item) => item.step === run.current_stage)
+        const stage = currentNode(run)
         return (
           <div className="processing-task-table-stage">
             <Typography.Text>{stage?.label || run.message || '等待任务开始'}</Typography.Text>
-            {run.total_count ? (
-              <Typography.Text type="secondary">{run.processed_count || 0} / {run.total_count}</Typography.Text>
+            {nextNode(run) ? <Typography.Text type="secondary">下一步：{nextNode(run).label}</Typography.Text> : null}
+            {stageCounter(run) ? (
+              <Typography.Text type="secondary">{stageCounter(run)}</Typography.Text>
             ) : null}
             {run.error ? <span className="processing-task-table-error" title={run.error}>{run.error}</span> : null}
           </div>
@@ -311,6 +391,15 @@ function TaskTable({ runs, cancellingId, onCancel, onOpenCandidates }) {
         columns={columns}
         dataSource={runs}
         pagination={false}
+        expandable={{
+          rowExpandable: (run) => Boolean(run.stages?.length),
+          expandedRowRender: (run) => <TaskExecutionNodes run={run} />,
+          expandIcon: ({ expanded, onExpand, record }) => record.stages?.length ? (
+            <Button type="text" size="small" icon={expanded ? <UpOutlined /> : <DownOutlined />}
+              aria-label={`${expanded ? '收起' : '展开'}任务 ${record.id} 的执行节点`}
+              onClick={(event) => onExpand(record, event)} />
+          ) : null,
+        }}
         scroll={{ x: 1390 }}
         rowClassName={(run) => (ACTIVE_STATUSES.has(run.status) ? 'is-active' : '')}
         locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无处理任务" /> }}
@@ -321,7 +410,7 @@ function TaskTable({ runs, cancellingId, onCancel, onOpenCandidates }) {
 
 function TaskCard({ run, cancellingId, onCancel, onOpenCandidates }) {
   const percent = progressOf(run)
-  const stage = (run.stages || []).find((item) => item.step === run.current_stage)
+  const stage = currentNode(run)
   const status = STATUS_META[run.status] || { text: run.status || '未知', color: 'default' }
   const scopeSummary = scopeSummaryText(run)
   return (
@@ -370,14 +459,22 @@ function TaskCard({ run, cancellingId, onCancel, onOpenCandidates }) {
 
         <div className="processing-task-stage">
           <Typography.Text>
-            {stage?.label || run.message || '等待任务开始'}
+            {stage ? `当前：${stage.label}` : run.message || '等待任务开始'}
           </Typography.Text>
-          {run.total_count ? (
+          {stageCounter(run) ? (
             <Typography.Text type="secondary">
-              {run.processed_count || 0} / {run.total_count}
+              {stageCounter(run)}
             </Typography.Text>
           ) : null}
         </div>
+
+        {run.activity ? (
+          <Typography.Text type="secondary" className="processing-task-activity">
+            正在分析 {run.activity.processing} 名 · 待分析 {run.activity.queued} 名
+            {run.activity.waiting_conflict ? ` · 等待其他任务释放 ${run.activity.waiting_conflict} 名` : ''}
+          </Typography.Text>
+        ) : null}
+        <TaskExecutionNodes run={run} />
 
         {scopeSummary ? (
           <Typography.Text type="secondary" className="processing-task-scope">

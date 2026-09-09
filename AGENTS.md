@@ -48,7 +48,7 @@ docker compose --profile init run --rm init
 docker compose up
 ```
 
-Compose uses project Dockerfiles now: backend/worker share `smart-resume-filter-backend:${APP_VERSION:-latest}` based on Python 3.12.3, frontend uses a built React bundle served by Nginx, and db/redis are wrapped as project images for offline deployment. See README for server deployment details.
+Compose defaults to four resident containers: app, agent-kernel, db, redis. The root Dockerfile builds one app image with Nginx, Gunicorn and separate default/ai Celery processes; db/redis are wrapped as project images. Use `docker compose logs -f app` for platform logs. See README for server deployment details.
 
 For an amd64 offline release and external-drive handoff, use the project Skill at `skills/smart-resume-offline-release/SKILL.md`; its single entry point builds, verifies, packages, and copies the release without modifying the current Git worktree.
 
@@ -77,7 +77,7 @@ Use focused verification for the files changed:
 - Django owns deterministic admission/capacity/reference policy, final writes, and audit. Go source is in the independent sibling repository `../resume-agent-kernel`; platform builds consume a released image, not that source path. `backend/resume_contracts` is a versioned contract bundle. See `REPOSITORIES.md` for isolated mock development. The only production runtime model connection source remains the `settings.manage_ai_connection`-protected system settings page.
 - Agent screening evaluates only the current effective volunteer and a frozen job/department reference. It never skips volunteer order or admission policy and never falls back to the historical Rule implementation.
 - Agent failures, timeouts, parse failures, invalid output, missing references, and guardrail blocks should be recorded for HR handling. HR chooses retry Agent, manual assignment, or archive handling.
-- Frontend submits one `/api/pipeline/run/` request with a `step` and optional `scope` via `frontend/src/components/useProcessRunner.jsx`; the backend creates one version-pinned Agent run and executes it through the sequential Celery orchestration. New tasks are accepted only while the current model connection and Agent Kernel are ready.
+- Frontend submits one `/api/pipeline/run/` request with a `step` and optional `scope` via `frontend/src/components/useProcessRunner.jsx`; the backend creates one version-pinned Agent run and executes it through the sequential Celery orchestration. Submission only persists scope and the complete node plan, then enqueues the run with HTTP 202. The worker checks model/Kernel readiness and prepares materials; errors are persisted on the current node. Even local eager settings must not execute submitted pipeline tasks in the HTTP request.
 
 ## API Notes
 

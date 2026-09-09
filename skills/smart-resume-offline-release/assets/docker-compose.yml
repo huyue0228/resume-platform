@@ -1,3 +1,5 @@
+name: ${COMPOSE_PROJECT_NAME:-smart-resume-filter}
+
 x-backend-env: &backend-env
   DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
   USAGE_METRICS_TOKEN: ${USAGE_METRICS_TOKEN:?Set USAGE_METRICS_TOKEN in .env}
@@ -36,6 +38,7 @@ x-backend-env: &backend-env
 
 services:
   agent-kernel:
+    container_name: ${COMPOSE_PROJECT_NAME:-smart-resume-filter}-agent-kernel
     image: ${AGENT_KERNEL_IMAGE:?Set AGENT_KERNEL_IMAGE}
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     environment:
@@ -53,6 +56,8 @@ services:
     restart: unless-stopped
 
   db:
+    restart: unless-stopped
+    container_name: ${COMPOSE_PROJECT_NAME:-smart-resume-filter}-postgres
     image: ${POSTGRES_IMAGE_RELEASE:-smart-resume-filter-postgres:${POSTGRES_VERSION:-16}}
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     environment:
@@ -70,6 +75,8 @@ services:
       retries: 20
 
   redis:
+    restart: unless-stopped
+    container_name: ${COMPOSE_PROJECT_NAME:-smart-resume-filter}-redis
     image: ${REDIS_IMAGE_RELEASE:-smart-resume-filter-redis:${REDIS_VERSION:-7}}
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     ports:
@@ -80,16 +87,25 @@ services:
       timeout: 3s
       retries: 20
 
-  backend:
-    image: ${BACKEND_IMAGE:-smart-resume-filter-backend:${APP_VERSION:-latest}}
+  app:
+    container_name: ${COMPOSE_PROJECT_NAME:-smart-resume-filter}-app
+    image: ${APP_IMAGE:-smart-resume-filter-app:${APP_VERSION:-latest}}
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     environment:
       <<: *backend-env
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-1}
       RUN_SEED_BASE: ${RUN_SEED_BASE:-0}
-    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout ${GUNICORN_TIMEOUT:-1800}
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
+      GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-1800}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      AI_WORKER_CONCURRENCY: ${AI_WORKER_CONCURRENCY:-20}
+    # 独立进程：Nginx、Gunicorn、default/prefork、ai/threads。
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 120s
+    command: python application.py
     ports:
-      - "${BACKEND_BIND:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
+      - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-5173}:80"
     volumes:
       - media_data:/app/media
     depends_on:
@@ -100,48 +116,15 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import socket; s=socket.create_connection(('127.0.0.1', 8000), 3); s.close()\""]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-
-  worker:
-    image: ${BACKEND_IMAGE:-smart-resume-filter-backend:${APP_VERSION:-latest}}
-    platform: ${DOCKER_PLATFORM:-linux/amd64}
-    environment:
-      <<: *backend-env
-      RUN_MIGRATIONS: "0"
-      RUN_SEED_BASE: "0"
-    command: celery -A config worker -l info -Q default --prefetch-multiplier=1
-    volumes:
-      - media_data:/app/media
-    depends_on:
-      backend:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  ai-worker:
-    image: ${BACKEND_IMAGE:-smart-resume-filter-backend:${APP_VERSION:-latest}}
-    platform: ${DOCKER_PLATFORM:-linux/amd64}
-    environment:
-      <<: *backend-env
-      RUN_MIGRATIONS: "0"
-      RUN_SEED_BASE: "0"
-    command: celery -A config worker -l info -Q ai --pool=threads --concurrency=${AI_WORKER_CONCURRENCY:-20} --prefetch-multiplier=1
-    volumes:
-      - media_data:/app/media
-    depends_on:
-      agent-kernel:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      test: ["CMD", "python", "application.py", "--healthcheck"]
+      interval: 30s
+      timeout: 12s
+      start_period: 60s
+      retries: 3
 
   init:
     profiles: ["init"]
-    image: ${BACKEND_IMAGE:-smart-resume-filter-backend:${APP_VERSION:-latest}}
+    image: ${APP_IMAGE:-smart-resume-filter-app:${APP_VERSION:-latest}}
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     environment:
       <<: *backend-env
@@ -154,17 +137,6 @@ services:
       db:
         condition: service_healthy
       redis:
-        condition: service_healthy
-
-  frontend:
-    image: ${FRONTEND_IMAGE:-smart-resume-filter-frontend:${APP_VERSION:-latest}}
-    platform: ${DOCKER_PLATFORM:-linux/amd64}
-    ports:
-      - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-5173}:80"
-    volumes:
-      - media_data:/usr/share/nginx/media:ro
-    depends_on:
-      backend:
         condition: service_healthy
 
 volumes:

@@ -31,7 +31,7 @@ from apps.ingestion.tabular_imports import (
     build_import_template_workbook,
     get_import_table_schema,
 )
-from apps.pipeline import ai_config
+from apps.pipeline import ai_config, runner
 from apps.pipeline.errors import AIServiceError
 from apps.pipeline.services import classify_school
 
@@ -65,6 +65,9 @@ def standard_import_template_bytes(template_type):
 )
 class AgentDispatchDecisionApiTests(KernelTestCase):
     def setUp(self):
+        enqueue = patch("apps.api.views.enqueue_runs", return_value=SimpleNamespace(id="test-queued"))
+        enqueue.start()
+        self.addCleanup(enqueue.stop)
         ai_config.save_ai_connection_config(
             {
                 "api_style": "responses",
@@ -188,6 +191,8 @@ class AgentDispatchDecisionApiTests(KernelTestCase):
         response = self.client.post(f"/api/agent-decisions/{self.decision.id}/retry/")
 
         self.assertEqual(response.status_code, 202)
+        self.assertEqual(m.AgentDispatchDecision.objects.count(), 1)
+        runner.execute_run(response.data["run"]["id"])
         self.assertFalse(m.AssignmentAttempt.objects.exists())
         self.assertEqual(m.AgentDispatchDecision.objects.count(), 2)
         new_decision = m.AgentDispatchDecision.objects.order_by("-id").first()
@@ -202,13 +207,16 @@ class AgentDispatchDecisionApiTests(KernelTestCase):
         self.assertEqual(run.scope["retry_decision_id"], self.decision.id)
         self.assertEqual(new_decision.processing_run_id, run.id)
 
-    def test_retry_is_disabled_when_ai_connection_is_not_ready(self):
+    def test_retry_reports_unavailable_connection_in_background_node(self):
         ai_config.invalidate_ai_connection_test()
 
         response = self.client.post(f"/api/agent-decisions/{self.decision.id}/retry/")
 
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("尚未就绪", response.data["detail"])
+        self.assertEqual(response.status_code, 202)
+        runner.execute_run(response.data["run"]["id"])
+        run = m.ProcessingRun.objects.get()
+        self.assertEqual(run.status, "failed")
+        self.assertEqual(run.stages.get(step="initialize").status, "failed")
         self.assertEqual(m.AgentDispatchDecision.objects.count(), 1)
 
     def test_retry_rejects_high_confidence_dispatch_decision(self):
@@ -245,6 +253,8 @@ class AgentDispatchDecisionApiTests(KernelTestCase):
             response = self.client.post(
                 f"/api/agent-decisions/{self.decision.id}/retry/"
             )
+            screen_resume.assert_not_called()
+            runner.execute_run(response.data["run"]["id"])
 
         self.assertEqual(response.status_code, 202)
         self.assertEqual(screen_resume.call_args.args[0].id, self.resume.id)
@@ -297,6 +307,9 @@ class AgentDispatchDecisionApiTests(KernelTestCase):
             return_value=result,
         ):
             response = self.client.post(f"/api/agent-decisions/{self.decision.id}/retry/")
+            old_attempt.refresh_from_db()
+            self.assertEqual(old_attempt.status, m.AssignmentAttempt.STATUS_PENDING_REVIEW)
+            runner.execute_run(response.data["run"]["id"])
 
         self.assertEqual(response.status_code, 202)
         old_attempt.refresh_from_db()
@@ -321,6 +334,9 @@ class AgentDispatchDecisionApiTests(KernelTestCase):
 @override_settings(REST_FRAMEWORK=rest_framework_test_settings())
 class PipelineRunApiTests(KernelTestCase):
     def setUp(self):
+        enqueue = patch("apps.api.views.enqueue_runs", return_value=SimpleNamespace(id="test-queued"))
+        enqueue.start()
+        self.addCleanup(enqueue.stop)
         ensure_rbac_defaults()
         self.client = APIClient()
         self.user = User.objects.create_user(
@@ -342,9 +358,9 @@ class PipelineRunApiTests(KernelTestCase):
         }
 
         with patch(
-            "apps.api.views.agent_gateway.is_agent_ready", return_value=True
+            "apps.pipeline.agent_kernel.gateway.is_agent_ready", return_value=True
         ), patch("apps.api.views.runner.create_run", return_value=run) as mock_create, patch(
-            "apps.api.views.execute_runs_sequence_task.delay",
+            "apps.api.views.enqueue_runs",
             return_value=SimpleNamespace(id="task-123"),
         ):
             response = self.client.post(
@@ -353,7 +369,7 @@ class PipelineRunApiTests(KernelTestCase):
                 format="json",
             )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 202)
         mock_create.assert_called_once_with(
             "step2", scope=scope, created_by=self.user
         )
@@ -382,11 +398,11 @@ class PipelineRunApiTests(KernelTestCase):
         scope = {"candidate_ids": [3, 5], "force_reprocess": True}
 
         with patch(
-            "apps.api.views.agent_gateway.is_agent_ready", return_value=True
+            "apps.pipeline.agent_kernel.gateway.is_agent_ready", return_value=True
         ), patch(
             "apps.api.views.runner.create_run", return_value=run
         ) as mock_create, patch(
-            "apps.api.views.execute_runs_sequence_task.delay",
+            "apps.api.views.enqueue_runs",
             return_value=SimpleNamespace(id="task-force"),
         ):
             response = self.client.post(
@@ -395,7 +411,7 @@ class PipelineRunApiTests(KernelTestCase):
                 format="json",
             )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 202)
         mock_create.assert_called_once_with(
             "step2", scope=scope, created_by=self.user
         )
@@ -477,9 +493,9 @@ class PipelineRunApiTests(KernelTestCase):
             self.assertEqual(response.status_code, 400)
             self.assertIn("不接受 mode 或 modes", response.data["detail"])
 
-    def test_pipeline_run_rejects_when_agent_is_not_ready(self):
+    def test_pipeline_run_checks_agent_after_submission(self):
         with patch(
-            "apps.api.views.agent_gateway.is_agent_ready",
+            "apps.pipeline.agent_kernel.gateway.is_agent_ready",
             return_value=False,
         ):
             response = self.client.post(
@@ -488,8 +504,14 @@ class PipelineRunApiTests(KernelTestCase):
                 format="json",
             )
 
-        self.assertEqual(response.status_code, 409)
-        self.assertIn("尚未就绪", response.data["detail"])
+        self.assertEqual(response.status_code, 202)
+        run = m.ProcessingRun.objects.get()
+        self.assertEqual(run.status, "pending")
+        runner.execute_run(run.id)
+        run.refresh_from_db()
+        self.assertEqual(run.status, "failed")
+        self.assertEqual(run.stages.get(step="initialize").status, "failed")
+        self.assertTrue(all(stage.status == "skipped" for stage in run.stages.filter(sequence__gt=2)))
 
     def test_pipeline_run_rejects_explicit_empty_modes(self):
         response = self.client.post(
@@ -504,18 +526,18 @@ class PipelineRunApiTests(KernelTestCase):
     def test_pipeline_run_without_mode_uses_agent_kernel(self):
         run = m.ProcessingRun.objects.create(step="step2", mode="ai", status="success")
         with patch(
-            "apps.api.views.agent_gateway.is_agent_ready", return_value=True
+            "apps.pipeline.agent_kernel.gateway.is_agent_ready", return_value=True
         ), patch(
             "apps.api.views.runner.create_run", return_value=run
         ) as mock_create, patch(
-            "apps.api.views.execute_runs_sequence_task.delay",
+            "apps.api.views.enqueue_runs",
             return_value=SimpleNamespace(id="task-agent"),
         ):
             response = self.client.post(
                 "/api/pipeline/run/", {"step": "step2"}, format="json"
             )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 202)
         mock_create.assert_called_once_with(
             "step2", scope={}, created_by=self.user
         )
@@ -562,6 +584,37 @@ class PipelineRunApiTests(KernelTestCase):
         self.assertEqual(runs[running.id]["elapsed_seconds"], 75)
         self.assertEqual(runs[finished.id]["elapsed_seconds"], 65)
 
+    def test_processing_run_exposes_node_timing_and_actual_ai_activity(self):
+        now = timezone.now()
+        candidates = [m.Candidate.objects.create(identity_hash=f"node-{i}", name=f"合成{i}") for i in range(4)]
+        run = runner.create_run("all", {"candidate_ids": [c.pk for c in candidates]})
+        run.status = "running"
+        run.current_stage = "step4"
+        run.save()
+        for item, state in zip(run.scope_items.order_by("id"), ["processing", "queued", "pending", "waiting_conflict"]):
+            item.status = state
+            item.save(update_fields=["status"])
+        run.stages.filter(step="step4").update(status="running", started_at=now - timedelta(seconds=12))
+        with patch("apps.api.serializers.timezone.now", return_value=now):
+            response = self.client.get(f"/api/pipeline/runs/{run.id}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["activity"], {"processing": 1, "queued": 2, "waiting_conflict": 1})
+        nodes = response.data["stages"]
+        self.assertEqual([node["sequence"] for node in nodes], list(range(1, 9)))
+        self.assertEqual(nodes[6]["elapsed_seconds"], 12)
+        self.assertIsNone(nodes[7]["elapsed_seconds"])
+        self.assertTrue(all(node["description"] for node in nodes))
+
+    def test_pipeline_queue_failure_is_recorded_and_returns_safe_503(self):
+        with patch("apps.api.views.enqueue_runs", side_effect=RuntimeError("private broker credentials")):
+            response = self.client.post("/api/pipeline/run/", {"step": "all"}, format="json")
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn("private", str(response.data))
+        run = m.ProcessingRun.objects.get()
+        self.assertEqual(run.status, "failed")
+        self.assertEqual(run.stages.get(step="queued").status, "failed")
+        self.assertEqual(run.stages.filter(status="skipped").count(), 7)
+
     def test_pending_processing_run_can_be_cancelled(self):
         run = m.ProcessingRun.objects.create(step="step2", mode="ai", status="pending")
         stage = m.ProcessingRunStage.objects.create(
@@ -578,7 +631,7 @@ class PipelineRunApiTests(KernelTestCase):
         self.assertTrue(run.cancel_requested_at)
         self.assertTrue(run.cancelled_at)
         self.assertTrue(run.finished_at)
-        self.assertEqual(stage.status, "cancelled")
+        self.assertEqual(stage.status, "skipped")
 
     def test_finished_processing_run_cannot_be_cancelled(self):
         run = m.ProcessingRun.objects.create(
@@ -5179,10 +5232,10 @@ class ImportApiTests(KernelTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("简历信息列表表头不符合标准模板", response.data["detail"])
 
-    @patch("apps.api.views.agent_gateway.is_agent_ready", return_value=False)
+    @patch("apps.api.views.enqueue_runs")
     @patch("apps.api.views.import_files")
-    def test_resume_upload_without_legacy_mode_is_preserved_as_pending(
-        self, mock_import_files, _mock_agent_ready
+    def test_resume_upload_defers_service_check_to_background(
+        self, mock_import_files, mock_enqueue
     ):
         candidate = m.Candidate.objects.create(
             identity_hash="candidate-upload-pending",
@@ -5200,9 +5253,10 @@ class ImportApiTests(KernelTestCase):
             format="multipart",
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["agent_processing"], "pending")
-        self.assertEqual(response.data["processing_runs"], [])
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.data["agent_processing"], "submitted")
+        self.assertEqual(response.data["processing_runs"][0]["status"], "pending")
+        mock_enqueue.assert_called_once()
         mock_import_files.assert_called_once()
 
     @patch("apps.api.views.import_files")
@@ -5266,9 +5320,9 @@ class ImportApiTests(KernelTestCase):
             },
         )
 
-    @patch("apps.api.views.execute_runs_sequence_task.delay")
+    @patch("apps.api.views.enqueue_runs")
     @patch("apps.api.views.runner.create_run")
-    @patch("apps.api.views.agent_gateway.is_agent_ready", return_value=True)
+    @patch("apps.pipeline.agent_kernel.gateway.is_agent_ready", return_value=True)
     @patch("apps.api.views.import_files")
     def test_resume_upload_starts_one_agent_run(
         self,
@@ -5303,7 +5357,8 @@ class ImportApiTests(KernelTestCase):
             scope={"candidate_ids": [candidate.id], "source": "resume_import"},
             created_by=self.hr,
         )
-        mock_execute.assert_called_once_with([ai_run.id])
+        ai_run.refresh_from_db()
+        mock_execute.assert_called_once_with([ai_run.id], task_id=ai_run.celery_task_id)
         self.assertEqual([item["mode"] for item in response.data["processing_runs"]], ["ai"])
 
     def test_replace_contacts_import_keeps_existing_resume_pool(self):

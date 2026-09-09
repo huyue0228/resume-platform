@@ -3,6 +3,7 @@ from django.db import models, transaction
 from django.utils import timezone
 
 from apps.core.models import ProcessingRun
+from .progress import stop_stages
 
 
 ACTIVE_STATUSES = {"pending", "running", "waiting_conflict", "cancelling"}
@@ -42,13 +43,11 @@ def request_cancellation(run_id, user):
             run.finished_at = now
             run.current_stage = ""
             run.message = "任务已在执行前取消"
-            run.stages.filter(status="pending").update(
-                status="cancelled", finished_at=now
-            )
+            stop_stages(run.id, status="cancelled", message=run.message)
         else:
             run.status = "cancelling"
             run.message = "已请求取消，正在等待当前候选人处理结束"
-            if run.mode == "ai" and run.step in {"step2", "resume_process", "all"}:
+            if run.mode == "ai" and run.current_stage == "step4":
                 from .tasks import dispatch_ai_run_task
 
                 transaction.on_commit(lambda: dispatch_ai_run_task.delay(run.id))

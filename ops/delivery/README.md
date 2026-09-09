@@ -5,7 +5,7 @@
 `published: true` 的正式标签制品可以从配置的公司镜像仓库拉取；手动演练仅验证构建。
 
 1. 使用只读凭据登录公司镜像仓库。不要把凭据写进 Compose 或提交到源码仓。
-2. 从 `env.example` 创建本地 `.env`，将 `images.env` 中的平台版本及四个固定镜像复制进去。
+2. 从 `env.example` 创建本地 `.env`，将 `images.env` 中的平台版本及三个平台镜像（app、postgres、redis）复制进去。
 3. 独立选择已经过业务验收的 Kernel 镜像（建议 digest），设置 `AGENT_KERNEL_IMAGE`
    和与其 build 相同的 `AGENT_KERNEL_VERSION`。包中不替你选择 Kernel 版本。
 4. 配置真实部署参数：W3、域名、四项独立随机密钥及数据库配置。
@@ -13,6 +13,20 @@
    不得将其当作生产密钥。不要启用开发 Mock。
 5. 使用 `docker compose --env-file .env -f compose.yml config --quiet` 检查配置。
    先在验收环境部署并完成黄金样本、模型/OCR 与人工工作流验收，再安排生产窗口。
+
+平台 v1.2.0 起默认运行四个容器：`app`、`agent-kernel`、`db`、`redis`。
+`app` 镜像包含前端 Nginx、API Gunicorn 和分别消费 default/ai 的后台进程。
+默认 NAME 分别是 `smart-resume-filter-app`、`smart-resume-filter-agent-kernel`、
+`smart-resume-filter-postgres`、`smart-resume-filter-redis`；由 `COMPOSE_PROJECT_NAME` 统一指定前缀。
+首次初始化 `init` 复用 app 镜像，通过 profile 一次性运行，不常驻。
+
+从 v1.1.x 升级时，将新 `images.env` 中的 `APP_VERSION`、`APP_IMAGE`、
+`POSTGRES_IMAGE_RELEASE`、`REDIS_IMAGE_RELEASE` 更新到原 `.env`；保留原项目名、
+密钥、W3 和 Kernel/CA 配置。`BACKEND_IMAGE`、`FRONTEND_IMAGE` 已不再使用。
+前端仍使用 `FRONTEND_BIND`/`FRONTEND_PORT`，API 8000 仅在 app 内部监听。
+用 `up -d --remove-orphans` 清理旧 backend、worker、ai-worker、frontend 容器。
+查看业务日志使用 `docker compose --env-file .env -f compose.yml logs -f app`。
+检查 API 和后台队列使用 `exec -T app python application.py --healthcheck`。
 
 升级时保留原 Compose project name、卷与数据库，停止接单并排空旧任务；
 不要因目录改名创建新数据卷。需要数据库迁移时，代码回退不等于数据回退。

@@ -72,13 +72,11 @@ npm run dev
 - PostgreSQL：业务数据库。
 - Redis：Celery broker/result backend。
 - Agent Kernel：独立 Go 二进制，只访问任务信封、白名单只读工具和管理员已配置的模型服务。
-- Django backend 镜像：基于 `python:3.12.3-slim`，内置后端源码、Python 依赖、Gunicorn、PostgreSQL/Redis 客户端。
-- Celery workers：复用 backend 镜像；普通 worker 消费 `default` 队列，threads AI worker 消费 `ai` 队列。
-- Nginx frontend 镜像：先用 Node 构建 React，再用 Nginx 托管静态资源并反代 `/api` 到 backend。
+- app 业务镜像：包含 React 构建产物、Nginx、Django/Gunicorn 和两个 Celery 队列进程。普通队列采用 prefork，AI 队列采用 threads；各进程独立运行，由统一入口管理生命周期。
 
-当前 `docker-compose.yml` 适合内网试运行、验收和单机部署。W3 生产回调要求 HTTPS 域名，因此正式部署必须在 frontend 前配置 HTTPS 反向代理、WAF 或企业统一网关；外层入口统一转发到 frontend，由项目内置 Nginx 托管静态资源并继续转发 `/api`。
+当前 `docker-compose.yml` 适合内网试运行、验收和单机部署。W3 生产回调要求 HTTPS 域名，因此正式部署必须在 app 前配置 HTTPS 反向代理、WAF 或企业统一网关；外层入口统一转发到 app，由项目内置 Nginx 托管静态资源并继续转发 `/api`。
 
-compose 内的 frontend 容器通过 Nginx `proxy_pass http://backend:8000` 访问后端；本地非 Docker 开发时 Vite 仍默认代理到 `http://localhost:8000`。
+app 容器内通过 Nginx `proxy_pass http://127.0.0.1:8000` 访问 API；本地非 Docker 开发时 Vite 仍默认代理到 `http://localhost:8000`。
 
 ### 1. 服务器前置条件
 
@@ -133,11 +131,11 @@ bash skills/smart-resume-offline-deploy/scripts/deploy.sh
 
 源码部署到 ARM 服务器时才需要把 `DOCKER_PLATFORM` 改为 `linux/arm64`；离线发布包已经固定为 `linux/amd64`，`APP_VERSION` 也由发布脚本写入，不在部署现场决定。
 
-启用 Agent 处理前，使用管理员账号进入「系统设置 → AI 模型连接」完成连接配置并执行测试。页面配置 Base URL、可选访问令牌和 API 风格，并通过 OpenAI-compatible `GET /models` 获取模型 ID（也可直接输入），不配置服务商/Profile。模型连接只从系统设置中的数据库配置读取。API Key 非空时仅加密保存且不会回显；无鉴权内网服务可留空。模型或 Kernel 未就绪时，导入仍会成功并保留为待处理，不会回退到另一套隐式分配模式。
+启用 Agent 处理前，使用管理员账号进入「系统设置 → AI 模型连接」完成连接配置并执行测试。页面配置 Base URL、可选访问令牌和 API 风格，并通过 OpenAI-compatible `GET /models` 获取模型 ID（也可直接输入），不配置服务商/Profile。模型连接只从系统设置中的数据库配置读取。API Key 非空时仅加密保存且不会回显；无鉴权内网服务可留空。提交后在后台检查模型和 Kernel；未就绪会在任务中心的“检查处理服务”节点显示失败，后续节点标为未执行。
 
 **模型 TEST 成功不等于 Agent 模型链路可用。** 当前平台 TEST 使用 `verify=False`，而 Agent Kernel 默认校验 TLS；宿主机或 backend 拥有 CA，不代表 Kernel 容器也拥有。企业 CA 的挂载、权限、更新重建及真实 Agent 分析验收步骤见 [部署 Skill](skills/smart-resume-offline-deploy/SKILL.md)。
 
-`RUN_SEED_BASE` 默认保持 `0`。不要在长期运行环境里把它改成 `1`，否则每次 backend 重启都可能把配置页中的参数重置为种子默认值。首次初始化请使用下一节的一次性 `init` 命令。
+`RUN_SEED_BASE` 默认保持 `0`。不要在长期运行环境里把它改成 `1`，否则每次 app 重启都可能把配置页中的参数重置为种子默认值。首次初始化请使用下一节的一次性 `init` 命令。
 
 上传大小不再设置固定 Nginx 上限：`client_max_body_size 0` 表示由服务器磁盘、Docker volume、CPU/内存和超时时间决定实际可处理上限。大文件上传临时目录默认是 `/app/media/tmp_uploads`，位于 `media_data` 持久化卷；`GUNICORN_TIMEOUT` 默认 `1800` 秒。
 
@@ -149,18 +147,18 @@ docker compose --profile init run --rm init
 docker compose up -d
 ```
 
-首次执行 `docker compose build` 会下载基础镜像、安装依赖并生成后端、前端、PostgreSQL、Redis 四个平台镜像；Agent Kernel 使用独立发布的镜像，时间会比较久。查看启动状态：
+首次执行 `docker compose build` 会下载基础镜像、安装依赖并生成 app、PostgreSQL、Redis 三个平台镜像；Agent Kernel 使用独立发布的镜像，时间会比较久。查看启动状态：
 
 ```bash
 docker compose ps
-docker compose logs -f backend
+docker compose logs -f app
 ```
 
-backend 启动命令会自动执行：
+app 启动时先执行迁移，再启动 Web、API 和后台队列进程：
 
 ```bash
 python manage.py migrate
-gunicorn config.wsgi:application --bind 0.0.0.0:8000
+python application.py
 ```
 
 一次性 `init` 命令会执行迁移和 `seed_base`，初始化 RBAC 权限、预置角色、配置项、功能测试账号、接口人和部门基础数据。后续升级和重启只执行迁移，不重复 seed，避免覆盖管理员在配置页维护的参数。
@@ -192,8 +190,8 @@ http://服务器IP:5173/
 如果服务器用于演示或验收，可以加载样例数据：
 
 ```bash
-docker compose exec backend python manage.py gen_sample
-docker compose exec backend python manage.py load_sample
+docker compose exec app python manage.py gen_sample
+docker compose exec app python manage.py load_sample
 ```
 
 加载后刷新前端页面，即可在简历库、岗位、院校和接口人页面看到样例数据；分配结果在简历库中查看。
@@ -218,10 +216,8 @@ docker compose ps
 查看日志：
 
 ```bash
-docker compose logs -f backend
-docker compose logs -f worker
-docker compose logs -f ai-worker
-docker compose logs -f frontend
+docker compose logs -f app
+docker compose logs -f agent-kernel
 docker compose logs -f db
 docker compose logs -f redis
 ```
@@ -229,7 +225,7 @@ docker compose logs -f redis
 重启服务：
 
 ```bash
-docker compose restart backend worker ai-worker frontend
+docker compose restart app
 ```
 
 停止服务但保留数据库卷：
@@ -247,9 +243,9 @@ docker compose down -v
 进入后端容器执行 Django 命令：
 
 ```bash
-docker compose exec backend python manage.py check
-docker compose exec backend python manage.py migrate
-docker compose exec backend python manage.py seed_base
+docker compose exec app python manage.py check
+docker compose exec app python manage.py migrate
+docker compose exec app python manage.py seed_base
 ```
 
 ### 9. 更新版本
@@ -265,6 +261,8 @@ docker compose up -d --remove-orphans
 docker compose ps
 ```
 
+v1.2.0 起默认四个常驻容器，名称为 `${COMPOSE_PROJECT_NAME}-app`、`-agent-kernel`、`-postgres`、`-redis`；默认前缀为 `smart-resume-filter`。升级必须保持原项目名和数据卷。在线发布包改用 `APP_IMAGE`，不再使用 `BACKEND_IMAGE`/`FRONTEND_IMAGE`；按包内 `images.env` 更新三个平台镜像引用，保留原密钥、W3、Kernel 与 CA 配置。app 发布/重启会同时重启 Web、API 和后台进程；运维应先排空处理任务。
+
 当前 Compose 在本机构建业务平台镜像，Agent Kernel 改为消费 `AGENT_KERNEL_IMAGE` 指定的独立发布镜像，build 由 `AGENT_KERNEL_VERSION` 固定。仓库边界、模拟开发与发布兼容说明见 [REPOSITORIES.md](REPOSITORIES.md)。只改 `.env` 时不需要重新 build，只需 `docker compose up -d`。
 
 如果新版本明确要求重新初始化基础权限或新增种子字典，再手动执行：
@@ -278,10 +276,8 @@ docker compose --profile init run --rm init
 更新后建议检查：
 
 ```bash
-docker compose exec backend python manage.py check
-docker compose logs --tail=100 backend
-docker compose logs --tail=100 worker
-docker compose logs --tail=100 ai-worker
+docker compose exec app python manage.py check
+docker compose logs --tail=100 app
 ```
 
 ### 10. AI Agent 配置
@@ -308,9 +304,7 @@ Prompt 采用“共享草稿 → 真实模型测试 → 原子发布 → 历史�
 AI 运行中的连接异常会继续写入 `AgentDispatchDecision.error_code` / `error_message`，但内容仅为稳定错误码和脱敏摘要。第三方 SDK 原始异常不会进入数据库、API 响应或日志；backend 和 worker 标准输出仅记录 model、api_style、错误码和异常类型。排查时执行：
 
 ```bash
-docker compose logs --tail=200 backend
-docker compose logs --tail=200 worker
-docker compose logs --tail=200 ai-worker
+docker compose logs --tail=200 app
 docker compose logs --tail=200 agent-kernel
 ```
 
@@ -331,7 +325,7 @@ docker compose logs --tail=200 agent-kernel
 `backend` 反复重启：
 
 ```bash
-docker compose logs --tail=200 backend
+docker compose logs --tail=200 app
 ```
 
 重点看数据库连接、迁移错误、环境变量拼写和 `DJANGO_ALLOWED_HOSTS`。
@@ -339,8 +333,7 @@ docker compose logs --tail=200 backend
 前端页面能打开但接口失败：
 
 ```bash
-docker compose logs --tail=200 frontend
-docker compose logs --tail=200 backend
+docker compose logs --tail=200 app
 ```
 
 当前前端容器使用 Nginx 托管静态资源，`/api` 会反代到 backend。确认 `backend` 服务健康；内网试运行时检查 `FRONTEND_PORT`，生产环境则从 HTTPS 域名和外层反向代理入口排查。

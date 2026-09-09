@@ -79,15 +79,14 @@ ARCHIVE_PATH="${RELEASE_ROOT}/${RELEASE_NAME}.tar.gz"
 CHECKSUM_PATH="${ARCHIVE_PATH}.sha256"
 IMAGE_TAR="${PACKAGE_DIR}/smart-resume-filter-images-amd64.tar"
 
-BACKEND_IMAGE="smart-resume-filter-backend:${VERSION}"
+APP_IMAGE="smart-resume-filter-app:${VERSION}"
 KERNEL_VERSION="${AGENT_KERNEL_VERSION:-}"
 KERNEL_IMAGE="${AGENT_KERNEL_IMAGE:-}"
 [[ "$KERNEL_VERSION" =~ ^[A-Za-z0-9._-]+$ && -n "$KERNEL_IMAGE" ]] || die "拆仓后必须提供 AGENT_KERNEL_VERSION 和已发布的 AGENT_KERNEL_IMAGE"
 [[ "$KERNEL_IMAGE" =~ ^[A-Za-z0-9._/:@-]+$ ]] || die "AGENT_KERNEL_IMAGE 格式无效"
-FRONTEND_IMAGE="smart-resume-filter-frontend:${VERSION}"
 POSTGRES_IMAGE="smart-resume-filter-postgres:16"
 REDIS_IMAGE="smart-resume-filter-redis:7"
-IMAGES=("$KERNEL_IMAGE" "$BACKEND_IMAGE" "$FRONTEND_IMAGE" "$POSTGRES_IMAGE" "$REDIS_IMAGE")
+IMAGES=("$KERNEL_IMAGE" "$APP_IMAGE" "$POSTGRES_IMAGE" "$REDIS_IMAGE")
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "缺少命令：$1"
@@ -210,7 +209,7 @@ cd "$REPO_ROOT"
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   log "构建业务平台镜像，复用独立发布的内核镜像"
   docker compose --env-file "$BUILD_ENV" config --images
-  docker compose --env-file "$BUILD_ENV" build db redis backend frontend
+  docker compose --env-file "$BUILD_ENV" build db redis app
 else
   log "跳过构建，复用同版本镜像"
 fi
@@ -219,9 +218,9 @@ log "检查镜像架构和容器配置"
 for image_name in "${IMAGES[@]}"; do
   check_image_architecture "$image_name"
 done
-docker run --rm --platform "$TARGET_PLATFORM" "$BACKEND_IMAGE" python manage.py check
+docker run --rm --platform "$TARGET_PLATFORM" -e RUN_MIGRATIONS=0 -e RUN_SEED_BASE=0 "$APP_IMAGE" python manage.py check
 docker run --rm --platform "$TARGET_PLATFORM" --entrypoint /bin/sh "$KERNEL_IMAGE" -c 'test -x /usr/local/bin/agent-kernel'
-docker run --rm --platform "$TARGET_PLATFORM" --add-host backend:127.0.0.1 "$FRONTEND_IMAGE" nginx -t
+docker run --rm --platform "$TARGET_PLATFORM" --entrypoint nginx "$APP_IMAGE" -t
 
 log "组装离线包"
 mkdir -p "$PACKAGE_DIR"

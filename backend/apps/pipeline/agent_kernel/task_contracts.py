@@ -1,6 +1,7 @@
 """候选人级任务协议和冻结快照；数据库主键只保存在控制面映射中。"""
 import hashlib
 import hmac
+import os
 import time
 import uuid
 from copy import deepcopy
@@ -83,16 +84,51 @@ def job_hash(job):
     return _pin_id(job_content(job))
 
 
-def freeze_case(candidate, run=None):
+def case_context(run=None):
+    """同一批次的基础数据只查询一次；由后台准备阶段加载。"""
     from apps.pipeline.services import classify_school as schools, school_admission
+    non_target = schools._non_target_school_tag()
+    runtime = ai_config.get_ai_runtime_config()
+    jobs = list(m.Job.objects.filter(is_active=True).select_related("department").prefetch_related("majors").order_by("id"))
+    return dict(
+        school_map={schools.normalize_school_name(s.name): s for s in m.School.objects.select_related("school_tag")},
+        non_target=non_target, default=schools._default_school_tag(non_target),
+        tags=list(m.SchoolTag.objects.all()), jobs=jobs,
+        job_contents={job.pk: (job_content(job), job_hash(job)) for job in jobs},
+        capacities={c.job_id: c for c in run.job_capacities.all()} if run else {},
+        rules=school_admission.active_rules(),
+        taxonomy=[dict(name=a.name, category=a.category.name, match_type=a.match_type) for a in m.MajorAlias.objects.filter(is_active=True, category__is_active=True).select_related("category")],
+        thresholds=dict(dispatch=runtime.dispatch_threshold, review=runtime.review_threshold),
+        pin=(pin_from_run(run) if run else runtime_pin()).model_dump(),
+        lane=settings.AGENT_KERNEL_ROLLOUT,
+    )
+
+
+def _resume_artifact(resume):
+    artifact = dict(path="", checksum="", media_type="application/pdf", size_bytes=0)
+    try:
+        path = Path(settings.MEDIA_ROOT) / RESUME_SUBDIR / Path(resume.resume_file or "").name
+        digest = hashlib.sha256()
+        with path.open("rb") as document:
+            while block := document.read(1024 * 1024):
+                digest.update(block)
+            size = os.fstat(document.fileno()).st_size
+        artifact.update(path=str(path.relative_to(settings.MEDIA_ROOT)), checksum=digest.hexdigest(), size_bytes=size)
+    except (AIServiceError, OSError, ValueError):
+        pass  # 缺失文件由候选人任务报告，不阻止整个批次入队。
+    return artifact
+
+
+def freeze_case(candidate, run=None, *, context=None):
+    from apps.pipeline.services import classify_school as schools
+    context = context if context is not None else case_context(run)
     ref = lambda: uuid.uuid4().hex
     stable_ref = lambda kind, pk: hmac.new(settings.SECRET_KEY.encode(), f"{kind}:{pk}".encode(), hashlib.sha256).hexdigest()
-    school_map = {schools.normalize_school_name(s.name): s for s in m.School.objects.select_related("school_tag")}
-    non_target = schools._non_target_school_tag()
-    default = schools._default_school_tag(non_target)
+    school_map = context["school_map"]
+    non_target, default = context["non_target"], context["default"]
     first = school_map.get(schools.normalize_school_name(candidate.first_degree_school))
     highest = school_map.get(schools.normalize_school_name(candidate.highest_degree_school))
-    tags = {tag.pk: ref() for tag in m.SchoolTag.objects.all()}
+    tags = {tag.pk: ref() for tag in context["tags"]}
     tag_ref = lambda s: tags[schools._school_tag(s, default, non_target).pk]
     try:
         workflow = candidate.workflow
@@ -100,28 +136,27 @@ def freeze_case(candidate, run=None):
         workflow = None
     rejected = set(m.AssignmentAttempt.objects.filter(workflow=workflow, feedback_result="rejected").values_list("resume_id", flat=True)) if workflow else set()
     volunteer_ids, job_ids, volunteers, jobs, rules, rule_ids = {}, {}, [], [], [], {}
-    for resume in candidate.resumes.order_by("id"):
+    resumes = getattr(candidate, "kernel_resumes", None)
+    if resumes is None:
+        resumes = candidate.resumes.order_by("id")
+    for resume in resumes:
         key = stable_ref("volunteer", resume.pk); volunteer_ids[key] = resume.pk
-        artifact = dict(path="", checksum="", media_type="application/pdf", size_bytes=0)
-        try:
-            path = Path(settings.MEDIA_ROOT) / RESUME_SUBDIR / Path(resume.resume_file or "").name
-            artifact.update(path=str(path.relative_to(settings.MEDIA_ROOT)), checksum=hashlib.sha256(path.read_bytes()).hexdigest(), size_bytes=path.stat().st_size)
-        except (AIServiceError, OSError, ValueError):
-            pass  # 缺失文件保留为可审计失败，不阻止创建整个批次。
+        artifact = _resume_artifact(resume)
         volunteers.append(dict(ref=key, position_name=resume.position_name, entity=resume.entity,
                                apply_date=resume.apply_date.isoformat() if resume.apply_date else "",
                                rejected=resume.pk in rejected, artifact=artifact))
     departments = {}
-    capacities = {c.job_id: c for c in run.job_capacities.all()} if run else {}
-    for job in m.Job.objects.filter(is_active=True).select_related("department").prefetch_related("majors").order_by("id"):
+    capacities = context["capacities"]
+    for job in context["jobs"]:
         key = stable_ref("job", job.pk); job_ids[key] = job.pk
-        content = job_content(job); content.pop("department_identity"); content.pop("is_active")
+        saved_content, content_hash = context["job_contents"][job.pk]
+        content = deepcopy(saved_content); content.pop("department_identity"); content.pop("is_active")
         capacity = capacities.get(job.pk)
-        jobs.append(dict(ref=key, content_hash=job_hash(job), **content,
+        jobs.append(dict(ref=key, content_hash=content_hash, **content,
                          department_ref=departments.setdefault(job.department_id, ref()) if job.department_id else "",
                          capacity=capacity.capacity if capacity else job.headcount,
                          used_count=capacity.used_count if capacity else 0))
-    for rule in school_admission.active_rules():
+    for rule in context["rules"]:
         rule_ref = ref(); rule_ids[rule_ref] = rule.pk
         rules.append(dict(ref=rule_ref, priority=rule.priority,
                           first_tag_refs=[tags[l.school_tag_id] for l in rule.tag_links.all() if l.degree_type == "first"],
@@ -134,15 +169,14 @@ def freeze_case(candidate, run=None):
                     highest_degree_province=highest.province if highest else "", highest_degree_tag_ref=tag_ref(highest)),
                     workflow=dict(revision=workflow.revision if workflow else 0, current_rank=workflow.current_rank if workflow else 0, retry_volunteer_ref=""),
                     volunteers=volunteers, admission_rules=rules, jobs=jobs,
-                    schools=[dict(name=s.name, province=s.province, tag_ref=tags.get(s.school_tag_id, "")) for s in school_map.values() if s in (first, highest)],
+                    schools=[dict(name=s.name, province=s.province, tag_ref=tags.get(s.school_tag_id, "")) for s in dict.fromkeys((first, highest)) if s],
                     default_school_tag_ref=tags[default.pk], non_target_school_tag_ref=tags[non_target.pk],
-                    taxonomy=[dict(name=a.name, category=a.category.name, match_type=a.match_type) for a in m.MajorAlias.objects.filter(is_active=True, category__is_active=True).select_related("category")])
+                    taxonomy=deepcopy(context["taxonomy"]))
     return dict(snapshot=snapshot, volunteer_ids=volunteer_ids, job_ids=job_ids,
                 task_id=uuid.uuid4().hex,
                 rule_ids=rule_ids, tag_ids={v:k for k,v in tags.items()},
-                lane=settings.AGENT_KERNEL_ROLLOUT, pin=(pin_from_run(run) if run else runtime_pin()).model_dump(),
-                thresholds=dict(dispatch=ai_config.get_ai_runtime_config().dispatch_threshold,
-                                review=ai_config.get_ai_runtime_config().review_threshold))
+                lane=context["lane"], pin=deepcopy(context["pin"]),
+                thresholds=deepcopy(context["thresholds"]))
 
 
 def build_task(frozen, model_config, workflow_revision, *, task_id, retry_resume_id=None):

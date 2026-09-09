@@ -23,6 +23,15 @@ export function useProcessRunner() {
       window.dispatchEvent(new Event('srf:processing-run-created'))
       return { success: true, run: data }
     } catch (error) {
+      if (['ECONNABORTED', 'ETIMEDOUT'].includes(error?.code)
+          || [502, 504].includes(error?.response?.status)) {
+        // 请求超时不能证明服务端未创建任务，先刷新任务中心供用户确认。
+        window.dispatchEvent(new Event('srf:processing-run-created'))
+        return {
+          success: false,
+          error: '提交请求超时，任务可能已创建。请先查看任务中心确认，避免重复提交。',
+        }
+      }
       const detail = error?.response?.data?.detail || error?.response?.data?.message
         || error?.message || '提交处理任务失败，请重试'
       return { success: false, error: String(detail) }

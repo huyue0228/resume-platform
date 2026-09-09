@@ -58,4 +58,28 @@ describe('useProcessRunner', () => {
       window.removeEventListener('srf:processing-run-created', listener)
     }
   })
+
+  it.each([
+    { code: 'ECONNABORTED', message: 'timeout of 60000ms exceeded' },
+    { code: 'ETIMEDOUT', message: '超时' },
+    { response: { status: 504 } },
+    { response: { status: 502 } },
+  ])('refreshes task status after an ambiguous timeout without resubmitting', async (error) => {
+    runPipeline.mockRejectedValue(error)
+    const listener = vi.fn()
+    window.addEventListener('srf:processing-run-created', listener)
+    try {
+      const { result } = renderHook(() => useProcessRunner())
+      let response
+      await act(async () => { response = await result.current.run([{ step: 'step2' }]) })
+      expect(response.success).toBe(false)
+      expect(response.error).toContain('任务可能已创建')
+      expect(response.error).toContain('避免重复提交')
+      expect(listener).toHaveBeenCalledOnce()
+      expect(runPipeline).toHaveBeenCalledOnce()
+      expect(result.current.submitting).toBe(false)
+    } finally {
+      window.removeEventListener('srf:processing-run-created', listener)
+    }
+  })
 })

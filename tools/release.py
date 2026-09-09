@@ -14,8 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPONENTS = {
-    "backend": ("backend", "backend/Dockerfile"),
-    "frontend": ("frontend", "frontend/Dockerfile"),
+    "app": (".", "Dockerfile"),
     "postgres": ("docker/postgres", "docker/postgres/Dockerfile"),
     "redis": ("docker/redis", "docker/redis/Dockerfile"),
 }
@@ -69,7 +68,7 @@ def package(version_name, images_dir, output_dir=None):
     version(version_name)
     items = [json.loads(p.read_text()) for p in sorted(Path(images_dir).glob("*.json"))]
     if len(items) != len(COMPONENTS) or {x["component"] for x in items} != set(COMPONENTS):
-        raise ValueError("平台包必须包含且仅包含四个独立平台镜像")
+        raise ValueError("平台包必须包含且仅包含三个平台镜像（app、postgres、redis）")
     for item in items:
         if item["version"] != version_name or item["platform"] != "linux/amd64" or type(item["published"]) is not bool:
             raise ValueError("镜像版本、架构或发布标识不一致")

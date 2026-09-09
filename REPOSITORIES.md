@@ -32,7 +32,7 @@ python manage.py runserver 127.0.0.1:8001 --settings=config.settings_mock
 - Kernel：`make check build`、`make package KERNEL_VERSION=<version>`、`make image`；无需 Django 或其他仓源码。
 - 协议：`make check package RELEASE_VERSION=v1.1.0`；先安装 build/setuptools/wheel。
 - 平台镜像：`make images APP_VERSION=v2.0.0 IMAGE_PREFIX=gitlab.internal:5000/resume/platform`。默认只构建到本机；发布需显式加 `PUSH=--push`。
-- 平台模板：`make package APP_VERSION=v2.0.0`；消费 `release/v2.0.0/images/` 中四个镜像记录，输出带双层校验的 `dist/resume-platform-v2.0.0.tar.gz`。该包不包含镜像，不是完整离线包。
+- 平台模板：`make package APP_VERSION=v2.0.0`；消费 `release/v2.0.0/images/` 中三个镜像记录（app、postgres、redis），输出带双层校验的 `dist/resume-platform-v2.0.0.tar.gz`。该包不包含镜像，不是完整离线包。
 - 完整离线发布继续使用既有 Skill：预先加载独立 Kernel 镜像，不构建兄弟仓源码。
 
 三个仓均有薄的 GitLab 检查入口，镜像可用 CI Variables 指向公司镜像源。发布逻辑位于各仓 Makefile/tools；

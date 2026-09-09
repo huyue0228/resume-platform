@@ -2,7 +2,7 @@ PYTHON ?= python3
 APP_VERSION ?= dev
 IMAGE_PREFIX ?= resume-platform
 PLATFORM ?= linux/amd64
-COMPONENT ?= backend
+COMPONENT ?= app
 PUSH ?=
 IMAGES_DIR ?= release/$(APP_VERSION)/images
 .PHONY: check check-backend check-frontend check-release images image package

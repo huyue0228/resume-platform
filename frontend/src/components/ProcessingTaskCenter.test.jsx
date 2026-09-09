@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -16,9 +16,89 @@ function CurrentLocation() {
   return <output data-testid="location">{`${location.pathname}${location.search}`}</output>
 }
 
+function taskWithNodes(current = 'queued', status = 'pending') {
+  const plan = [
+    ['queued', '等待后台处理'], ['initialize', '检查处理服务'], ['preparing', '准备候选人材料'],
+    ['step1', '整理简历与志愿'], ['step2', '核验学历与院校'], ['step3', '匹配可选岗位'],
+    ['step4', 'AI 分析与保存结果'], ['finalize', '汇总处理结果'],
+  ]
+  const position = plan.findIndex(([step]) => step === current)
+  return {
+    id: 42, step: 'all', mode: 'ai', status, current_stage: current,
+    total_count: 100, processed_count: 0, created_at: '2026-09-09T10:00:00Z',
+    stages: plan.map(([step, label], index) => ({
+      step, label, sequence: index + 1,
+      status: index < position ? 'success' : index === position ? 'running' : 'pending',
+      total_count: ['queued', 'initialize', 'finalize'].includes(step) ? 1 : 100,
+      processed_count: index < position ? 1 : 0,
+      started_at: index <= position ? '2026-09-09T10:00:00Z' : null,
+      elapsed_seconds: index <= position ? 6 : null,
+    })),
+  }
+}
+
+function showTask(run) {
+  fetchPipelineRuns.mockResolvedValue({ data: { results: [run] } })
+  return render(<MemoryRouter><ProcessingTaskCenter /></MemoryRouter>)
+}
+
 describe('ProcessingTaskCenter', () => {
   beforeEach(() => {
     fetchPipelineRuns.mockReset()
+  })
+
+  it('shows the entire ordered plan as soon as the task is queued', async () => {
+    const run = taskWithNodes()
+    showTask(run)
+    const region = await screen.findByRole('region', { name: '任务 42 的执行节点' })
+    const nodes = within(region).getAllByRole('listitem')
+    expect(nodes).toHaveLength(8)
+    nodes.forEach((node, index) => expect(node.textContent).toContain(run.stages[index].label))
+    expect(nodes[0].getAttribute('aria-current')).toBe('step')
+    expect(within(region).getAllByText('待执行')).toHaveLength(7)
+    expect(within(region).getByText('下一步：检查处理服务')).toBeTruthy()
+    expect(screen.getByText('0%')).toBeTruthy()
+  })
+
+  it('shows current material preparation counts, elapsed time and the next node in both views', async () => {
+    const run = taskWithNodes('preparing', 'running')
+    run.stages[2].processed_count = 12
+    showTask(run)
+    let region = await screen.findByRole('region', { name: '任务 42 的执行节点' })
+    expect(screen.getByText('当前：准备候选人材料')).toBeTruthy()
+    expect(within(region).getByText('已处理 12 / 100')).toBeTruthy()
+    expect(within(region).getAllByRole('listitem')[2].textContent).toContain('耗时 6秒')
+    expect(within(region).getByText('下一步：整理简历与志愿')).toBeTruthy()
+    await userEvent.click(screen.getByText('列表'))
+    expect(screen.queryByRole('region', { name: '任务 42 的执行节点' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: '展开任务 42 的执行节点' }))
+    region = await screen.findByRole('region', { name: '任务 42 的执行节点' })
+    expect(within(region).getAllByRole('listitem')).toHaveLength(8)
+    expect(within(region).getByText('已处理 12 / 100')).toBeTruthy()
+  })
+
+  it.each(['failed', 'cancelled'])('keeps %s tasks below 100 percent and marks future nodes unexecuted', async (status) => {
+    const run = taskWithNodes('preparing', status)
+    run.processed_count = 100
+    run.stages[2].status = status
+    run.stages.slice(3).forEach((stage) => { stage.status = 'skipped' })
+    run.stages[2].error = status === 'failed' ? '准备候选人材料失败' : ''
+    showTask(run)
+    const region = await screen.findByRole('region', { name: '任务 42 的执行节点' })
+    expect(within(region).getByText('任务已停止')).toBeTruthy()
+    expect(within(region).getAllByText('未执行')).toHaveLength(5)
+    expect(within(region).queryByText(/下一步/)).toBeNull()
+    expect(screen.getByText('25%')).toBeTruthy()
+    if (status === 'failed') expect(within(region).getByText('准备候选人材料失败')).toBeTruthy()
+  })
+
+  it('shows actual candidate activity during AI analysis', async () => {
+    const run = taskWithNodes('step4', 'running')
+    run.activity = { processing: 3, queued: 12, waiting_conflict: 1 }
+    showTask(run)
+    expect(await screen.findByText(/正在分析 3 名 · 待分析 12 名/)).toBeTruthy()
+    expect(screen.getByText(/等待其他任务释放 1 名/)).toBeTruthy()
+    expect(screen.getByText('下一步：汇总处理结果')).toBeTruthy()
   })
 
   it('opens the corresponding AI result in the candidate list', async () => {

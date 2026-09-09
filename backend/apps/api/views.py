@@ -51,9 +51,8 @@ from apps.ingestion.tabular_imports import (
     get_import_table_schema,
 )
 from apps.pipeline import ai_config, cancellation, runner
-from apps.pipeline.agent_kernel import gateway as agent_gateway
 from apps.pipeline.tasks import (
-    execute_runs_sequence_task,
+    enqueue_runs,
     submit_school_province_enrichment,
 )
 from apps.pipeline.services import allocate as allocate_service
@@ -219,16 +218,34 @@ def _reject_unknown_body_fields(request, allowed_fields):
 
 
 def submit_processing_runs(runs):
-    """提交一组已创建运行，并为上传与手动处理统一回填 Celery 审计标识。"""
+    """只投递后台任务；发送失败记录在排队节点，不留下无解释的排队任务。"""
     if not runs:
         return runs
-    task = execute_runs_sequence_task.delay([run.id for run in runs])
-    task_id = getattr(task, "id", "") or ""
+    task_id = uuid.uuid4().hex
     for run in runs:
-        run.refresh_from_db()
         if not run.celery_task_id:
             run.celery_task_id = task_id
             run.save(update_fields=["celery_task_id"])
+    try:
+        enqueue_runs([run.id for run in runs], task_id=task_id)
+    except Exception as exc:  # noqa: BLE001 - 不把 broker 连接信息返回给用户
+        logger.warning("Processing task enqueue failed error_type=%s", type(exc).__name__)
+        failed = False
+        for run in runs:
+            now = timezone.now()
+            updated = m.ProcessingRun.objects.filter(pk=run.pk, status="pending").update(
+                status="failed", message="后台队列连接失败，请稍后重新提交任务",
+                error="processing_queue_unavailable", current_stage="", finished_at=now, last_heartbeat_at=now,
+            )
+            if updated:
+                from apps.pipeline.progress import stop_stages
+                stop_stages(run.pk, status="failed", message="后台队列连接失败，任务未开始执行")
+                failed = True
+            run.refresh_from_db()
+        if failed:
+            raise ai_service.AIServiceError("processing_queue_unavailable", "后台队列连接失败，任务未开始执行，请稍后重新提交") from exc
+    for run in runs:
+        run.refresh_from_db()
     return runs
 
 
@@ -612,7 +629,7 @@ class ImportView(APIView):
                 )
                 school_province_enrichment["status"] = "queue_failed"
         processing_runs = []
-        if takes_resume and candidate_ids and agent_gateway.is_agent_ready():
+        if takes_resume and candidate_ids:
             try:
                 run = runner.create_run(
                     "resume_process",
@@ -622,7 +639,7 @@ class ImportView(APIView):
                 processing_runs = [run]
                 submit_processing_runs(processing_runs)
             except ai_service.AIServiceError:
-                warnings.append("导入已完成，Kernel 版本发现失败，请稍后手动提交处理任务")
+                warnings.append("导入已完成，但后台处理任务入队失败，请在任务中心查看并重新提交")
         skipped_jobs = counts.get("jobs_skipped", 0)
         detail = (
             f"导入完成，已跳过 {skipped_jobs} 条缺少工作职责的岗位"
@@ -643,7 +660,7 @@ class ImportView(APIView):
                 "warnings": warnings,
                 "school_province_enrichment": school_province_enrichment,
                 "agent_processing": (
-                    "submitted"
+                    "queue_failed" if any(run.error == "processing_queue_unavailable" for run in processing_runs) else "submitted"
                     if processing_runs
                     else "pending"
                     if takes_resume and candidate_ids
@@ -2374,11 +2391,6 @@ class AgentDispatchDecisionViewSet(PermissionedReadOnlyModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="retry")
     def retry(self, request, pk=None):
-        if not agent_gateway.is_agent_ready():
-            return Response(
-                {"detail": "Agent Kernel 或模型连接尚未就绪，不能重试"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
         decision = self.get_object()
         try:
             allocate_service.validate_agent_decision_retry(decision)
@@ -2394,7 +2406,8 @@ class AgentDispatchDecisionViewSet(PermissionedReadOnlyModelViewSet):
             )
             submit_processing_runs([run])
         except (ValueError, ai_service.AIServiceError) as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": str(exc)}, status=(status.HTTP_503_SERVICE_UNAVAILABLE
+                if getattr(exc, "code", "") == "processing_queue_unavailable" else status.HTTP_400_BAD_REQUEST))
         return Response(
             {
                 "detail": "已创建 AI 重试任务，可在处理任务中心查看进度",
@@ -2426,7 +2439,7 @@ class ProcessingRunViewSet(PermissionedReadOnlyModelViewSet):
 
 
 class PipelineRunView(APIView):
-    """创建 ProcessingRun 并交给 Celery；eager 本地模式仍会立即完成。"""
+    """登记任务和完整节点计划，立即入队；所有服务检查和业务处理均在后台。"""
 
     permission_classes = [HasPermissionCode]
     permission_code = "pipeline.run"
@@ -2502,24 +2515,16 @@ class PipelineRunView(APIView):
                 {"detail": "candidate_filters 必须是对象"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if not agent_gateway.is_agent_ready():
-            return Response(
-                {"detail": "Agent Kernel 或模型连接尚未就绪"},
-                status=status.HTTP_409_CONFLICT,
-            )
         try:
             run = runner.create_run(step, scope=scope, created_by=request.user)
+            runs = [run]
+            submit_processing_runs(runs)
         except (ValueError, ai_service.AIServiceError) as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        runs = [run]
-        submit_processing_runs(runs)
+            return Response({"detail": str(exc)}, status=(status.HTTP_503_SERVICE_UNAVAILABLE
+                if getattr(exc, "code", "") == "processing_queue_unavailable" else status.HTTP_400_BAD_REQUEST))
         return Response(
             {"processing_runs": serializers.ProcessingRunSerializer(runs, many=True).data},
-            status=(
-                status.HTTP_202_ACCEPTED
-                if any(run.status in ["pending", "running"] for run in runs)
-                else status.HTTP_200_OK
-            ),
+            status=status.HTTP_202_ACCEPTED,
         )
 
 

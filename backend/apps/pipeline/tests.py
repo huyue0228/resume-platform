@@ -125,7 +125,7 @@ class AllocationDesignContractTests(KernelTestCase):
         )
         self.assertEqual(
             list(run.stages.values_list("step", flat=True)),
-            ["step1", "step2", "step3", "step4"],
+            ["queued", "initialize", "preparing", "step1", "step2", "step3", "step4", "finalize"],
         )
 
         with patch(
@@ -140,7 +140,7 @@ class AllocationDesignContractTests(KernelTestCase):
         self.assertTrue(run.last_heartbeat_at)
         self.assertEqual(
             list(run.stages.values_list("status", flat=True)),
-            ["success", "success", "success", "success"],
+            ["success"] * 8,
         )
 
     def test_runner_has_no_mode_parameter(self):
@@ -1784,6 +1784,7 @@ class JobCapacityAllocationTests(KernelTestCase):
     def test_agent_result_never_switches_to_a_job_it_did_not_evaluate(self):
         candidate, resume = self._candidate(12)
         run = runner.create_run("step2", scope={"candidate_ids": [candidate.id]})
+        runner.initialize_run(run)
         capacity_a = run.job_capacities.get(job=self.job_a)
         capacity_a.used_count = capacity_a.capacity
         capacity_a.save(update_fields=["used_count"])

@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import Group
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from apps.accounts.contact_users import sync_contact_user
@@ -1659,12 +1659,13 @@ class ProcessingRunSerializer(serializers.ModelSerializer):
     stages = serializers.SerializerMethodField()
     scope_summary = serializers.JSONField(read_only=True)
     elapsed_seconds = serializers.SerializerMethodField()
+    activity = serializers.SerializerMethodField()
 
     class Meta:
         model = m.ProcessingRun
         fields = [
             "id", "step", "mode", "status", "message", "scope_summary",
-            "current_stage", "last_heartbeat_at",
+            "current_stage", "last_heartbeat_at", "activity",
             "created_by", "created_by_username_snapshot",
             "celery_task_id", "celery_group_id", "params",
             "total_count", "processed_count", "success_count", "failed_count",
@@ -1689,10 +1690,14 @@ class ProcessingRunSerializer(serializers.ModelSerializer):
         return max(0, int((end_at - obj.created_at).total_seconds()))
 
     def get_stages(self, obj):
+        from apps.pipeline.progress import STAGE_DESCRIPTIONS
+        now = timezone.now()
         return [
             {
+                "sequence": stage.sequence,
                 "step": stage.step,
                 "label": stage.label,
+                "description": STAGE_DESCRIPTIONS.get(stage.step, ""),
                 "status": stage.status,
                 "total_count": stage.total_count,
                 "processed_count": stage.processed_count,
@@ -1709,9 +1714,20 @@ class ProcessingRunSerializer(serializers.ModelSerializer):
                 "error": stage.error,
                 "started_at": stage.started_at,
                 "finished_at": stage.finished_at,
+                "elapsed_seconds": max(0, int(((stage.finished_at or now) - stage.started_at).total_seconds())) if stage.started_at else None,
             }
             for stage in obj.stages.all()
         ]
+
+    def get_activity(self, obj):
+        if obj.current_stage != "step4" or obj.status not in {"running", "cancelling", "waiting_conflict"}:
+            return None
+        counts = {row["status"]: row["count"] for row in obj.scope_items.values("status").annotate(count=Count("id"))}
+        return {
+            "processing": counts.get("processing", 0),
+            "queued": counts.get("queued", 0) + counts.get("pending", 0),
+            "waiting_conflict": counts.get("waiting_conflict", 0),
+        }
 
 
 class AgentDispatchDecisionSerializer(serializers.ModelSerializer):

@@ -38,7 +38,7 @@ if [[ "${1:-}" == "compose" ]]; then
       # 分段输出，稳定暴露 grep -q 提前退出在 pipefail 下引起的 SIGPIPE 误报。
       printf 'agent-kernel\n'
       sleep 0.02
-      printf 'db\nredis\nbackend\nworker\nai-worker\nfrontend\n'
+      printf 'db\nredis\napp\n'
       exit 0 ;;
     *"ps -aq")
       [[ -z "${FAKE_EXISTING_RESOURCES:-}" ]] || printf '%s\n' "existing-container"
@@ -46,7 +46,7 @@ if [[ "${1:-}" == "compose" ]]; then
     *"exec -T agent-kernel sh -c "*)
       [[ -z "${FAKE_CA_UNREADABLE:-}" ]]
       exit $? ;;
-    *"config --images"|*" build"|*" up -d --remove-orphans --wait --wait-timeout 180"|*" ps"|*"exec -T backend python manage.py check"|*"exec -T frontend nginx -t")
+    *"config --images"|*" build"|*" up -d --remove-orphans --wait --wait-timeout 180"|*" ps"|*"exec -T app python application.py --healthcheck"|*"exec -T app python manage.py check"|*"exec -T app nginx -t")
       exit 0 ;;
   esac
 fi
@@ -187,7 +187,7 @@ fi
 deploy_output="${TEST_ROOT}/deploy.log"
 docker_log="${TEST_ROOT}/docker.log"
 if ! run_deploy $'1\n1\n1' "$deploy_output" FAKE_EXISTING_RESOURCES=1 FAKE_DOCKER_LOG="$docker_log"; then
-  echo "失败：无备份配置的七服务升级或验证异常退出。"
+  echo "失败：无备份配置的四服务升级或验证异常退出。"
   sed -n '1,120p' "$deploy_output"
   exit 1
 fi
@@ -196,7 +196,7 @@ grep -Fq 'up -d --remove-orphans --wait --wait-timeout 180' "$docker_log" || {
   exit 1
 }
 grep -Fq '部署验证通过。' "$deploy_output" || {
-  echo "失败：升级未完成七服务验证。"
+  echo "失败：升级未完成四服务验证。"
   exit 1
 }
 if grep -Eq -- '--profile init|volume rm|down|--volumes' "$docker_log"; then
@@ -242,4 +242,4 @@ grep -Fq "请恢复原 .env" "$blocked_output" || {
   exit 1
 }
 
-echo "部署四项密钥生成、升级补齐、非轮换、旧密钥保护、七服务升级和企业 CA 挂载验证测试通过。"
+echo "部署四项密钥生成、升级补齐、非轮换、旧密钥保护、四服务升级和企业 CA 挂载验证测试通过。"

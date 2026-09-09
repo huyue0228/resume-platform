@@ -14,7 +14,7 @@ def candidate_ids_for_scope(scope=None):
     scope = scope or {}
     candidate_ids = scope.get("candidate_ids") or []
     qs = m.Candidate.objects.all()
-    if candidate_ids:
+    if "candidate_ids" in scope:
         qs = qs.filter(id__in=candidate_ids)
     return qs.order_by("id").values_list("id", flat=True)
 
