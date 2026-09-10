@@ -800,12 +800,12 @@ func (a *App) stagePackage(ctx context.Context, db DB, archive *zip.Reader, affe
 		if ctx.Err() != nil {
 			return result, ctx.Err()
 		}
-		if entry.FileInfo().IsDir() {
+		if entry.FileInfo().IsDir() || !strings.EqualFold(filepath.Ext(entry.Name), ".pdf") {
 			continue
 		}
-		name := filepath.Base(strings.ReplaceAll(entry.Name, "\\", "/"))
-		if strings.ToLower(filepath.Ext(name)) != ".pdf" {
-			continue
+		name, nameErr := resumePackageFilename(entry)
+		if nameErr != nil {
+			return result, nameErr
 		}
 		if entry.Mode()&os.ModeSymlink != 0 {
 			return result, bad("简历包不允许符号链接")
@@ -836,6 +836,27 @@ func (a *App) stagePackage(ctx context.Context, db DB, archive *zip.Reader, affe
 		affected[num(resume["candidate_id"])] = true
 	}
 	return result, nil
+}
+
+func resumePackageFilename(entry *zip.File) (string, error) {
+	name := entry.Name
+	if !utf8.ValidString(name) {
+		// archive/zip preserves legacy filename bytes. Chinese Windows ZIPs commonly
+		// use GBK/GB18030; PostgreSQL text and the stored filename must use UTF-8.
+		if entry.Flags&0x800 != 0 {
+			return "", bad("简历包文件名声明为 UTF-8，但编码无效，请重新压缩后上传")
+		}
+		decoded, err := simplifiedchinese.GB18030.NewDecoder().String(name)
+		if err != nil || strings.ContainsRune(decoded, utf8.RuneError) {
+			return "", bad("简历包文件名编码无法识别，请使用 UTF-8 或 GBK/GB18030 编码重新压缩")
+		}
+		name = decoded
+	}
+	if strings.ContainsRune(name, 0) {
+		return "", bad("简历包文件名包含无效字符，请重命名后重新压缩")
+	}
+	// Decode first: a GBK multibyte character can contain the byte 0x5c ('\\').
+	return filepath.Base(strings.ReplaceAll(name, "\\", "/")), nil
 }
 
 type importContextReader struct {
