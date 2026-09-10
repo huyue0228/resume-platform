@@ -24,7 +24,7 @@ func TestRealPopplerCorpus(t *testing.T) {
 		pages              int
 		contains           string
 	}{
-		{"english", "ready", "", 1, "Alex Example"}, {"chinese", "ready", "", 1, "张测试"}, {"columns", "ready", "", 1, "Column B: 6 complete evidence"}, {"table", "ready", "", 1, "Page and line references"}, {"blank-middle", "ready", "", 3, "张测试"}, {"scan", "needs_attention", "", 1, ""}, {"mixed", "needs_attention", "", 2, "Alex Example"}, {"blank-only", "needs_attention", "", 1, ""}, {"encrypted", "", "pdf_encrypted", 0, ""}, {"damaged", "", "pdf_damaged", 0, ""}, {"oversize", "", "pdf_too_large", 0, ""}, {"overtext", "", "resume_text_too_large", 0, ""},
+		{"english", "ready", "", 1, "Alex Example"}, {"chinese", "ready", "", 1, "张测试"}, {"columns", "ready", "", 1, "Column B: 6 complete evidence"}, {"table", "ready", "", 1, "Page and line references"}, {"blank-middle", "ready", "", 3, "张测试"}, {"scan", "needs_attention", "", 1, ""}, {"mixed", "needs_attention", "", 2, "Alex Example"}, {"blank-only", "needs_attention", "", 1, ""}, {"encrypted", "", "pdf_encrypted", 0, ""}, {"damaged", "", "pdf_damaged", 0, ""}, {"oversize", "ready", "", 1, "Alex Example"}, {"overtext", "", "resume_text_too_large", 0, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(root, tc.name+".pdf")

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"io"
+	"math"
 	"net/http"
 	"net/mail"
 	"os"
@@ -36,7 +37,11 @@ type importedContactGrant struct {
 	canDelegate, isActive bool
 }
 
-func (a *App) readTable(raw []byte, filename, key string) (records []Object, err error) {
+func (a *App) readTable(raw []byte, filename, key string) ([]Object, error) {
+	return a.readTableReader(bytes.NewReader(raw), filename, key)
+}
+
+func (a *App) readTableReader(source io.ReadSeeker, filename, key string) (records []Object, err error) {
 	defer func() {
 		if recover() != nil {
 			records = nil
@@ -50,6 +55,10 @@ func (a *App) readTable(raw []byte, filename, key string) (records []Object, err
 	var data [][]string
 	switch strings.ToLower(filepath.Ext(filename)) {
 	case ".csv":
+		raw, readErr := io.ReadAll(source)
+		if readErr != nil {
+			return nil, bad("表格损坏或无法读取")
+		}
 		raw = bytes.TrimPrefix(raw, []byte{0xef, 0xbb, 0xbf})
 		if !utf8.Valid(raw) {
 			var decodeErr error
@@ -86,7 +95,7 @@ func (a *App) readTable(raw []byte, filename, key string) (records []Object, err
 		data, err = reader.ReadAll()
 	case ".xls":
 		var book *xls.WorkBook
-		book, err = xls.OpenReader(bytes.NewReader(raw), "utf-8")
+		book, err = xls.OpenReader(source, "utf-8")
 		if err == nil {
 			sheet := book.GetSheet(0)
 			if sheet == nil {
@@ -110,7 +119,8 @@ func (a *App) readTable(raw []byte, filename, key string) (records []Object, err
 		}
 	case ".xlsx":
 		var book *excelize.File
-		book, err = excelize.OpenReader(bytes.NewReader(raw), excelize.Options{UnzipSizeLimit: 128 << 20, UnzipXMLSizeLimit: 32 << 20})
+		// Worksheet XML spills to disk above the memory threshold; file size is unrestricted.
+		book, err = excelize.OpenReader(source, excelize.Options{UnzipSizeLimit: math.MaxInt64, UnzipXMLSizeLimit: 32 << 20})
 		if err == nil {
 			defer book.Close()
 			sheets := book.GetSheetList()
@@ -275,9 +285,9 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 	if r.Method != "POST" {
 		return &apiError{405, "请求方法不允许"}
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 256<<20)
+	// This is a memory threshold, not an upload size limit. Larger files spill to disk.
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
-		return bad("上传失败，文件损坏或超过 256 MiB 上限")
+		return bad("上传失败，请检查文件、网络连接和临时存储空间")
 	}
 	defer r.MultipartForm.RemoveAll()
 	if _, ok := r.MultipartForm.Value["processing_mode"]; ok {
@@ -291,7 +301,7 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 		return bad("mode 必须是 incremental 或 replace")
 	}
 	tables := map[string][]Object{}
-	var packageData []byte
+	var resumePackage *zip.Reader
 	for _, key := range []string{"resume_list", "jobs", "schools", "contacts", "resume_package"} {
 		files := r.MultipartForm.File[key]
 		if len(files) == 0 {
@@ -304,22 +314,22 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 		if err != nil {
 			return bad("上传文件无法读取")
 		}
-		raw, err := io.ReadAll(io.LimitReader(file, (128<<20)+1))
-		file.Close()
-		if err != nil || len(raw) > 128<<20 {
-			return bad("单个上传文件超过 128 MiB 上限")
-		}
 		if key == "resume_package" {
-			packageData = raw
+			defer file.Close()
+			resumePackage, err = zip.NewReader(file, files[0].Size)
+			if err != nil {
+				return bad("简历包不是有效 ZIP")
+			}
 		} else {
-			table, err := a.readTable(raw, files[0].Filename, key)
+			table, err := a.readTableReader(file, files[0].Filename, key)
+			file.Close()
 			if err != nil {
 				return err
 			}
 			tables[key] = table
 		}
 	}
-	if len(tables) == 0 && packageData == nil {
+	if len(tables) == 0 && resumePackage == nil {
 		return bad("未上传任何文件")
 	}
 	ctx := r.Context()
@@ -366,7 +376,7 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(72460910)"); err != nil {
 		return err
 	}
-	if mode == "replace" && (tables["resume_list"] != nil || packageData != nil) {
+	if mode == "replace" && (tables["resume_list"] != nil || resumePackage != nil) {
 		var active bool
 		if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM core_processingrun WHERE status IN ('pending','running','waiting_conflict','cancelling'))").Scan(&active); err != nil {
 			return err
@@ -669,7 +679,7 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 		}
 	}
 	// 文件先写入私有暂存目录；提交失败则恢复被替换原件。
-	files, err := a.stagePackage(ctx, tx, packageData, affected)
+	files, err := a.stagePackage(ctx, tx, resumePackage, affected)
 	if err != nil {
 		return err
 	}
@@ -763,14 +773,10 @@ func (s *stagedFiles) close() {
 		os.RemoveAll(s.dir)
 	}
 }
-func (a *App) stagePackage(ctx context.Context, db DB, raw []byte, affected map[int64]bool) (result *stagedFiles, err error) {
+func (a *App) stagePackage(ctx context.Context, db DB, archive *zip.Reader, affected map[int64]bool) (result *stagedFiles, err error) {
 	result = &stagedFiles{}
-	if raw == nil {
+	if archive == nil {
 		return result, nil
-	}
-	archive, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
-	if err != nil {
-		return nil, bad("简历包不是有效 ZIP")
 	}
 	if len(archive.File) > 10000 {
 		return nil, bad("简历包文件数量超过 10000")
@@ -789,7 +795,6 @@ func (a *App) stagePackage(ctx context.Context, db DB, raw []byte, affected map[
 		}
 	}()
 	pattern := regexp.MustCompile(`[（(]\s*([^（）()]+?)\s*[）)]`)
-	total := uint64(0)
 	names := map[string]bool{}
 	for _, entry := range archive.File {
 		if ctx.Err() != nil {
@@ -804,10 +809,6 @@ func (a *App) stagePackage(ctx context.Context, db DB, raw []byte, affected map[
 		}
 		if entry.Mode()&os.ModeSymlink != 0 {
 			return result, bad("简历包不允许符号链接")
-		}
-		total += entry.UncompressedSize64
-		if entry.UncompressedSize64 > 32<<20 || total > 512<<20 {
-			return result, bad("简历包解压后超限，单 PDF 上限 32 MiB，总计 512 MiB")
 		}
 		match := pattern.FindStringSubmatch(name)
 		if len(match) == 0 {
@@ -824,17 +825,8 @@ func (a *App) stagePackage(ctx context.Context, db DB, raw []byte, affected map[
 			return result, bad("简历包存在同名 PDF")
 		}
 		names[name] = true
-		reader, openErr := entry.Open()
-		if openErr != nil {
-			return result, bad("简历包损坏")
-		}
-		payload, readErr := io.ReadAll(io.LimitReader(reader, (32<<20)+1))
-		reader.Close()
-		if readErr != nil || len(payload) > 32<<20 {
-			return result, bad("简历文件损坏或超限")
-		}
 		source := filepath.Join(result.dir, str(len(result.items))+".pdf")
-		if err = os.WriteFile(source, payload, 0600); err != nil {
+		if err = copyPackagePDF(ctx, entry, source); err != nil {
 			return result, err
 		}
 		result.items = append(result.items, stagedFile{source: source, target: filepath.Join(dest, name), backup: source + ".backup"})
@@ -844,6 +836,39 @@ func (a *App) stagePackage(ctx context.Context, db DB, raw []byte, affected map[
 		affected[num(resume["candidate_id"])] = true
 	}
 	return result, nil
+}
+
+type importContextReader struct {
+	ctx context.Context
+	io.Reader
+}
+
+func (r importContextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.Reader.Read(p)
+}
+
+func copyPackagePDF(ctx context.Context, entry *zip.File, target string) error {
+	source, err := entry.Open()
+	if err != nil {
+		return bad("简历包损坏")
+	}
+	defer source.Close()
+	dest, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return err
+	}
+	defer dest.Close()
+	// Read to EOF so ZIP checksum validation still detects truncated or corrupt files.
+	if _, err = io.Copy(dest, importContextReader{ctx, source}); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return bad("简历文件损坏或无法保存，请检查文件和存储空间")
+	}
+	return dest.Close()
 }
 
 func importInt(value string) int64 { n, _ := strconv.ParseFloat(value, 64); return int64(n) }

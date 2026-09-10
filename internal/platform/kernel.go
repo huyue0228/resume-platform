@@ -114,9 +114,6 @@ func fileDigest(ctx context.Context, path string) (string, int64, error) {
 		}
 		n, err := f.Read(buffer)
 		size += int64(n)
-		if size > pdftext.MaxFileBytes {
-			return "", size, taskError("pdf_too_large", "PDF 超过 32 MiB 上限")
-		}
 		hash.Write(buffer[:n])
 		if err == io.EOF {
 			break

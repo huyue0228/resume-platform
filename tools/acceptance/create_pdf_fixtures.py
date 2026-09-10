@@ -48,7 +48,10 @@ make('scan',[('scan',[])]);make('mixed',[('en',english),('scan',[])])
 make('blank-only',[('blank',[])])
 writer=PdfWriter();writer.append(PdfReader(root/'english.pdf'));writer.encrypt('fixture-secret');writer.write(root/'encrypted.pdf')
 (root/'damaged.pdf').write_bytes(b'%PDF-1.7\nBroken cross-reference table')
-with open(root/'oversize.pdf','wb') as f:f.write((root/'english.pdf').read_bytes());f.seek(32*1024*1024);f.write(b'!')
+# A valid large PDF: attachment bytes grow the file without changing page text.
+writer=PdfWriter();writer.append(PdfReader(root/'english.pdf'))
+writer.add_attachment('size-fixture.bin', b'\0'*(32*1024*1024))
+writer.write(root/'oversize.pdf')
 c=canvas.Canvas(str(root/'overtext.pdf'),pagesize=A4,pageCompression=1)
 for page in range(60):
  c.setFont('Helvetica',2)

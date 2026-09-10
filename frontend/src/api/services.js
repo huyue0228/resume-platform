@@ -124,6 +124,8 @@ export function deleteMajorAlias(id) {
 export function importData(formData) {
   return client.post('/import/', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    // Large uploads may take longer than the default API timeout.
+    timeout: 0,
   })
 }
 export function downloadImportTemplate(templateType) {

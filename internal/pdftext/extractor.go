@@ -20,7 +20,6 @@ import (
 	"unicode/utf8"
 )
 
-const MaxFileBytes = 32 << 20
 const MaxTextBytes = 1 << 20
 const MaxPages = 100
 
@@ -191,9 +190,6 @@ func snapshot(ctx context.Context, o Options, target string) (string, error) {
 	if err != nil || !stat.Mode().IsRegular() {
 		return "", fail("pdf_missing", "PDF 简历文件不可读")
 	}
-	if stat.Size() > MaxFileBytes {
-		return "", fail("pdf_too_large", "PDF 超过 32 MiB 材料上限")
-	}
 	dest, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return "", fail("text_extractor_unavailable", "无法创建提取临时文件")
@@ -208,9 +204,6 @@ func snapshot(ctx context.Context, o Options, target string) (string, error) {
 		}
 		n, readErr := source.Read(buffer)
 		size += int64(n)
-		if size > MaxFileBytes {
-			return "", fail("pdf_too_large", "PDF 超过 32 MiB 材料上限")
-		}
 		if n > 0 {
 			hash.Write(buffer[:n])
 			if _, err := dest.Write(buffer[:n]); err != nil {
