@@ -27,14 +27,19 @@ func importTableFixture(t *testing.T, a *App, p *Principal, key, mode string, re
 		writer.Write(values)
 	}
 	writer.Flush()
+	return importFileFixture(t, a, p, key, mode, "fixture.csv", data.Bytes())
+}
+
+func importFileFixture(t *testing.T, a *App, p *Principal, key, mode, filename string, raw []byte) *httptest.ResponseRecorder {
+	t.Helper()
 	var body bytes.Buffer
 	form := multipart.NewWriter(&body)
 	form.WriteField("mode", mode)
-	file, err := form.CreateFormFile(key, "fixture.csv")
+	file, err := form.CreateFormFile(key, filename)
 	if err != nil {
 		t.Fatal(err)
 	}
-	file.Write(data.Bytes())
+	file.Write(raw)
 	form.Close()
 	req := httptest.NewRequest("POST", "/api/import/", &body)
 	req.Header.Set("Content-Type", form.FormDataContentType())

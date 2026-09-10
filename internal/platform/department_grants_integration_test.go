@@ -125,7 +125,10 @@ func TestContactImportMergesEmployeeDepartmentAndRole(t *testing.T) {
 	if len(p.Grants) != 3 {
 		t.Fatal("reimport overwrote another department or duplicated a grant")
 	}
-	responseObject(t, importTableFixture(t, a, admin, "contacts", "incremental", []Object{base, base}), 400)
+	merged := responseObject(t, importTableFixture(t, a, admin, "contacts", "incremental", []Object{base, base}), 200)
+	if num(obj(merged["counts"])["contacts"]) != 1 || num(obj(merged["counts"])["contacts_merged"]) != 1 {
+		t.Fatal("identical grants in one file were not merged")
+	}
 	conflict := clone(second)
 	conflict["姓名"] = "不同人员"
 	responseObject(t, importTableFixture(t, a, admin, "contacts", "incremental", []Object{base, conflict}), 400)

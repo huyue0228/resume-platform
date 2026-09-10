@@ -109,5 +109,8 @@ func TestImportTemplatesExplainOptionalDepartmentLevels(t *testing.T) {
 		if err != nil || !strings.Contains(str(instructions), "没有二层部门") || (key == "contacts" && !strings.Contains(str(instructions), "只有被指定的筛选人")) {
 			t.Fatalf("template %s does not explain the new rules: %v", key, err)
 		}
+		if key == "contacts" && (!strings.Contains(str(instructions), "自动合并") || !strings.Contains(str(instructions), "冲突行号")) {
+			t.Fatal("contact template does not explain duplicate-grant merging and conflicts")
+		}
 	}
 }

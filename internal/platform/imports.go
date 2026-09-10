@@ -29,6 +29,13 @@ type ImportSchema struct {
 	Headers              []string
 }
 
+const importSourceRowKey = "_source_row"
+
+type importedContactGrant struct {
+	rowNumber             int
+	canDelegate, isActive bool
+}
+
 func (a *App) readTable(raw []byte, filename, key string) (records []Object, err error) {
 	defer func() {
 		if recover() != nil {
@@ -166,7 +173,7 @@ func (a *App) readTable(raw []byte, filename, key string) (records []Object, err
 	if len(missing)+len(unknown)+len(duplicate) > 0 {
 		return nil, bad(fmt.Sprintf("%s表头不符合标准模板：缺少字段【%s】；未知字段【%s】；重复字段【%s】。请下载最新版标准模板", schema.Label, strings.Join(missing, "、"), strings.Join(unknown, "、"), strings.Join(duplicate, "、")))
 	}
-	for _, row := range data[1:] {
+	for index, row := range data[1:] {
 		record := Object{}
 		nonempty := false
 		for i, h := range headers {
@@ -180,6 +187,9 @@ func (a *App) readTable(raw []byte, filename, key string) (records []Object, err
 			}
 		}
 		if nonempty {
+			if key == "contacts" {
+				record[importSourceRowKey] = index + 2
+			}
 			records = append(records, record)
 		}
 	}
@@ -314,7 +324,7 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 	}
 	ctx := r.Context()
 	counts := Object{}
-	for _, key := range []string{"candidates_created", "candidates_updated", "resumes_created", "resumes_updated", "jobs", "schools", "contacts", "candidates_skipped", "jobs_skipped"} {
+	for _, key := range []string{"candidates_created", "candidates_updated", "resumes_created", "resumes_updated", "jobs", "schools", "contacts", "contacts_merged", "candidates_skipped", "jobs_skipped"} {
 		counts[key] = 0
 	}
 	inc := func(key string) { counts[key] = num(counts[key]) + 1 }
@@ -420,8 +430,13 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 	contactIDs := []int64{}
 	emails := map[string]string{}
 	people := map[string]string{}
-	grantKeys := map[string]bool{}
-	for _, row := range tables["contacts"] {
+	grantKeys := map[string]importedContactGrant{}
+	mergedContactRows := []any{}
+	for index, row := range tables["contacts"] {
+		rowNumber := index + 2
+		if sourceRow := num(row[importSourceRowKey]); sourceRow > 1 {
+			rowNumber = int(sourceRow)
+		}
 		no := str(row["工号"])
 		if no == "" {
 			continue
@@ -466,10 +481,34 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 			return bad("部门HR角色必须匹配授权部门层级")
 		}
 		key := no + "\x1f" + str(department["id"]) + "\x1f" + level
-		if grantKeys[key] {
-			return bad("接口人文件存在重复的工号、部门和角色授权")
+		grant := importedContactGrant{
+			rowNumber:   rowNumber,
+			canDelegate: contactIncludesDescendants(level) && (str(row["可转派"]) == "" || boolCell(row["可转派"])),
+			isActive:    str(row["是否启用"]) == "" || boolCell(row["是否启用"]),
 		}
-		grantKeys[key] = true
+		if previous, exists := grantKeys[key]; exists {
+			conflicts := []string{}
+			if previous.canDelegate != grant.canDelegate {
+				conflicts = append(conflicts, "可转派")
+			}
+			if previous.isActive != grant.isActive {
+				conflicts = append(conflicts, "是否启用")
+			}
+			if len(conflicts) > 0 {
+				departmentNames := []string{}
+				for _, name := range []string{str(row["一层部门"]), str(row["二层部门"])} {
+					if name != "" {
+						departmentNames = append(departmentNames, name)
+					}
+				}
+				_, roleName := contactRole(level)
+				return bad(fmt.Sprintf("接口人文件第 %d 行与第 %d 行的授权设置冲突：工号【%s】，部门【%s】，角色【%s】；%s不一致，请统一后重新导入", rowNumber, previous.rowNumber, no, strings.Join(departmentNames, " / "), roleName, strings.Join(conflicts, "、")))
+			}
+			mergedContactRows = append(mergedContactRows, rowNumber)
+			inc("contacts_merged")
+			continue
+		}
+		grantKeys[key] = grant
 		contact, err := a.findContactGrant(ctx, tx, no, department["id"], level)
 		if err != nil {
 			return err
@@ -478,7 +517,7 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 			level = str(contact["contact_level"])
 		}
 		py, initials := pinyinNames(str(row["姓名"]))
-		contact, err = a.save(ctx, tx, "core_contact", contact["id"], Object{"employee_no": no, "name": row["姓名"], "name_pinyin": py, "name_pinyin_initials": initials, "email": email, "department_id": department["id"], "contact_level": level, "can_delegate": contactIncludesDescendants(level) && (str(row["可转派"]) == "" || boolCell(row["可转派"])), "is_active": str(row["是否启用"]) == "" || boolCell(row["是否启用"])})
+		contact, err = a.save(ctx, tx, "core_contact", contact["id"], Object{"employee_no": no, "name": row["姓名"], "name_pinyin": py, "name_pinyin_initials": initials, "email": email, "department_id": department["id"], "contact_level": level, "can_delegate": grant.canDelegate, "is_active": grant.isActive})
 		if err != nil {
 			return err
 		}
@@ -487,6 +526,9 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 		}
 		contactIDs = append(contactIDs, num(contact["id"]))
 		inc("contacts")
+	}
+	if len(mergedContactRows) > 0 {
+		warnings = append(warnings, Object{"code": "contact_duplicate_grants_merged", "count": len(mergedContactRows), "rows": mergedContactRows, "message": "相同设置的部门角色授权已合并"})
 	}
 	if mode == "replace" && tables["contacts"] != nil {
 		if _, err = tx.Exec(ctx, "UPDATE core_contact SET is_active=false WHERE NOT (id=ANY($1::bigint[]))", contactIDs); err != nil {
@@ -673,7 +715,11 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 	if err != nil {
 		enrichment = Object{"status": "queue_failed", "school_count": len(missingSchools)}
 	}
-	write(w, status, Object{"detail": "导入完成", "counts": counts, "warnings": warnings, "school_province_enrichment": enrichment, "agent_processing": agentState, "processing_runs": runs})
+	detail := "导入完成"
+	if len(mergedContactRows) > 0 {
+		detail = fmt.Sprintf("导入完成，已合并 %d 条相同的部门角色授权", len(mergedContactRows))
+	}
+	write(w, status, Object{"detail": detail, "counts": counts, "warnings": warnings, "school_province_enrichment": enrichment, "agent_processing": agentState, "processing_runs": runs})
 	return nil
 }
 
