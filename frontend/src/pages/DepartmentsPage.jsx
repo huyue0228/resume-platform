@@ -20,7 +20,7 @@ import SmartDataTable from '../components/SmartDataTable'
 import { useRole } from '../contexts/roleState'
 
 const IMPORT_FIELDS = [
-  { key: 'contacts', label: '部门接口人信息 (.xlsx/.xls/.csv)', accept: '.xlsx,.xls,.csv' },
+  { key: 'contacts', label: '部门人员授权信息 (.xlsx/.xls/.csv)', accept: '.xlsx,.xls,.csv' },
 ]
 
 export default function DepartmentsPage() {
@@ -50,21 +50,20 @@ export default function DepartmentsPage() {
   }
 
   const departmentOptions = departments
-    .filter((department) => department.level === 2 || department.level === 3)
+    .filter((department) => [1, 2].includes(department.level))
     .map((department) => ({
-      label: `${department.name}（${department.level === 3 ? '三级部门' : '二级部门'}）`,
+      label: `${department.name}（${{ 1: '一级部门', 2: '二级部门' }[department.level]}）`,
       value: department.id,
     }))
 
   const handleSave = async (values) => {
-    const department = departments.find((item) => item.id === values.department)
-    const isTertiary = department?.level === 3
+    const isTertiary = values.contact_level === 'tertiary'
     const body = {
       name: values.name?.trim(),
       employee_no: values.employee_no?.trim(),
       email: values.email?.trim().toLowerCase(),
       department: values.department,
-      contact_level: isTertiary ? 'tertiary' : 'secondary',
+      contact_level: values.contact_level,
       can_delegate: isTertiary ? false : Boolean(values.can_delegate),
       is_active: Boolean(values.is_active),
     }
@@ -73,7 +72,7 @@ export default function DepartmentsPage() {
     } else {
       await createContact(body)
     }
-    message.success('接口人已保存')
+    message.success('部门授权已保存')
     setContactModal({ open: false, record: null })
     actionRef.current?.reload()
     actionRef.current?.reloadOptions()
@@ -113,10 +112,21 @@ export default function DepartmentsPage() {
       dataIndex: 'department_level',
       width: 100,
       filter: { type: 'select', param: 'department_level', options: [
+        { label: '一级部门', value: '1' },
         { label: '二级部门', value: '2' },
-        { label: '三级部门', value: '3' },
       ] },
-      render: (value) => (value === 3 ? '三级部门' : value === 2 ? '二级部门' : '-'),
+      render: (value) => ({ 1: '一级部门', 2: '二级部门' }[value] || '-'),
+    },
+    {
+      title: '角色',
+      dataIndex: 'contact_level',
+      width: 120,
+      filter: { type: 'select', param: 'contact_level', options: [
+        { label: '二级部门HR', value: 'secondary_hr' },
+        { label: '接口人', value: 'secondary' },
+        { label: '简历筛选人', value: 'tertiary' },
+      ] },
+      render: (value) => ({ secondary_hr: '二级部门HR', secondary: '接口人', tertiary: '简历筛选人' }[value] || '-'),
     },
     {
       title: '可转派',
@@ -127,7 +137,7 @@ export default function DepartmentsPage() {
         { label: '否', value: 'false' },
       ] },
       render: (_, record) =>
-        record.contact_level === 'secondary' && record.can_delegate ? (
+        ['secondary_hr', 'secondary'].includes(record.contact_level) && record.can_delegate ? (
           <Tag color="green">是</Tag>
         ) : (
           '-'
@@ -153,8 +163,8 @@ export default function DepartmentsPage() {
         <Space>
           <a onClick={() => setContactModal({ open: true, record })}>编辑</a>
           <Popconfirm
-            title="删除接口人"
-            description="将删除该接口人及绑定用户；既有处理日志仍保留操作者快照。"
+            title="撤销部门授权"
+            description="仅移除该条部门角色授权，保留账号、其他部门授权和处理记录。"
             okText="删除"
             cancelText="取消"
             okButtonProps={{ danger: true }}
@@ -168,8 +178,8 @@ export default function DepartmentsPage() {
   ].filter(Boolean)
   return (
     <PageContainer
-      title="部门接口人"
-      content="二级/三级部门接口人名单，可导入维护；同部门接口人共享部门收件箱，按部门范围处理简历。"
+      title="部门人员授权"
+      content="同一工号可兼任多个部门和角色，每个部门、角色一条授权；可转派和启用状态分别设置。"
     >
       <SmartDataTable
         tableId="contacts"
@@ -186,17 +196,17 @@ export default function DepartmentsPage() {
               type="primary"
               onClick={() => setContactModal({ open: true, record: null })}
             >
-              新增接口人
+              新增部门授权
             </Button>
           ),
           canImportContacts && (
             <ImportButton
               key="import"
-              buttonText="导入接口人"
-              title="导入部门接口人信息"
+              buttonText="导入人员授权"
+              title="导入部门人员授权信息"
               fields={IMPORT_FIELDS}
               templateType="contacts"
-              templateFilename="部门接口人标准模板.xlsx"
+              templateFilename="部门人员授权标准模板.xlsx"
               onDone={() => {
                 actionRef.current?.reload()
                 actionRef.current?.reloadOptions()
@@ -207,14 +217,14 @@ export default function DepartmentsPage() {
       />
       {canManageContacts && (
         <ModalForm
-          title={contactModal.record ? '编辑接口人' : '新增接口人'}
+          title={contactModal.record ? '编辑部门授权' : '新增部门授权'}
           open={contactModal.open}
           modalProps={{
             destroyOnHidden: true,
             onCancel: () => setContactModal({ open: false, record: null }),
           }}
           initialValues={
-            contactModal.record || { can_delegate: true, is_active: true }
+            contactModal.record || { contact_level: 'secondary', can_delegate: true, is_active: true }
           }
           onFinish={handleSave}
         >
@@ -226,6 +236,8 @@ export default function DepartmentsPage() {
           <ProFormText
             name="employee_no"
             label="工号"
+            disabled={Boolean(contactModal.record)}
+            extra="兼任其他部门时可新增一条相同工号的授权；姓名和邮箱由同一账号共用。"
             rules={[{ required: true, whitespace: true, message: '请输入工号' }]}
           />
           <ProFormText
@@ -242,6 +254,17 @@ export default function DepartmentsPage() {
             showSearch
             options={departmentOptions}
             rules={[{ required: true, message: '请选择所属部门' }]}
+          />
+          <ProFormSelect
+            name="contact_level"
+            label="角色"
+            options={[
+              { label: '二级部门HR', value: 'secondary_hr' },
+              { label: '接口人', value: 'secondary' },
+              { label: '简历筛选人', value: 'tertiary' },
+            ]}
+            extra="二级部门HR按部门授权，一级部门HR为全局角色，请在用户管理中设置；接口人管理部门收件箱；简历筛选人仅处理转派给自己的简历。"
+            rules={[{ required: true, message: '请选择角色' }]}
           />
           <ProFormSwitch name="can_delegate" label="允许转派" />
           <ProFormSwitch name="is_active" label="启用" />

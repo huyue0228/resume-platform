@@ -98,6 +98,7 @@ const roleState = vi.hoisted(() => ({
   permissions: new Set(['attempt.view_all']),
   user: { id: 1, username: 'tester' },
   contact: null,
+  contacts: undefined,
   isContact: false,
   isSecondaryContact: false,
 }))
@@ -112,6 +113,7 @@ vi.mock('../contexts/roleState', () => ({
     hasPermission: (code) => roleState.permissions.has(code),
     user: roleState.user,
     contact: roleState.contact,
+    contacts: roleState.contacts,
     isContact: roleState.isContact,
     isSecondaryContact: roleState.isSecondaryContact,
   }),
@@ -298,6 +300,7 @@ describe('ResumesPage detail', () => {
     roleState.permissions = new Set(['attempt.view_all'])
     roleState.user = { id: 1, username: 'tester' }
     roleState.contact = null
+    roleState.contacts = undefined
     roleState.isContact = false
     roleState.isSecondaryContact = false
     runProcess.mockReset()
@@ -426,6 +429,7 @@ describe('ResumesPage detail', () => {
   it('shows feedback to a contact in the current receiving department', async () => {
     candidate.current_attempt = {
       id: 21,
+      can_feedback: true,
       status: 'dispatched',
       current_department: 2,
       current_department_name: '平台研发部',
@@ -433,7 +437,7 @@ describe('ResumesPage detail', () => {
     }
     candidate.attempts = [candidate.current_attempt]
     roleState.permissions = new Set(['attempt.feedback', 'attempt.view_department'])
-    roleState.contact = { id: 10, department: 2, department_level: 2 }
+    roleState.contact = { id: 10, department: 2, department_level: 2, contact_level: 'secondary' }
     roleState.isContact = true
     roleState.isSecondaryContact = true
 
@@ -441,6 +445,33 @@ describe('ResumesPage detail', () => {
     await userEvent.click(screen.getByRole('button', { name: '打开候选人' }))
 
     expect(screen.getByRole('button', { name: '提交反馈' })).not.toBeNull()
+  })
+
+  it('uses the receiving department grant when the same person holds different roles', async () => {
+    candidate.current_attempt = {
+      id: 29,
+      status: 'dispatched',
+      current_department: 3,
+      can_transfer: false,
+      can_feedback: true,
+      can_export: false,
+      feedback_at: null,
+    }
+    candidate.attempts = [candidate.current_attempt]
+    roleState.permissions = new Set(['attempt.view_department', 'attempt.transfer_department', 'attempt.feedback', 'attempt.export'])
+    roleState.contacts = [
+      { id: 10, department: 2, contact_level: 'secondary', can_delegate: true },
+      { id: 11, department: 3, contact_level: 'tertiary', can_delegate: false },
+    ]
+    roleState.contact = roleState.contacts[0]
+    roleState.isContact = true
+
+    render(<MemoryRouter><ResumesPage /></MemoryRouter>)
+    await userEvent.click(screen.getByRole('button', { name: '打开候选人' }))
+
+    expect(screen.getByRole('button', { name: '提交反馈' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '转派简历' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^导出$/ })).toBeNull()
   })
 
   it('loads manual assignment targets without the generic department API', async () => {
@@ -465,6 +496,7 @@ describe('ResumesPage detail', () => {
   it('hides feedback from a parent department contact after transfer to a child department', async () => {
     candidate.current_attempt = {
       id: 22,
+      can_feedback: false,
       status: 'dispatched',
       current_department: 3,
       current_department_name: '后端开发组',
@@ -472,7 +504,7 @@ describe('ResumesPage detail', () => {
     }
     candidate.attempts = [candidate.current_attempt]
     roleState.permissions = new Set(['attempt.feedback', 'attempt.view_department'])
-    roleState.contact = { id: 10, department: 2, department_level: 2 }
+    roleState.contact = { id: 10, department: 2, department_level: 2, contact_level: 'secondary' }
     roleState.isContact = true
     roleState.isSecondaryContact = true
 
@@ -485,6 +517,7 @@ describe('ResumesPage detail', () => {
   it('submits a structured rejection reason for the current department', async () => {
     candidate.current_attempt = {
       id: 23,
+      can_feedback: true,
       status: 'dispatched',
       current_department: 2,
       current_department_name: '平台研发部',
@@ -492,7 +525,7 @@ describe('ResumesPage detail', () => {
     }
     candidate.attempts = [candidate.current_attempt]
     roleState.permissions = new Set(['attempt.feedback', 'attempt.view_department'])
-    roleState.contact = { id: 10, department: 2, department_level: 2 }
+    roleState.contact = { id: 10, department: 2, department_level: 2, contact_level: 'secondary' }
     roleState.isContact = true
     const user = userEvent.setup()
 
@@ -519,6 +552,7 @@ describe('ResumesPage detail', () => {
   it('freezes selected candidates and only offers secondary departments for bulk transfer', async () => {
     candidate.current_attempt = {
       id: 24,
+      can_transfer: true,
       status: 'dispatched',
       current_department: 2,
       current_department_name: '平台研发部',
@@ -526,7 +560,7 @@ describe('ResumesPage detail', () => {
     }
     candidate.attempts = [candidate.current_attempt]
     roleState.permissions = new Set(['attempt.transfer_department', 'attempt.view_department'])
-    roleState.contact = { id: 10, department: 2, department_level: 2, can_delegate: true }
+    roleState.contact = { id: 10, department: 2, department_level: 2, contact_level: 'secondary', can_delegate: true }
     roleState.isContact = true
     const user = userEvent.setup()
 
@@ -549,9 +583,10 @@ describe('ResumesPage detail', () => {
     }))
   })
 
-  it('allows a secondary contact to transfer one resume to an eligible tertiary department', async () => {
+  it('allows a contact to assign a named screener without changing the mailbox', async () => {
     candidate.current_attempt = {
       id: 26,
+      can_transfer: true,
       status: 'dispatched',
       current_department: 2,
       current_department_name: '平台研发部',
@@ -559,27 +594,28 @@ describe('ResumesPage detail', () => {
     }
     candidate.attempts = [candidate.current_attempt]
     roleState.permissions = new Set(['attempt.transfer_department', 'attempt.view_department'])
-    roleState.contact = { id: 10, department: 2, department_level: 2, can_delegate: true }
+    roleState.contact = { id: 10, department: 2, department_level: 2, contact_level: 'secondary', can_delegate: true }
     roleState.isContact = true
+    fetchTransferOptions.mockResolvedValue({ data: { results: [], screeners: [{ id: 17, name: '李四', employee_no: 'E17' }] } })
     const user = userEvent.setup()
 
     render(<MemoryRouter><ResumesPage /></MemoryRouter>)
     await user.click(screen.getByRole('button', { name: '打开候选人' }))
-    await user.click(screen.getByRole('button', { name: '转派部门' }))
+    await user.click(screen.getByRole('button', { name: '转派简历' }))
     await waitFor(() => expect(fetchTransferOptions).toHaveBeenCalledWith(26))
     await user.click(screen.getByRole('combobox'))
-    await user.click(await screen.findByText('研发中心 / 后端开发组'))
+    await user.click(await screen.findByText('李四（E17） · 简历筛选人'))
     await user.click(screen.getAllByRole('button', { name: /转.?派/ }).at(-1))
 
     await waitFor(() => expect(transferAllocation).toHaveBeenCalledWith(26, {
-      target_department_id: 3,
+      target_screener_id: 17,
       note: '',
     }))
   })
 
   it('hides transfer selection and bulk transfer when the secondary contact cannot delegate', () => {
     roleState.permissions = new Set(['attempt.transfer_department', 'attempt.view_department'])
-    roleState.contact = { id: 10, department: 2, department_level: 2, can_delegate: false }
+    roleState.contact = { id: 10, department: 2, department_level: 2, contact_level: 'secondary', can_delegate: false }
     roleState.isContact = true
 
     render(<MemoryRouter><ResumesPage /></MemoryRouter>)
@@ -972,6 +1008,7 @@ describe('ResumesPage detail', () => {
   it('opens the same field chooser for an attempt-scoped detail export', async () => {
     candidate.current_attempt = {
       id: 31,
+      can_export: true,
       status: 'dispatched',
       current_department: 2,
       feedback_at: null,

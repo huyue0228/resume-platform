@@ -35,12 +35,23 @@ func integrationApp(t *testing.T) *App {
 	return a
 }
 func TestMigrationAndSeed(t *testing.T) {
-	a := integrationApp(t)
+	a := isolatedInboxApp(t, false)
 	if err := a.Seed(context.Background()); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	if err := a.Seed(context.Background()); err != nil {
 		t.Fatalf("idempotent seed: %v", err)
+	}
+	var invalid, count int
+	if err := a.Pool.QueryRow(context.Background(), `SELECT count(*), count(*) FILTER (WHERE
+		(d.level = 1 AND d.parent_id IS NOT NULL) OR
+		(d.level = 2 AND (p.id IS NULL OR p.level <> 1)) OR
+		d.level NOT IN (1, 2))
+		FROM core_department d LEFT JOIN core_department p ON p.id = d.parent_id`).Scan(&count, &invalid); err != nil {
+		t.Fatal(err)
+	}
+	if count != 4 || invalid != 0 {
+		t.Fatalf("fresh initialization must create a valid two-level department tree without duplicates: count=%d invalid=%d", count, invalid)
 	}
 }
 func TestPrivateConnectionEncryption(t *testing.T) {

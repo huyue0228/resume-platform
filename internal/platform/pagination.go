@@ -111,6 +111,9 @@ func (a *App) pagedResource(w http.ResponseWriter, r *http.Request, resource str
 	}
 	keys = append(keys, "t.id ASC")
 	where := ""
+	if resource == "departments" {
+		where = " WHERE t.level IN (1,2)"
+	}
 	if resource == "jobs" {
 		where = " WHERE t.is_active"
 	}

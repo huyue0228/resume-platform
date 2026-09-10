@@ -32,7 +32,7 @@ export const allRoute = {
         { path: '/resumes', name: '简历库', icon: <ProfileOutlined /> },
         { path: '/jobs', name: '岗位需求', icon: <ApartmentOutlined /> },
         { path: '/schools', name: '院校清单', icon: <BankOutlined /> },
-        { path: '/departments', name: '部门接口人', icon: <TeamOutlined /> },
+        { path: '/departments', name: '部门人员授权', icon: <TeamOutlined /> },
       ],
     },
     {

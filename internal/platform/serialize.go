@@ -30,6 +30,9 @@ func (a *App) source(ctx context.Context, table string, row Object, path string)
 	return a.source(ctx, field.Relation, related, strings.Join(parts[1:], "."))
 }
 func (a *App) hierarchy(ctx context.Context, department Object) (Object, Object, Object) {
+	return a.hierarchyWithDB(ctx, a.Pool, department)
+}
+func (a *App) hierarchyWithDB(ctx context.Context, db DB, department Object) (Object, Object, Object) {
 	var primary, secondary, tertiary Object
 	visited := map[int64]bool{}
 	for department != nil && !visited[num(department["id"])] {
@@ -45,7 +48,7 @@ func (a *App) hierarchy(ctx context.Context, department Object) (Object, Object,
 		if department["parent_id"] == nil {
 			break
 		}
-		department, _ = a.get(ctx, a.Pool, "core_department", department["parent_id"])
+		department, _ = a.get(ctx, db, "core_department", department["parent_id"])
 	}
 	return primary, secondary, tertiary
 }
@@ -89,6 +92,11 @@ func (a *App) serialize(ctx context.Context, resource string, row Object, p *Pri
 			return nil, err
 		}
 		result["roles"] = other.Roles
+		result["department_grants"] = []any{}
+		for _, grant := range other.Grants {
+			_, label := contactRole(str(grant.Contact["contact_level"]))
+			result["department_grants"] = append(list(result["department_grants"]), Object{"id": grant.Contact["id"], "department_name": grant.Department["name"], "role_name": label, "is_active": grant.Contact["is_active"]})
+		}
 		codes := []string{}
 		for c := range other.Permissions {
 			codes = append(codes, c)
@@ -106,13 +114,27 @@ func (a *App) serialize(ctx context.Context, resource string, row Object, p *Pri
 		}
 		result["role_ids"] = ids
 	case "roles":
+		_, result["is_builtin"] = a.Spec.RolePermissions[str(row["name"])]
+		allowed := []string{}
+		for _, module := range a.Spec.PermissionTree {
+			for _, value := range list(module["children"]) {
+				code := str(obj(value)["code"])
+				if a.rolePermissionAllowed(str(row["name"]), code) {
+					allowed = append(allowed, code)
+				}
+			}
+		}
+		result["allowed_permission_codes"] = allowed
 		permissions, err := rows(ctx, a.Pool, "SELECT row_to_json(p) FROM auth_permission p JOIN auth_group_permissions gp ON gp.permission_id=p.id WHERE gp.group_id=$1 ORDER BY p.codename", row["id"])
 		if err != nil {
 			return nil, err
 		}
 		codes := []string{}
 		for _, permission := range permissions {
-			codes = append(codes, strings.ReplaceAll(str(permission["codename"]), "__", "."))
+			code := strings.ReplaceAll(str(permission["codename"]), "__", ".")
+			if a.rolePermissionAllowed(str(row["name"]), code) {
+				codes = append(codes, code)
+			}
 		}
 		result["permissions"] = codes
 	case "departments", "jobs":
@@ -126,7 +148,7 @@ func (a *App) serialize(ctx context.Context, resource string, row Object, p *Pri
 		if resource == "jobs" {
 			result["secondary_department_id"] = secondary["id"]
 			result["secondary_department_name"] = str(secondary["name"])
-			result["department_name"] = str(secondary["name"])
+			result["department_name"] = str(department["name"])
 			majors, err := rows(ctx, a.Pool, "SELECT row_to_json(m) FROM core_jobmajor m WHERE job_id=$1 ORDER BY id", row["id"])
 			if err != nil {
 				return nil, err
@@ -188,6 +210,15 @@ func (a *App) serialize(ctx context.Context, resource string, row Object, p *Pri
 		result["current_position_name"] = str(resume["position_name"])
 		result["current_rank"] = row["current_rank"]
 	case "workflow-attempts":
+		result["can_export"] = a.canExportAttempt(ctx, p, row)
+		result["can_dispatch"] = a.canManageAttempt(ctx, a.Pool, p, row, "attempt.dispatch")
+		result["assigned_screener"] = row["assigned_screener_id"]
+		result["assigned_screener_name"] = row["assigned_screener_name_snapshot"]
+		result["assigned_screener_employee_no"] = row["assigned_screener_employee_no_snapshot"]
+		result["screener_assigned_at"] = row["screener_assigned_at"]
+		pending := row["status"] == "dispatched" && row["feedback_at"] == nil
+		result["can_transfer"] = pending && a.canTransferAttempt(ctx, a.Pool, p, row, nil)
+		result["can_feedback"] = pending && canFeedbackAttempt(p, row)
 		initial, _ := a.get(ctx, a.Pool, "core_department", row["initial_department_id"])
 		current, _ := a.get(ctx, a.Pool, "core_department", row["current_department_id"])
 		primary, _, _ := a.hierarchy(ctx, current)
@@ -199,7 +230,7 @@ func (a *App) serialize(ctx context.Context, resource string, row Object, p *Pri
 		decision, _ := a.get(ctx, a.Pool, "core_agentdispatchdecision", row["agent_decision_id"])
 		result["agent_decision"] = nil
 		result["agent_decision_summary"] = nil
-		if decision != nil && p.has("attempt.view_all") {
+		if decision != nil && (p.has("attempt.view_all") || truth(result["can_dispatch"])) {
 			result["agent_decision"] = decision["id"]
 			summary := brief(decision, "id", "recommendation", "matched_job_category", "confidence_score", "score_breakdown", "summary", "reason", "evidence", "risks", "risk_flags", "error_code", "error_message")
 			summary["recommended_job"] = decision["recommended_job_id"]
@@ -482,7 +513,7 @@ func (a *App) candidateJSON(ctx context.Context, c, result Object, p *Principal,
 		av := []any{}
 		for _, at := range visible {
 			v, err := a.serialize(ctx, "workflow-attempts", at, p, true)
-			if !p.has("resume.view") {
+			if !p.has("resume.view") && !truth(v["can_dispatch"]) {
 				delete(v, "agent_decision")
 				delete(v, "agent_decision_summary")
 			}
@@ -495,7 +526,7 @@ func (a *App) candidateJSON(ctx context.Context, c, result Object, p *Principal,
 	}
 	if attempt != nil {
 		result["current_attempt"], err = a.serialize(ctx, "workflow-attempts", attempt, p, detail)
-		if !p.has("resume.view") {
+		if !p.has("resume.view") && !truth(obj(result["current_attempt"])["can_dispatch"]) {
 			delete(obj(result["current_attempt"]), "agent_decision")
 			delete(obj(result["current_attempt"]), "agent_decision_summary")
 		}
@@ -542,6 +573,9 @@ func (a *App) handlingEventJSON(ctx context.Context, e Object, p *Principal) Obj
 			result["metadata"] = Object{"welink": safe}
 		} else {
 			result["metadata"] = safe
+		}
+		if e["event_type"] == "screener_assigned" {
+			result["metadata"] = brief(metadata, "to_screener_name", "to_screener_employee_no")
 		}
 	}
 	return result

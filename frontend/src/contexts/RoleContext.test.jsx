@@ -104,13 +104,17 @@ describe('RoleProvider W3 OAuth2', () => {
     expect(screen.getByText('未登录')).toBeTruthy()
   })
 
-  it('derives the contact level from the department data scope', async () => {
+  it('uses declared grant levels rather than department depth', async () => {
     localStorage.setItem('srf_token', 'department-token')
     fetchMe.mockResolvedValue({
       data: {
         username: 'E20001',
         permissions: ['attempt.view_department'],
-        contact: { id: 5, department: 20, department_level: 2 },
+        contacts: [
+          { id: 5, department: 20, department_level: 2, contact_level: 'tertiary', is_active: true },
+          { id: 6, department: 30, department_level: 1, contact_level: 'secondary', is_active: true },
+          { id: 7, department: 40, department_level: 1, contact_level: 'primary', is_active: false },
+        ],
         data_scope: {
           type: 'department',
           department_id: 20,
@@ -126,6 +130,6 @@ describe('RoleProvider W3 OAuth2', () => {
       </RoleProvider>,
     )
 
-    expect(await screen.findByText('department:true:true:false')).toBeTruthy()
+    expect(await screen.findByText('department:true:true:true')).toBeTruthy()
   })
 })

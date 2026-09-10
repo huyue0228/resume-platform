@@ -377,23 +377,27 @@
           "max_length": 32,
           "choices": [
             [
-              "hr",
-              "HR"
+              "admin",
+              "管理员"
             ],
             [
               "secondary_contact",
-              "二级接口人"
+              "接口人"
             ],
             [
               "tertiary_contact",
-              "三级接口人"
+              "简历筛选人"
             ],
             [
-              "admin",
-              "管理员"
+              "primary_hr",
+              "一级部门HR"
+            ],
+            [
+              "secondary_hr",
+              "二级部门HR"
             ]
           ],
-          "default": "hr"
+          "default": "primary_hr"
         },
         {
           "name": "contact",
@@ -525,7 +529,7 @@
           "null": false,
           "blank": false,
           "primary": false,
-          "unique": true,
+          "unique": false,
           "max_length": 32,
           "choices": []
         },
@@ -566,11 +570,15 @@
           "choices": [
             [
               "secondary",
-              "二级接口人"
+              "接口人"
             ],
             [
               "tertiary",
-              "三级接口人"
+              "简历筛选人"
+            ],
+            [
+              "secondary_hr",
+              "二级部门HR"
             ]
           ],
           "default": "secondary"
@@ -2843,6 +2851,54 @@
           "max_length": null,
           "choices": [],
           "timestamp": "update"
+        },
+        {
+          "name": "assigned_screener",
+          "column": "assigned_screener_id",
+          "type": "ForeignKey",
+          "null": true,
+          "blank": true,
+          "primary": false,
+          "unique": false,
+          "max_length": null,
+          "choices": [],
+          "relation": "core_contact",
+          "on_delete": "SET_NULL"
+        },
+        {
+          "name": "assigned_screener_employee_no_snapshot",
+          "column": "assigned_screener_employee_no_snapshot",
+          "type": "CharField",
+          "null": false,
+          "blank": true,
+          "primary": false,
+          "unique": false,
+          "max_length": 32,
+          "choices": [],
+          "default": ""
+        },
+        {
+          "name": "assigned_screener_name_snapshot",
+          "column": "assigned_screener_name_snapshot",
+          "type": "CharField",
+          "null": false,
+          "blank": true,
+          "primary": false,
+          "unique": false,
+          "max_length": 64,
+          "choices": [],
+          "default": ""
+        },
+        {
+          "name": "screener_assigned_at",
+          "column": "screener_assigned_at",
+          "type": "DateTimeField",
+          "null": true,
+          "blank": true,
+          "primary": false,
+          "unique": false,
+          "max_length": null,
+          "choices": []
         }
       ]
     },
@@ -2909,6 +2965,10 @@
             [
               "cancelled",
               "取消"
+            ],
+            [
+              "screener_assigned",
+              "转派简历筛选人"
             ]
           ]
         },
@@ -8553,11 +8613,11 @@
         },
         {
           "code": "department.view",
-          "name": "查看部门接口人"
+          "name": "查看部门人员授权"
         },
         {
           "code": "department.manage",
-          "name": "维护部门接口人"
+          "name": "维护部门人员授权"
         }
       ]
     },
@@ -8579,7 +8639,7 @@
         },
         {
           "code": "attempt.transfer_department",
-          "name": "转派部门"
+          "name": "转派部门或简历筛选人"
         },
         {
           "code": "attempt.feedback",
@@ -8658,7 +8718,18 @@
       "settings.manage_permissions",
       "settings.manage_ai_connection"
     ],
-    "HR": [
+    "接口人": [
+      "attempt.view_department",
+      "attempt.transfer_department",
+      "attempt.feedback",
+      "attempt.export"
+    ],
+    "简历筛选人": [
+      "attempt.view_department",
+      "attempt.feedback",
+      "attempt.export"
+    ],
+    "一级部门HR": [
       "resume.view",
       "resume.import",
       "resume.manual_assign",
@@ -8669,23 +8740,19 @@
       "department.view",
       "department.manage",
       "attempt.view_all",
+      "attempt.view_department",
       "attempt.dispatch",
       "attempt.transfer_department",
+      "attempt.feedback",
       "attempt.export",
       "pipeline.run",
       "pipeline.view",
-      "analytics.view",
-      "settings.manage_config"
+      "analytics.view"
     ],
-    "二级接口人": [
+    "二级部门HR": [
       "attempt.view_department",
+      "attempt.dispatch",
       "attempt.transfer_department",
-      "attempt.feedback",
-      "attempt.export"
-    ],
-    "三级接口人": [
-      "attempt.view_department",
-      "attempt.feedback",
       "attempt.export"
     ]
   },
@@ -9147,17 +9214,16 @@
     },
     "contacts": {
       "key": "contacts",
-      "label": "部门接口人",
+      "label": "部门人员授权",
       "filename": "部门接口人标准模板.xlsx",
       "sheet_name": "部门接口人",
       "headers": [
         "一层部门",
         "二层部门",
-        "三级部门",
         "姓名",
         "工号",
         "邮箱",
-        "接口人层级",
+        "角色",
         "可转派",
         "是否启用"
       ]

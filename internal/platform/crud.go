@@ -73,6 +73,11 @@ func (a *App) writeResource(w http.ResponseWriter, r *http.Request, resource str
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if resource == "contacts" || resource == "users" {
+		if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(72460910)"); err != nil {
+			return err
+		}
+	}
 	current := Object{}
 	if id != nil {
 		current, err = a.get(ctx, tx, spec.Table, id)
@@ -86,6 +91,15 @@ func (a *App) writeResource(w http.ResponseWriter, r *http.Request, resource str
 		}
 		if str(current["username"]) == "012358" {
 			return bad("内置管理员不允许修改")
+		}
+		if name, provided := body["username"]; id != nil && provided && name != current["username"] {
+			var bound bool
+			if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM core_contact WHERE employee_no=$1)", current["username"]).Scan(&bound); err != nil {
+				return err
+			}
+			if bound {
+				return bad("账号已有部门授权，不可修改工号")
+			}
 		}
 	}
 	values := Object{}
@@ -186,7 +200,11 @@ func (a *App) writeResource(w http.ResponseWriter, r *http.Request, resource str
 		}
 		values["email"] = email
 		var duplicate bool
-		err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM "+quote(spec.Table)+" WHERE lower(email)=$1 AND ($2::bigint IS NULL OR id<>$2))", email, id).Scan(&duplicate)
+		if resource == "contacts" {
+			err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM core_contact WHERE lower(email)=$1 AND employee_no<>$2) OR EXISTS(SELECT 1 FROM accounts_user WHERE lower(email)=$1 AND username<>$2)", email, merged["employee_no"]).Scan(&duplicate)
+		} else {
+			err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM accounts_user WHERE lower(email)=$1 AND ($2::bigint IS NULL OR id<>$2)) OR EXISTS(SELECT 1 FROM core_contact WHERE lower(email)=$1 AND employee_no<>$3)", email, id, merged["username"]).Scan(&duplicate)
+		}
 		if err != nil {
 			return err
 		}
@@ -195,13 +213,17 @@ func (a *App) writeResource(w http.ResponseWriter, r *http.Request, resource str
 		}
 	}
 	switch resource {
+	case "roles":
+		if _, builtin := a.Spec.RolePermissions[str(current["name"])]; builtin && merged["name"] != current["name"] {
+			return bad("内置角色名称用于权限范围识别，不可改名")
+		}
 	case "departments":
 		level := num(merged["level"])
 		if level == 0 {
 			level = 2
 		}
-		if level < 1 || level > 3 {
-			return bad("部门层级必须为 1、2、3")
+		if level < 1 || level > 2 {
+			return bad("部门层级必须为 1、2")
 		}
 		parentID := merged["parent_id"]
 		if level == 1 {
@@ -234,22 +256,34 @@ func (a *App) writeResource(w http.ResponseWriter, r *http.Request, resource str
 			}
 		}
 	case "contacts":
+		if id != nil && str(merged["employee_no"]) != str(current["employee_no"]) {
+			return bad("工号标识账号身份，不可通过部门授权修改")
+		}
 		if str(merged["employee_no"]) == "012358" || str(values["email"]) == "huyue2@ueascend.com" {
 			return bad("该工号或邮箱属于内置管理员，不允许绑定接口人")
 		}
 		dep, err := a.get(ctx, tx, "core_department", merged["department_id"])
-		if err != nil || !contains([]string{"2", "3"}, str(dep["level"])) {
-			return bad("接口人只能绑定二级或三级部门")
+		if err != nil || !isJobDepartment(dep["level"]) {
+			return bad("接口人必须绑定有效部门")
 		}
-		values["contact_level"] = "secondary"
-		if num(dep["level"]) == 3 {
-			values["contact_level"] = "tertiary"
+		level := str(merged["contact_level"])
+		if level == "" {
+			level = departmentContactLevel(dep)
+		}
+		values["contact_level"] = level
+		if !validContactLevel(level) {
+			return bad("部门角色无效")
+		}
+		if !contactRoleMatchesDepartment(level, dep) {
+			return bad("部门HR角色必须匹配授权部门层级")
+		}
+		if level == "tertiary" {
 			values["can_delegate"] = false
 		}
 	case "jobs":
 		dep, err := a.get(ctx, tx, "core_department", merged["department_id"])
-		if err != nil || num(dep["level"]) != 2 {
-			return &apiError{400, Object{"department": "岗位必须绑定二级部门"}}
+		if err != nil || !isJobDepartment(dep["level"]) {
+			return &apiError{400, Object{"department": "岗位必须绑定一级或二级部门"}}
 		}
 		if strings.TrimSpace(str(merged["responsibilities"])) == "" {
 			return &apiError{400, Object{"responsibilities": "工作职责不能为空"}}
@@ -342,6 +376,9 @@ func (a *App) syncRelations(ctx context.Context, db DB, resource string, saved, 
 			}
 		}
 	case "users":
+		if _, err := db.Exec(ctx, "UPDATE core_contact SET email=$2 WHERE employee_no=$1", saved["username"], saved["email"]); err != nil {
+			return err
+		}
 		if values, ok := body["role_ids"]; ok {
 			if _, err := db.Exec(ctx, "DELETE FROM accounts_user_groups WHERE user_id=$1", saved["id"]); err != nil {
 				return err
@@ -366,6 +403,9 @@ func (a *App) syncRelations(ctx context.Context, db DB, resource string, saved, 
 			for _, code := range list(values) {
 				if !known[str(code)] {
 					return bad("包含未知权限码")
+				}
+				if !a.rolePermissionAllowed(str(saved["name"]), str(code)) {
+					return bad("该权限超出角色范围；系统配置仅管理员可用，全局业务权限由一级部门HR承担")
 				}
 				_, err := db.Exec(ctx, "INSERT INTO auth_group_permissions(group_id,permission_id) SELECT $1,p.id FROM auth_permission p JOIN django_content_type c ON c.id=p.content_type_id WHERE c.app_label='accounts' AND p.codename=$2 ON CONFLICT DO NOTHING", saved["id"], strings.ReplaceAll(str(code), ".", "__"))
 				if err != nil {
@@ -404,42 +444,6 @@ func (a *App) syncRelations(ctx context.Context, db DB, resource string, saved, 
 	}
 	return nil
 }
-func (a *App) syncContactUser(ctx context.Context, db DB, c Object) error {
-	existing, err := rows(ctx, db, "SELECT row_to_json(u) FROM accounts_user u WHERE contact_id=$1 OR username=$2 OR lower(email)=$3 ORDER BY id FOR UPDATE", c["id"], c["employee_no"], strings.ToLower(str(c["email"])))
-	if err != nil {
-		return err
-	}
-	var user Object
-	for _, u := range existing {
-		if str(u["username"]) == "012358" {
-			return bad("内置管理员不允许绑定接口人")
-		}
-		if u["contact_id"] != nil && num(u["contact_id"]) != num(c["id"]) {
-			return bad("该工号或邮箱已绑定其他接口人")
-		}
-		if user != nil && num(user["id"]) != num(u["id"]) {
-			return bad("工号和邮箱映射到不同账号")
-		}
-		user = u
-	}
-	role, group := "secondary_contact", "二级接口人"
-	if str(c["contact_level"]) == "tertiary" {
-		role, group = "tertiary_contact", "三级接口人"
-	}
-	values := Object{"username": c["employee_no"], "email": c["email"], "role": role, "contact": c["id"], "is_active": c["is_active"], "password": "!" + token(20)}
-	if user == nil {
-		values["date_joined"] = now()
-	}
-	saved, err := a.save(ctx, db, "accounts_user", user["id"], values)
-	if err != nil {
-		return err
-	}
-	if _, err = db.Exec(ctx, "DELETE FROM accounts_user_groups WHERE user_id=$1 AND group_id IN (SELECT id FROM auth_group WHERE name IN ('二级接口人','三级接口人') AND name<>$2)", saved["id"], group); err != nil {
-		return err
-	}
-	_, err = db.Exec(ctx, "INSERT INTO accounts_user_groups(user_id,group_id) SELECT $1,id FROM auth_group WHERE name=$2 ON CONFLICT DO NOTHING", saved["id"], group)
-	return err
-}
 func (a *App) deleteResource(w http.ResponseWriter, r *http.Request, resource string, id any, p *Principal) error {
 	ctx := r.Context()
 	tx, err := a.Pool.Begin(ctx)
@@ -447,6 +451,11 @@ func (a *App) deleteResource(w http.ResponseWriter, r *http.Request, resource st
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if resource == "contacts" || resource == "users" {
+		if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(72460910)"); err != nil {
+			return err
+		}
+	}
 	table := a.Spec.Resources[resource].Table
 	row, err := a.get(ctx, tx, table, id)
 	if err != nil {
@@ -460,29 +469,24 @@ func (a *App) deleteResource(w http.ResponseWriter, r *http.Request, resource st
 		if resource == "users" && str(row["username"]) == "012358" {
 			return bad("内置管理员不可删除")
 		}
-		if resource == "contacts" {
-			users, err := rows(ctx, tx, "SELECT row_to_json(u) FROM accounts_user u WHERE contact_id=$1", id)
+		if resource == "users" {
+			grants, err := rows(ctx, tx, "SELECT row_to_json(c) FROM core_contact c WHERE employee_no=$1 OR id=$2", row["username"], row["contact_id"])
 			if err != nil {
 				return err
 			}
-			for _, u := range users {
-				if str(u["username"]) == "012358" {
-					return bad("内置管理员不可删除")
-				}
-				if err = a.deleteRow(ctx, tx, "accounts_user", u["id"], map[string]bool{}); err != nil {
+			if _, err = tx.Exec(ctx, "UPDATE accounts_user SET contact_id=NULL WHERE id=$1", id); err != nil {
+				return err
+			}
+			for _, grant := range grants {
+				if err = a.deleteRow(ctx, tx, "core_contact", grant["id"], map[string]bool{}); err != nil {
 					return err
 				}
 			}
 		}
-		if resource == "users" && row["contact_id"] != nil {
-			if _, err = tx.Exec(ctx, "UPDATE accounts_user SET contact_id=NULL WHERE id=$1", id); err != nil {
-				return err
-			}
-			if err = a.deleteRow(ctx, tx, "core_contact", row["contact_id"], map[string]bool{}); err != nil {
-				return err
-			}
-		}
 		err = a.deleteRow(ctx, tx, table, id, map[string]bool{})
+		if err == nil && resource == "contacts" {
+			err = a.syncContactUser(ctx, tx, row)
+		}
 	}
 	if err != nil {
 		return err

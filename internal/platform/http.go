@@ -323,6 +323,9 @@ func (a *App) filtered(ctx context.Context, resource string, r *http.Request, p 
 	}
 	out := []Object{}
 	for _, row := range raw {
+		if resource == "departments" && !isJobDepartment(row["level"]) {
+			continue
+		}
 		if drillIDs != nil && !drillIDs[num(row["id"])] {
 			continue
 		}
@@ -476,6 +479,9 @@ func (a *App) filtered(ctx context.Context, resource string, r *http.Request, p 
 	}
 	sortRows := map[int64]Object{}
 	for _, row := range raw {
+		if resource == "departments" && !isJobDepartment(row["level"]) {
+			continue
+		}
 		sortRows[num(row["id"])] = row
 	}
 	ordering := r.URL.Query().Get("ordering")

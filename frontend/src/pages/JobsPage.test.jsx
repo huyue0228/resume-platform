@@ -119,7 +119,7 @@ describe('JobsPage', () => {
     ])
   })
 
-  it('offers only secondary departments with full paths', async () => {
+  it('offers primary and secondary departments with full paths', async () => {
     mocks.fetchDepartments.mockResolvedValue({
       data: {
         results: [
@@ -134,11 +134,12 @@ describe('JobsPage', () => {
     render(<JobsPage />)
 
     await waitFor(() => expect(mocks.departmentSelectProps?.options).toEqual([
+      { label: '技术中心', value: 1 },
       { label: '技术中心 / 平台部', value: 2 },
     ]))
-    expect(mocks.departmentSelectProps.label).toBe('所属二级部门')
+    expect(mocks.departmentSelectProps.label).toBe('所属部门')
     expect(mocks.departmentSelectProps.rules).toEqual([
-      { required: true, message: '请选择所属二级部门' },
+      { required: true, message: '请选择所属部门' },
     ])
   })
 

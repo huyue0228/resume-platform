@@ -12,6 +12,9 @@ const mocks = vi.hoisted(() => ({
   reload: vi.fn(),
   reloadOptions: vi.fn(),
   success: vi.fn(),
+  selectedDepartment: 11,
+  selectedLevel: 'tertiary',
+  selects: {},
 }))
 
 vi.mock('@ant-design/pro-components', () => ({
@@ -26,7 +29,8 @@ vi.mock('@ant-design/pro-components', () => ({
             name: '新增接口人',
             employee_no: 'E1001',
             email: 'E1001@EXAMPLE.COM',
-            department: 12,
+            department: mocks.selectedDepartment,
+            contact_level: mocks.selectedLevel,
             can_delegate: true,
             is_active: true,
           })}
@@ -36,7 +40,7 @@ vi.mock('@ant-design/pro-components', () => ({
       )}
     </div>
   ),
-  ProFormSelect: () => null,
+  ProFormSelect: (props) => { mocks.selects[props.name] = props; return null },
   ProFormSwitch: () => null,
   ProFormText: () => null,
 }))
@@ -103,6 +107,7 @@ describe('DepartmentsPage', () => {
     mocks.fetchDepartments.mockResolvedValue({
       data: {
         results: [
+          { id: 10, name: '一级部门', level: 1 },
           { id: 11, name: '二级部门', level: 2 },
           { id: 12, name: '三级部门', level: 3 },
         ],
@@ -115,6 +120,9 @@ describe('DepartmentsPage', () => {
     mocks.reload.mockReset()
     mocks.reloadOptions.mockReset()
     mocks.success.mockReset()
+    mocks.selectedDepartment = 11
+    mocks.selectedLevel = 'tertiary'
+    mocks.selects = {}
   })
 
   it('refreshes table data and filter options after deleting a contact', async () => {
@@ -134,24 +142,44 @@ describe('DepartmentsPage', () => {
     expect(screen.queryByRole('switch', { name: 'WeLink 通知' })).toBeNull()
   })
 
-  it('creates a contact and derives its level from the selected department', async () => {
+  it('creates a screener directly in the secondary department', async () => {
     render(<DepartmentsPage />)
 
     await waitFor(() => expect(mocks.fetchDepartments).toHaveBeenCalledWith({ page_size: 500 }))
-    await userEvent.click(screen.getByRole('button', { name: '新增接口人' }))
+    await userEvent.click(screen.getByRole('button', { name: '新增部门授权' }))
     await userEvent.click(screen.getByRole('button', { name: '保存接口人' }))
 
     await waitFor(() => expect(mocks.createContact).toHaveBeenCalledWith({
       name: '新增接口人',
       employee_no: 'E1001',
       email: 'e1001@example.com',
-      department: 12,
+      department: 11,
       contact_level: 'tertiary',
       can_delegate: false,
       is_active: true,
     }))
     expect(mocks.reload).toHaveBeenCalled()
     expect(mocks.reloadOptions).toHaveBeenCalled()
+  })
+
+  it('allows primary department ownership and independently selected secondary permissions', async () => {
+    mocks.selectedDepartment = 10
+    mocks.selectedLevel = 'secondary'
+    render(<DepartmentsPage />)
+
+    await waitFor(() => expect(mocks.selects.department?.options).toContainEqual({
+      label: '一级部门（一级部门）', value: 10,
+    }))
+    expect(mocks.selects.department.options.some((item) => item.value === 12)).toBe(false)
+    expect(mocks.selects.contact_level.options.map((item) => item.label)).toEqual(['二级部门HR', '接口人', '简历筛选人'])
+    expect(mocks.selects.contact_level.rules).toEqual([
+      { required: true, message: '请选择角色' },
+    ])
+    await userEvent.click(screen.getByRole('button', { name: '新增部门授权' }))
+    await userEvent.click(screen.getByRole('button', { name: '保存接口人' }))
+    await waitFor(() => expect(mocks.createContact).toHaveBeenCalledWith(expect.objectContaining({
+      department: 10, contact_level: 'secondary', can_delegate: true,
+    })))
   })
 
   it('updates an existing contact from the row action', async () => {
@@ -165,7 +193,7 @@ describe('DepartmentsPage', () => {
       name: '新增接口人',
       employee_no: 'E1001',
       email: 'e1001@example.com',
-      department: 12,
+      department: 11,
       contact_level: 'tertiary',
       can_delegate: false,
       is_active: true,

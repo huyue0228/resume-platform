@@ -70,15 +70,11 @@ export function RoleProvider({ children }) {
   const hasPermission = (code) => permissions.has(code)
   const role = user?.role || 'hr'
   const dataScope = user?.data_scope || { type: 'none' }
-  const contactDepartmentLevel = Number(
-    dataScope.department_level
-      ?? dataScope.level
-      ?? user?.contact?.department_level
-      ?? 0,
-  )
-  const isContact = Boolean(user?.contact) && hasPermission('attempt.view_department')
-  const isSecondaryContact = isContact && contactDepartmentLevel === 2
-  const isTertiaryContact = isContact && contactDepartmentLevel === 3
+  const contacts = user?.contacts || (user?.contact ? [user.contact] : [])
+  const activeContacts = contacts.filter((contact) => contact.is_active !== false)
+  const isContact = activeContacts.length > 0 && hasPermission('attempt.view_department')
+  const isSecondaryContact = isContact && activeContacts.some((contact) => contact.contact_level === 'secondary')
+  const isTertiaryContact = isContact && activeContacts.some((contact) => contact.contact_level === 'tertiary')
 
   return (
     <RoleContext.Provider
@@ -90,6 +86,7 @@ export function RoleProvider({ children }) {
         roles: user?.roles || [],
         permissions: user?.permissions || [],
         contact: user?.contact || null,
+        contacts,
         dataScope,
         isAuthenticated: Boolean(token && user),
         completeW3OAuth2Login,

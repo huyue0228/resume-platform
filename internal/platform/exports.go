@@ -122,11 +122,22 @@ func (a *App) importTemplate(w http.ResponseWriter, r *http.Request, key string)
 	if err := sheet(book, schema.SheetName, schema.Headers, nil); err != nil {
 		return err
 	}
-	if err := sheet(book, "填写说明", []string{"模板版本", "1"}, [][]any{{"模板类型", schema.Label}, {"填写要求", "请勿修改、删除、重复或新增第一行表头；无值字段保留列并留空。"}, {"数据位置", "请在首个工作表第二行起填写数据。"}}); err != nil {
+	instructions := [][]any{{"模板类型", schema.Label}, {"填写要求", "请勿修改、删除、重复或新增第一行表头；无值字段保留列并留空。"}, {"数据位置", "请在首个工作表第二行起填写数据。"}}
+	if key == "jobs" || key == "contacts" {
+		instructions = append(instructions, []any{"部门归属", "没有二层部门时保留该列并留空，直接归属一层部门；一层部门和二层部门不能同时为空。"})
+	}
+	if key == "contacts" {
+		instructions = append(instructions,
+			[]any{"角色", "填写接口人、简历筛选人或二级部门HR；部门仅保留一层、二层。一级部门HR为全局角色，在用户管理中配置。"},
+			[]any{"兼任多个部门和角色", "同一工号、姓名和邮箱标识同一账号；按工号、部门和角色合并，每个部门和角色填写一行，可转派和是否启用分别生效。"},
+			[]any{"简历筛选人", "简历仍归属部门收件箱，由接口人指定筛选人；只有被指定的筛选人可以处理，接口人可以查看和重新转派。"},
+			[]any{"更新与撤销", "增量导入保留未出现的授权；替换导入停用未出现的授权。撤销单条部门授权不会删除账号或其他授权。"})
+	}
+	if err := sheet(book, "填写说明", []string{"模板版本", "1"}, instructions); err != nil {
 		return err
 	}
 	for i, h := range schema.Headers {
-		options := map[string][]string{"是否对外发布": {"是", "否"}, "性别": {"男", "女"}, "接口人层级": {"二级接口人", "三级接口人"}, "可转派": {"是", "否"}, "是否启用": {"是", "否"}}[h]
+		options := map[string][]string{"是否对外发布": {"是", "否"}, "性别": {"男", "女"}, "角色": {"接口人", "简历筛选人", "二级部门HR"}, "可转派": {"是", "否"}, "是否启用": {"是", "否"}}[h]
 		if len(options) == 0 {
 			continue
 		}
@@ -312,6 +323,15 @@ func (a *App) export(w http.ResponseWriter, r *http.Request, resource, action st
 	values, err := a.filtered(r.Context(), resource, r, p)
 	if err != nil {
 		return err
+	}
+	if resource == "workflow-attempts" && !p.has("attempt.view_all") {
+		permitted := []Object{}
+		for _, value := range values {
+			if truth(value["can_export"]) {
+				permitted = append(permitted, value)
+			}
+		}
+		values = permitted
 	}
 	book := excelize.NewFile()
 	defer book.Close()

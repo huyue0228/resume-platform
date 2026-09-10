@@ -11,7 +11,6 @@ import {
   createRole,
   createUser,
   deleteUser,
-  fetchContacts,
   fetchPermissionTree,
   fetchRoles,
   fetchUsers,
@@ -23,12 +22,14 @@ import { useRole } from '../contexts/roleState'
 
 const ROLE_VALUE_ENUM = {
   admin: { text: '管理员' },
-  hr: { text: 'HR' },
-  secondary_contact: { text: '二级接口人' },
-  tertiary_contact: { text: '三级接口人' },
+  hr: { text: '一级部门HR' },
+  primary_hr: { text: '一级部门HR' },
+  secondary_hr: { text: '二级部门HR' },
+  secondary_contact: { text: '接口人' },
+  tertiary_contact: { text: '简历筛选人' },
 }
 
-function treeData(permissionTree) {
+function treeData(permissionTree, allowed) {
   return permissionTree.map((module) => ({
     title: module.name,
     key: module.code,
@@ -36,6 +37,7 @@ function treeData(permissionTree) {
     children: module.children.map((item) => ({
       title: `${item.name}（${item.code}）`,
       key: item.code,
+      disabled: allowed && !allowed.includes(item.code),
     })),
   }))
 }
@@ -49,7 +51,6 @@ export default function UsersPage() {
   const userActionRef = useRef()
   const roleActionRef = useRef()
   const [roles, setRoles] = useState([])
-  const [contacts, setContacts] = useState([])
   const [permissionTree, setPermissionTree] = useState([])
   const [userModal, setUserModal] = useState({ open: false, record: null })
   const [roleModal, setRoleModal] = useState({ open: false, record: null })
@@ -59,13 +60,11 @@ export default function UsersPage() {
   const [savingPermissions, setSavingPermissions] = useState(false)
 
   const loadOptions = async () => {
-    const [roleResp, contactResp, permissionResp] = await Promise.all([
+    const [roleResp, permissionResp] = await Promise.all([
       fetchRoles({ page_size: 200 }),
-      fetchContacts({ page_size: 500 }),
       fetchPermissionTree(),
     ])
     setRoles(roleResp.data?.results || [])
-    setContacts(contactResp.data?.results || [])
     setPermissionTree(permissionResp.data || [])
   }
 
@@ -74,10 +73,6 @@ export default function UsersPage() {
   }, [])
 
   const roleOptions = roles.map((role) => ({ label: role.name, value: role.id }))
-  const contactOptions = contacts.map((contact) => ({
-    label: `${contact.name}（${contact.employee_no} / ${contact.department_name || '未绑定部门'}）`,
-    value: contact.id,
-  }))
   const allLeafCodes = useMemo(() => leafCodes(permissionTree), [permissionTree])
 
   const userBaseColumns = [
@@ -119,11 +114,11 @@ export default function UsersPage() {
       ),
     },
     {
-      title: '绑定接口人',
-      dataIndex: 'contact_name',
-      width: 160,
+      title: '部门授权',
+      dataIndex: 'department_grants',
+      width: 240,
       search: false,
-      filter: { type: 'text', param: 'contact_name', pinyin: true, placeholder: '筛选接口人/拼音' },
+      render: (_, record) => <Space wrap>{(record.department_grants || []).map((grant) => <Tag key={grant.id} color={grant.is_active ? 'blue' : 'default'}>{grant.department_name} · {grant.role_name}{grant.is_active ? '' : '（停用）'}</Tag>)}</Space>,
     },
     {
       title: '状态',
@@ -158,7 +153,7 @@ export default function UsersPage() {
             </a>
             <Popconfirm
               title="删除用户"
-              description="删除后账号、Token 和角色绑定会清理；若绑定接口人，将同步删除接口人，历史记录仅保留快照。"
+              description="删除后账号、Token 和角色绑定会清理；将同步删除该账号的全部部门授权，历史记录仅保留快照。"
               okText="删除"
               okButtonProps={{ danger: true }}
               onConfirm={async () => {
@@ -196,7 +191,7 @@ export default function UsersPage() {
       width: 160,
       render: (_, record) => (
         <Space>
-          <a onClick={() => setRoleModal({ open: true, record })}>改名</a>
+          {!record.is_builtin && <a onClick={() => setRoleModal({ open: true, record })}>改名</a>}
           <a
             onClick={() => {
               setActiveRole(record)
@@ -215,7 +210,7 @@ export default function UsersPage() {
     setSavingPermissions(true)
     try {
       const { data } = await updateRole(activeRole.id, {
-        permission_codes: checkedPermissions.filter((code) => allLeafCodes.includes(code)),
+        permission_codes: checkedPermissions.filter((code) => allLeafCodes.includes(code) && (!activeRole.allowed_permission_codes || activeRole.allowed_permission_codes.includes(code))),
       })
       setActiveRole(data)
       roleActionRef.current?.reload()
@@ -228,7 +223,7 @@ export default function UsersPage() {
   }
 
   return (
-    <PageContainer title="用户权限" content="维护系统用户、RBAC 角色与后端预置权限点绑定。">
+    <PageContainer title="用户权限" content="管理员负责系统配置；一级部门HR管理全局招聘业务；二级部门HR、接口人和简历筛选人按部门授权。">
       <Tabs
         items={[
           {
@@ -306,7 +301,7 @@ export default function UsersPage() {
       >
         <Tree
           checkable
-          treeData={treeData(permissionTree)}
+          treeData={treeData(permissionTree, activeRole?.allowed_permission_codes)}
           checkedKeys={checkedPermissions}
           onCheck={(keys) => setCheckedPermissions(keys)}
         />
@@ -324,10 +319,10 @@ export default function UsersPage() {
                   .filter((role) => userModal.record.roles?.includes(role.name))
                   .map((role) => role.id),
               }
-            : { is_active: true, role: 'hr' }
+            : { is_active: true, role: 'primary_hr' }
         }
         onFinish={async (values) => {
-          const body = { ...values, contact: values.contact || null }
+          const body = { ...values }
           if (userModal.record) {
             await updateUser(userModal.record.id, body)
           } else {
@@ -361,12 +356,7 @@ export default function UsersPage() {
           options={roleOptions}
           rules={[{ required: true }]}
         />
-        <ProFormSelect
-          name="contact"
-          label="绑定接口人"
-          showSearch
-          options={contactOptions}
-        />
+        <p>一级部门HR可管理全局招聘业务；二级部门HR、接口人和简历筛选人还需在“部门人员授权”中配置部门。</p>
         <ProFormSwitch name="is_active" label="启用" />
       </ModalForm>
 

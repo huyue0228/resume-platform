@@ -207,7 +207,7 @@ func (a *App) prepareItem(ctx context.Context, run Object, id any, step string) 
 		if reason == "" {
 			reason = "agent_no_recommendation"
 		}
-		message := map[string]string{"job_not_found": "当前志愿未找到对应岗位", "job_pool_empty": "岗位缺少有效二级部门", "job_mapping_ambiguous": "外部岗位对应多个内部职位，请修正岗位配置", "internal_position_name_missing": "岗位缺少内部职位名称", "job_responsibility_missing": "岗位职责未填写，请补齐后重试"}[str(d["status"])]
+		message := map[string]string{"job_not_found": "当前志愿未找到对应岗位", "job_pool_empty": "岗位缺少有效一级或二级部门", "job_mapping_ambiguous": "外部岗位对应多个内部职位，请修正岗位配置", "internal_position_name_missing": "岗位缺少内部职位名称", "job_responsibility_missing": "岗位职责未填写，请补齐后重试"}[str(d["status"])]
 		if message == "" {
 			message = "当前志愿未通过准入与岗位检查"
 		}

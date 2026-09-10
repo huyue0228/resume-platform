@@ -212,6 +212,7 @@ const HANDLING_EVENT_TEXT = {
   review_confirmed: 'HR 确认复核',
   department_dispatched: '下发部门',
   department_transferred: '部门转派',
+  screener_assigned: '转派简历筛选人',
   feedback_passed: '反馈通过',
   feedback_rejected: '反馈不通过',
   cancelled: '取消处理',
@@ -304,16 +305,29 @@ const ANALYTICS_REQUEST_PARAM_KEYS = [
   'analytics_value_labels',
 ]
 
+function transferTargets(data) {
+  return [
+    ...(data?.screeners || []).map((person) => ({ value: `screener:${person.id}`, label: `${person.name}（${person.employee_no}） · 简历筛选人` })),
+    ...(data?.results || []).filter((department) => [1, 2].includes(Number(department.level))).map((department) => ({ value: `department:${department.id}`, label: departmentLabel(department) })),
+  ]
+}
+function transferTargetBody(selected) {
+  const [kind, id] = selected.split(':')
+  return { [kind === 'screener' ? 'target_screener_id' : 'target_department_id']: Number(id) }
+}
+
 export default function ResumesPage() {
   const actionRef = useRef()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { hasPermission, contact, isContact, user } = useRole()
+  const { hasPermission, contact, contacts, isContact, user } = useRole()
   const canViewAgentDecisions = hasPermission('attempt.view_all')
   const canRunPipeline = hasPermission('pipeline.run')
   const canImport = hasPermission('resume.import')
   const canDispatch = hasPermission('attempt.dispatch')
   const canTransfer = hasPermission('attempt.transfer_department')
-    && (!contact || contact.can_delegate !== false)
+    && (hasPermission('attempt.view_all') || (contacts || (contact ? [contact] : [])).some(
+      (grant) => grant.is_active !== false && ['primary_hr', 'secondary_hr', 'secondary'].includes(grant.contact_level) && grant.can_delegate,
+    ))
   const canExport = hasPermission('resume.view') || hasPermission('attempt.export')
   const canSelectCandidates = canRunPipeline || canDispatch || canTransfer || canExport || canImport
   const { run } = useProcessRunner()
@@ -391,7 +405,7 @@ export default function ResumesPage() {
 
   const handleManualAssign = async () => {
     if (!manualModal.departmentId) {
-      message.warning('请选择目标部门')
+      message.warning('请选择简历筛选人或目标部门')
       return
     }
     setManualModal((prev) => ({ ...prev, loading: true }))
@@ -577,7 +591,7 @@ export default function ResumesPage() {
       const { data } = await fetchTransferOptions(attempt.id)
       setTransferModal((previous) => ({
         ...previous,
-        departments: data?.results || [],
+        departments: transferTargets(data),
         loading: false,
       }))
     } catch {
@@ -587,16 +601,16 @@ export default function ResumesPage() {
 
   const handleTransfer = async () => {
     if (!transferModal.selected) {
-      message.warning('请选择目标部门')
+      message.warning('请选择简历筛选人或目标部门')
       return
     }
     setTransferModal((previous) => ({ ...previous, loading: true }))
     try {
       await transferAllocation(transferModal.record.id, {
-        target_department_id: transferModal.selected,
+        ...transferTargetBody(transferModal.selected),
         note: transferModal.note.trim(),
       })
-      message.success('已转派到目标部门')
+      message.success('简历已转派')
       setTransferModal({ open: false, record: null, departments: [], selected: undefined, note: '', loading: false })
       reloadCandidates()
     } catch {
@@ -611,7 +625,7 @@ export default function ResumesPage() {
     }
     const optionSource = selectedCandidates.find((candidate) => candidate.current_attempt?.id)
     if (!optionSource) {
-      message.warning('当前选中项中没有可用于加载转派部门的处理记录')
+      message.warning('当前选中项中没有可用于加载转派目标的处理记录')
       return
     }
     const candidateIds = [...selectedRowKeys]
@@ -625,7 +639,7 @@ export default function ResumesPage() {
     })
     try {
       const { data } = await fetchTransferOptions(optionSource.current_attempt.id)
-      const departments = (data?.results || []).filter((item) => Number(item.level) === 2)
+      const departments = transferTargets(data)
       setBulkTransferModal((previous) => ({ ...previous, departments, loading: false }))
     } catch {
       setBulkTransferModal((previous) => ({ ...previous, loading: false }))
@@ -634,14 +648,14 @@ export default function ResumesPage() {
 
   const handleBulkTransfer = async () => {
     if (!bulkTransferModal.selected) {
-      message.warning('请选择目标二级部门')
+      message.warning('请选择简历筛选人或目标部门')
       return
     }
     setBulkTransferModal((previous) => ({ ...previous, loading: true }))
     try {
       const { data } = await bulkTransferCandidates({
         candidate_ids: bulkTransferModal.candidateIds,
-        target_department_id: bulkTransferModal.selected,
+        ...transferTargetBody(bulkTransferModal.selected),
         note: bulkTransferModal.note.trim(),
       })
       message.success(
@@ -875,23 +889,23 @@ export default function ResumesPage() {
 
   const renderDetailActions = (record) => {
     const attempt = record.current_attempt
-    const canDispatchAttempt = canDispatch && attempt?.status === 'pending_dispatch'
-    const canReview = hasPermission('attempt.dispatch') && attempt?.status === 'pending_review'
-    const canTransferAttempt = canTransfer
+    const canDispatchAttempt = attempt?.can_dispatch === true && attempt?.status === 'pending_dispatch'
+    const canReview = attempt?.can_dispatch === true && attempt?.status === 'pending_review'
+    const canTransferAttempt = attempt?.can_transfer === true
       && attempt?.status === 'dispatched'
       && !attempt.feedback_at
-    const canFeedback = hasPermission('attempt.feedback')
+    const canFeedback = attempt?.can_feedback === true
       && attempt?.status === 'dispatched'
       && !attempt.feedback_at
-      && Number(attempt.current_department) === Number(contact?.department)
     return (
       <Space wrap className="resume-detail-actions">
+        {attempt?.assigned_screener_name && <Tag>简历筛选人：{attempt.assigned_screener_name}（{attempt.assigned_screener_employee_no}）</Tag>}
         {hasPermission('resume.manual_assign') && record.current_resume && (
           <Button onClick={() => openManualAssign(record.current_resume)}>
             手动强制分配当前志愿
           </Button>
         )}
-        {canExport && (
+        {canExport && (hasPermission('resume.view') || attempt?.can_export === true) && (
           <Button
             icon={<DownloadOutlined />}
             loading={exporting}
@@ -924,7 +938,7 @@ export default function ResumesPage() {
         )}
         {canTransferAttempt && (
           <Button type="link" size="small" style={{ padding: 0 }} onClick={() => openTransferModal(attempt)}>
-            转派部门
+            转派简历
           </Button>
         )}
         {canFeedback && (
@@ -1387,12 +1401,9 @@ export default function ResumesPage() {
             showSearch
             optionFilterProp="label"
             style={{ width: '100%' }}
-            placeholder="选择目标二级部门"
+            placeholder="选择简历筛选人或目标部门"
             value={bulkTransferModal.selected}
-            options={bulkTransferModal.departments.map((department) => ({
-              value: department.id,
-              label: departmentLabel(department),
-            }))}
+            options={bulkTransferModal.departments}
             onChange={(value) => setBulkTransferModal((previous) => ({ ...previous, selected: value }))}
           />
           <Input.TextArea
@@ -1587,7 +1598,7 @@ export default function ResumesPage() {
                   ellipsis: true,
                 },
                 {
-                  title: '首次二级部门',
+                  title: '首次接收部门',
                   dataIndex: 'initial_department_name',
                   width: 130,
                 },
@@ -1658,6 +1669,7 @@ export default function ResumesPage() {
                           <Space size={8} wrap>
                             <Typography.Text strong>
                               {HANDLING_EVENT_TEXT[event.event_type] || event.event_type}
+                              {event.metadata?.to_screener_name && `：${event.metadata.to_screener_name}（${event.metadata.to_screener_employee_no}）`}
                             </Typography.Text>
                             {event.attemptNo ? <Tag>第 {event.attemptNo} 次尝试</Tag> : null}
                             {event.is_system_auto ? <Tag color="purple">系统自动</Tag> : null}
@@ -1679,6 +1691,15 @@ export default function ResumesPage() {
               )}
             </section>
 
+            {!canViewAgentDecisions && detailRecord.current_attempt?.agent_decision_summary && (
+              <section style={{ marginTop: 16 }}>
+                <Typography.Title level={5}>当前简历复核依据</Typography.Title>
+                <Typography.Paragraph>{detailRecord.current_attempt.agent_decision_summary.summary || detailRecord.current_attempt.agent_decision_summary.reason || '未保留分析摘要'}</Typography.Paragraph>
+                {(detailRecord.current_attempt.agent_decision_summary.evidence || []).map((item, index) => (
+                  <Typography.Paragraph key={index}>{typeof item === 'string' ? item : item.quote}</Typography.Paragraph>
+                ))}
+              </section>
+            )}
             {canViewAgentDecisions && (
               <SmartDataTable
                 tableId="candidate-ai-decisions"
@@ -1784,7 +1805,7 @@ export default function ResumesPage() {
             showSearch
             optionFilterProp="label"
             style={{ width: '100%' }}
-            placeholder="选择二级或三级部门"
+            placeholder="选择一级或二级部门"
             value={manualModal.departmentId}
             options={manualModal.departments.map((department) => ({
               value: department.id,
@@ -1801,7 +1822,7 @@ export default function ResumesPage() {
         </Space>
       </Modal>
       <Modal
-        title="转派部门"
+        title="转派简历"
         open={transferModal.open}
         confirmLoading={transferModal.loading}
         onOk={handleTransfer}
@@ -1813,12 +1834,9 @@ export default function ResumesPage() {
             showSearch
             optionFilterProp="label"
             style={{ width: '100%' }}
-            placeholder="选择目标二级或三级部门"
+            placeholder="选择简历筛选人或目标部门"
             value={transferModal.selected}
-            options={transferModal.departments.map((department) => ({
-              value: department.id,
-              label: departmentLabel(department),
-            }))}
+            options={transferModal.departments}
             onChange={(value) => setTransferModal((previous) => ({ ...previous, selected: value }))}
           />
           <Input.TextArea

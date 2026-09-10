@@ -58,7 +58,7 @@ export default function JobsPage() {
       return path.filter(Boolean).join(' / ')
     }
     return departments
-      .filter((department) => department.level === 2)
+      .filter((department) => department.level === 1 || department.level === 2)
       .map((department) => ({
         label: pathLabel(department),
         value: department.id,
@@ -296,10 +296,11 @@ export default function JobsPage() {
         <ProFormText name="job_family" label="岗位族" />
         <ProFormSelect
           name="department"
-          label="所属二级部门"
+          label="所属部门"
           showSearch
           options={departmentOptions}
-          rules={[{ required: true, message: '请选择所属二级部门' }]}
+          extra="没有二级部门的岗位，请直接选择一级部门。"
+          rules={[{ required: true, message: '请选择所属部门' }]}
         />
         <ProFormText name="location" label="工作地点" />
         <ProFormText name="education" label="学历要求" />

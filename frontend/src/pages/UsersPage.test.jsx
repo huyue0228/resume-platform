@@ -6,7 +6,7 @@ import { fetchPermissionTree, fetchRoles, updateRole } from '../api/services'
 
 const roleRecord = vi.hoisted(() => ({
   id: 1,
-  name: 'HR',
+  name: '一级部门HR',
   permissions: ['resume.view'],
 }))
 
@@ -144,7 +144,7 @@ describe('UsersPage role permissions', () => {
     await user.click(screen.getByRole('tab', { name: '角色管理' }))
     await user.click(screen.getByText('配置权限'))
 
-    expect(await screen.findByText('配置权限：HR')).toBeTruthy()
+    expect(await screen.findByText('配置权限：一级部门HR')).toBeTruthy()
     const viewPermission = screen.getByRole('checkbox', {
       name: '查看简历（resume.view）',
     })
@@ -161,7 +161,7 @@ describe('UsersPage role permissions', () => {
       permission_codes: ['resume.view', 'resume.export'],
     }))
     await waitFor(() => expect(screen.queryByRole('dialog', {
-      name: '配置权限：HR',
+      name: '配置权限：一级部门HR',
     })).toBeNull())
     expect(fetchRoles).toHaveBeenCalledTimes(2)
     expect(fetchPermissionTree).toHaveBeenCalledTimes(2)

@@ -124,6 +124,26 @@ func (a *App) readTable(raw []byte, filename, key string) (records []Object, err
 	if len(data) > 50001 {
 		return nil, bad("单表超过 50000 行上限")
 	}
+	if key == "contacts" {
+		for i := len(data[0]) - 1; i >= 0; i-- {
+			if strings.TrimSpace(data[0][i]) == "接口人层级" {
+				data[0][i] = "角色"
+			}
+			if strings.TrimSpace(data[0][i]) != "三级部门" {
+				continue
+			}
+			for _, row := range data[1:] {
+				if i < len(row) && strings.TrimSpace(row[i]) != "" {
+					return nil, bad("新版不再使用三级部门，请将人员归属填写到一层或二层部门，并下载最新版模板")
+				}
+			}
+			for j, row := range data {
+				if i < len(row) {
+					data[j] = append(row[:i], row[i+1:]...)
+				}
+			}
+		}
+	}
 	headers := data[0]
 	counts := map[string]int{}
 	for _, h := range headers {
@@ -211,12 +231,12 @@ func (a *App) findUnique(ctx context.Context, db DB, table, column string, value
 	}
 	return items[0], nil
 }
-func (a *App) importDepartment(ctx context.Context, db DB, primary, secondary, tertiary, entity string) (Object, error) {
-	if strings.TrimSpace(secondary) == "" {
-		return nil, bad("缺少二层部门")
+func (a *App) importDepartment(ctx context.Context, db DB, primary, secondary, entity string) (Object, error) {
+	if strings.TrimSpace(primary) == "" && strings.TrimSpace(secondary) == "" {
+		return nil, bad("一层部门和二层部门不能同时为空")
 	}
 	var parent Object
-	for level, name := range []string{primary, secondary, tertiary} {
+	for level, name := range []string{primary, secondary} {
 		if name == "" {
 			continue
 		}
@@ -306,8 +326,8 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 		if str(row["职位名称"]) == "" && str(row["对外发布名称"]) == "" {
 			continue
 		}
-		if str(row["二层部门"]) == "" {
-			return bad(fmt.Sprintf("岗位文件第 %d 行缺少二层部门", i+2))
+		if str(row["一层部门"]) == "" && str(row["二层部门"]) == "" {
+			return bad(fmt.Sprintf("岗位文件第 %d 行一层部门和二层部门不能同时为空", i+2))
 		}
 		key := importJobKey(row)
 		if keys[key] {
@@ -399,6 +419,8 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 	}
 	contactIDs := []int64{}
 	emails := map[string]string{}
+	people := map[string]string{}
+	grantKeys := map[string]bool{}
 	for _, row := range tables["contacts"] {
 		no := str(row["工号"])
 		if no == "" {
@@ -413,6 +435,11 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 			return bad("接口人文件中同一邮箱对应多个工号")
 		}
 		emails[email] = no
+		identity := normalized(str(row["姓名"])) + "\x1f" + email
+		if previous, ok := people[no]; ok && previous != identity {
+			return bad("同一工号的姓名和邮箱必须一致")
+		}
+		people[no] = identity
 		if no == "012358" {
 			return bad("内置管理员工号不能绑定接口人")
 		}
@@ -423,24 +450,35 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 		if duplicate {
 			return bad("邮箱已被其他工号使用")
 		}
-		department, err := a.importDepartment(ctx, tx, str(row["一层部门"]), str(row["二层部门"]), str(row["三级部门"]), "")
+		department, err := a.importDepartment(ctx, tx, str(row["一层部门"]), str(row["二层部门"]), "")
 		if err != nil {
 			return err
 		}
-		level := "secondary"
-		if num(department["level"]) == 3 {
-			level = "tertiary"
+		level := departmentContactLevel(department)
+		declared := str(row["角色"])
+		if declared != "" {
+			level = map[string]string{"接口人": "secondary", "简历筛选人": "tertiary", "二级部门HR": "secondary_hr", "二级接口人": "secondary", "三级接口人": "tertiary", "secondary": "secondary", "tertiary": "tertiary", "secondary_hr": "secondary_hr"}[declared]
+			if level == "" {
+				return bad("角色必须是接口人、简历筛选人或二级部门HR")
+			}
 		}
-		declared := str(row["接口人层级"])
-		if declared != "" && declared != map[string]string{"secondary": "二级接口人", "tertiary": "三级接口人"}[level] && declared != level {
-			return bad("接口人层级与部门层级不一致")
+		if !contactRoleMatchesDepartment(level, department) {
+			return bad("部门HR角色必须匹配授权部门层级")
 		}
-		contact, err := a.findUnique(ctx, tx, "core_contact", "employee_no", no)
+		key := no + "\x1f" + str(department["id"]) + "\x1f" + level
+		if grantKeys[key] {
+			return bad("接口人文件存在重复的工号、部门和角色授权")
+		}
+		grantKeys[key] = true
+		contact, err := a.findContactGrant(ctx, tx, no, department["id"], level)
 		if err != nil {
 			return err
+		}
+		if declared == "" && contact != nil {
+			level = str(contact["contact_level"])
 		}
 		py, initials := pinyinNames(str(row["姓名"]))
-		contact, err = a.save(ctx, tx, "core_contact", contact["id"], Object{"employee_no": no, "name": row["姓名"], "name_pinyin": py, "name_pinyin_initials": initials, "email": email, "department_id": department["id"], "contact_level": level, "can_delegate": str(row["可转派"]) == "" || boolCell(row["可转派"]), "is_active": str(row["是否启用"]) == "" || boolCell(row["是否启用"])})
+		contact, err = a.save(ctx, tx, "core_contact", contact["id"], Object{"employee_no": no, "name": row["姓名"], "name_pinyin": py, "name_pinyin_initials": initials, "email": email, "department_id": department["id"], "contact_level": level, "can_delegate": contactIncludesDescendants(level) && (str(row["可转派"]) == "" || boolCell(row["可转派"])), "is_active": str(row["是否启用"]) == "" || boolCell(row["是否启用"])})
 		if err != nil {
 			return err
 		}
@@ -454,8 +492,14 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 		if _, err = tx.Exec(ctx, "UPDATE core_contact SET is_active=false WHERE NOT (id=ANY($1::bigint[]))", contactIDs); err != nil {
 			return err
 		}
-		if _, err = tx.Exec(ctx, "UPDATE accounts_user SET is_active=false WHERE contact_id IN (SELECT id FROM core_contact WHERE NOT (id=ANY($1::bigint[])))", contactIDs); err != nil {
+		contacts, err := rows(ctx, tx, "SELECT DISTINCT ON (employee_no) row_to_json(c) FROM core_contact c ORDER BY employee_no,id")
+		if err != nil {
 			return err
+		}
+		for _, contact := range contacts {
+			if err = a.syncContactUser(ctx, tx, contact); err != nil {
+				return err
+			}
 		}
 	}
 	if len(jobRows) > 0 {
@@ -465,9 +509,12 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 		}
 		jobMap := map[string]Object{}
 		for _, job := range existing {
-			dep, _ := a.get(ctx, tx, "core_department", job["department_id"])
-			parent, _ := a.get(ctx, tx, "core_department", dep["parent_id"])
-			row := Object{"招聘主体": job["entity"], "一层部门": parent["name"], "二层部门": dep["name"], "对外发布名称": job["public_name"], "职位名称": job["position_name"], "岗位类别": job["category"]}
+			dep, err := a.get(ctx, tx, "core_department", job["department_id"])
+			if err != nil {
+				return err
+			}
+			primary, secondary, _ := a.hierarchyWithDB(ctx, tx, dep)
+			row := Object{"招聘主体": job["entity"], "一层部门": primary["name"], "二层部门": secondary["name"], "对外发布名称": job["public_name"], "职位名称": job["position_name"], "岗位类别": job["category"]}
 			key := importJobKey(row)
 			if jobMap[key] != nil {
 				return bad("数据库岗位存在重复业务键")
@@ -479,7 +526,7 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 		}
 		imported := []int64{}
 		for _, row := range jobRows {
-			dep, err := a.importDepartment(ctx, tx, str(row["一层部门"]), str(row["二层部门"]), "", str(row["招聘主体"]))
+			dep, err := a.importDepartment(ctx, tx, str(row["一层部门"]), str(row["二层部门"]), str(row["招聘主体"]))
 			if err != nil {
 				return err
 			}

@@ -49,6 +49,9 @@ ALTER TABLE core_processingrunscopeitem ADD COLUMN IF NOT EXISTS text_extraction
 	if err != nil {
 		return err
 	}
+	if err = a.migrateDepartmentInbox(ctx, tx); err != nil {
+		return err
+	}
 	return tx.Commit(ctx)
 }
 func (a *App) Seed(ctx context.Context) error {

@@ -115,7 +115,7 @@ func (a *App) resourceAction(w http.ResponseWriter, r *http.Request, resource, a
 			return nil
 		}
 		if action == "transfer_options" {
-			if !canTransfer(p) {
+			if !a.canTransferAttempt(ctx, a.Pool, p, at, nil) {
 				return &apiError{403, "当前接口人没有部门转派权限"}
 			}
 			if at["status"] != "dispatched" {
@@ -127,18 +127,23 @@ func (a *App) resourceAction(w http.ResponseWriter, r *http.Request, resource, a
 			}
 			values := []Object{}
 			for _, d := range departments {
-				if p.has("attempt.view_all") || num(d["level"]) == 2 || num(d["parent"]) == num(p.Department["id"]) {
+				department := Object{"id": d["id"], "parent_id": d["parent"], "level": d["level"]}
+				if num(d["id"]) != num(at["current_department_id"]) && a.canTransferAttempt(ctx, a.Pool, p, at, department) {
 					values = append(values, d)
 				}
 			}
-			write(w, 200, Object{"results": values})
+			screeners, err := a.screenerOptions(ctx, p, at)
+			if err != nil {
+				return err
+			}
+			write(w, 200, Object{"results": values, "screeners": screeners})
 			return nil
 		}
 		switch action {
 		case "feedback":
 			err = onlyFields(body, "result", "reason_code", "note")
 		case "transfer":
-			err = onlyFields(body, "target_department_id", "note")
+			err = onlyFields(body, "target_department_id", "target_screener_id", "note")
 		case "transfer_to_manual":
 			err = onlyFields(body, "target_department_id", "manual_reason")
 		}
@@ -435,9 +440,13 @@ func (a *App) bulkAction(w http.ResponseWriter, r *http.Request, resource, actio
 		if !canTransfer(p) {
 			return &apiError{403, "无部门转派权限"}
 		}
-		target, err := a.get(ctx, a.Pool, "core_department", body["target_department_id"])
-		if err != nil || num(target["level"]) != 2 {
-			return bad("批量转派目标必须是有效二级部门")
+		if body["target_screener_id"] == nil {
+			target, err := a.get(ctx, a.Pool, "core_department", body["target_department_id"])
+			if err != nil || !isJobDepartment(target["level"]) {
+				return bad("批量转派目标必须是有效一级或二级部门")
+			}
+		} else if body["target_department_id"] != nil {
+			return bad("一次只能选择部门或简历筛选人")
 		}
 	}
 	done, eligible := 0, 0

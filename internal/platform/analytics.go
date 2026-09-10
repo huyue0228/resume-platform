@@ -466,7 +466,7 @@ func (a *App) recruitmentOverview(d *analyticsData, cohort []cohortRecord, filte
 			primary, secondary, _ := d.hierarchy(at["current_department_id"])
 			key, label := displayRef(primary, "未归属一级部门")
 			distributions["primary_department_ranking"].add(key, label, id)
-			key, label = displayRef(secondary, "未分配")
+			key, label = displayRef(secondary, "未归属二级部门")
 			distributions["department_ranking"].add(key, label, id)
 			if at["status"] == "rejected" {
 				reason := str(at["feedback_reason_code"])
@@ -559,7 +559,7 @@ func (a *App) recruitmentOverview(d *analyticsData, cohort []cohortRecord, filte
 	for cursor := start; cursor.Before(end); cursor = cursor.AddDate(0, 0, 1) {
 		trendRows = append(trendRows, trend[cursor.Format("2006-01-02")])
 	}
-	payload := Object{"data_as_of": time.Now().In(shanghai).Format(time.RFC3339Nano), "filters": filters, "summary": summary, "conversion": conversion, "average_hours": averages, "trend": trendRows, "handling_speed": d.handlingSpeed(attempts), "filter_options": a.analyticsOptions(d), "methodology": Object{"cohort": "Resume.imported_at 落在所选日期范围内的投递记录", "candidate_scope": "候选人数及各阶段按 Candidate 去重", "job_scope": "岗位排行优先使用 CandidateWorkflow.current_resume", "department_scope": "部门筛选和排行使用候选人当前有效志愿的最新非取消分配尝试；三级收件归入父级二级部门，一级部门按当前部门树回溯", "conversion_denominator": "所选 cohort 去重候选人数", "handling_speed": "自然时间小时；P90 使用最近秩；系统自动完成的部门转派不计转出部门人工处理时长"}}
+	payload := Object{"data_as_of": time.Now().In(shanghai).Format(time.RFC3339Nano), "filters": filters, "summary": summary, "conversion": conversion, "average_hours": averages, "trend": trendRows, "handling_speed": d.handlingSpeed(attempts), "filter_options": a.analyticsOptions(d), "methodology": Object{"cohort": "Resume.imported_at 落在所选日期范围内的投递记录", "candidate_scope": "候选人数及各阶段按 Candidate 去重", "job_scope": "岗位排行优先使用 CandidateWorkflow.current_resume", "department_scope": "部门筛选和排行使用候选人当前有效志愿的最新非取消分配尝试；部门收件箱仅到二级，一级部门按当前部门树回溯", "conversion_denominator": "所选 cohort 去重候选人数", "handling_speed": "自然时间小时；P90 使用最近秩；系统自动完成的部门转派不计转出部门人工处理时长"}}
 	for name, dist := range distributions {
 		top := 0
 		if strings.HasSuffix(name, "ranking") || name == "rejection_reason_distribution" {

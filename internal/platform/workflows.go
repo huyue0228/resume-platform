@@ -53,17 +53,11 @@ func (a *App) cancelOpenAttempts(ctx context.Context, db DB, w Object, reason st
 	}
 	return nil
 }
-func (a *App) secondaryDepartment(ctx context.Context, db DB, target Object) (Object, error) {
-	if num(target["level"]) == 2 {
+func (a *App) receivingDepartment(ctx context.Context, db DB, target Object) (Object, error) {
+	if isJobDepartment(target["level"]) {
 		return target, nil
 	}
-	if num(target["level"]) == 3 {
-		parent, err := a.get(ctx, db, "core_department", target["parent_id"])
-		if err == nil && num(parent["level"]) == 2 {
-			return parent, nil
-		}
-	}
-	return nil, bad("目标部门必须是有效二级或三级部门")
+	return nil, bad("目标部门必须是有效一级或二级部门")
 }
 func (a *App) event(ctx context.Context, db DB, at Object, event string, from, to any, note string, p *Principal, batch any, metadata Object, automatic ...bool) error {
 	values := Object{"attempt_id": at["id"], "event_type": event, "from_department_id": from, "to_department_id": to, "note": note, "batch_operation_id": batch, "is_system_auto": p == nil, "metadata": metadata, "occurred_at": time.Now().UTC()}
@@ -86,7 +80,7 @@ func (a *App) event(ctx context.Context, db DB, at Object, event string, from, t
 }
 func (a *App) notificationMetadata(ctx context.Context, db DB, departmentID any) Object {
 	enabled := truth(a.configValue(ctx, "welink_enabled", false))
-	contacts, _ := rows(ctx, db, "SELECT row_to_json(c) FROM core_contact c WHERE department_id=$1 AND is_active ORDER BY id", departmentID)
+	contacts, _ := rows(ctx, db, "SELECT row_to_json(c) FROM core_contact c WHERE department_id=$1 AND contact_level='secondary' AND is_active ORDER BY id", departmentID)
 	ids, employees := []any{}, []any{}
 	for _, c := range contacts {
 		ids = append(ids, c["id"])
@@ -103,7 +97,7 @@ func (a *App) notificationMetadata(ctx context.Context, db DB, departmentID any)
 	return Object{"welink": Object{"enabled": enabled, "recipient_count": len(ids), "recipient_ids": ids, "recipient_employee_nos": employees, "delivery_status": status, "skipped_reason": reason, "error": ""}}
 }
 func (a *App) createAttempt(ctx context.Context, db DB, w, resume, target, values Object, p *Principal) (Object, error) {
-	secondary, err := a.secondaryDepartment(ctx, db, target)
+	receiver, err := a.receivingDepartment(ctx, db, target)
 	if err != nil {
 		return nil, err
 	}
@@ -115,17 +109,12 @@ func (a *App) createAttempt(ctx context.Context, db DB, w, resume, target, value
 	values["workflow_id"] = w["id"]
 	values["resume_id"] = resume["id"]
 	values["attempt_no"] = attemptNo
-	values["initial_department_id"] = secondary["id"]
+	values["initial_department_id"] = receiver["id"]
 	values["current_department_id"] = target["id"]
-	values["initial_department_name_snapshot"] = secondary["name"]
+	values["initial_department_name_snapshot"] = receiver["name"]
 	values["current_department_name_snapshot"] = target["name"]
 	values["resume_apply_id_snapshot"] = resume["apply_id"]
 	values["position_name_snapshot"] = resume["position_name"]
-	direct := num(target["id"]) != num(secondary["id"])
-	if direct {
-		values["status"] = "dispatched"
-		values["dispatched_at"] = time.Now().UTC()
-	}
 	if p != nil {
 		values["created_by_id"] = p.User["id"]
 		values["created_by_username_snapshot"] = p.User["username"]
@@ -134,20 +123,8 @@ func (a *App) createAttempt(ctx context.Context, db DB, w, resume, target, value
 	if err != nil {
 		return nil, err
 	}
-	if err = a.event(ctx, db, at, "attempt_created", nil, nil, str(values["match_reason"]), p, nil, Object{"source": at["source"], "initial_department_id": secondary["id"]}, at["source"] != "manual"); err != nil {
+	if err = a.event(ctx, db, at, "attempt_created", nil, nil, str(values["match_reason"]), p, nil, Object{"source": at["source"], "initial_department_id": receiver["id"]}, at["source"] != "manual"); err != nil {
 		return nil, err
-	}
-	if direct {
-		note := "HR 手动直达三级部门"
-		if at["source"] == "ai" {
-			note = "系统 AI 自动分配"
-		}
-		if err = a.event(ctx, db, at, "department_dispatched", nil, secondary["id"], note, p, nil, a.notificationMetadata(ctx, db, secondary["id"]), at["source"] == "ai"); err != nil {
-			return nil, err
-		}
-		if err = a.event(ctx, db, at, "department_transferred", secondary["id"], target["id"], note, p, nil, a.notificationMetadata(ctx, db, target["id"]), true); err != nil {
-			return nil, err
-		}
 	}
 	if err = a.touchWorkflow(ctx, db, w, resume); err != nil {
 		return nil, err
@@ -178,7 +155,7 @@ func (a *App) manualAssign(ctx context.Context, resumeID, targetID any, reason s
 	if err != nil {
 		return nil, err
 	}
-	if _, err = a.secondaryDepartment(ctx, tx, target); err != nil {
+	if _, err = a.receivingDepartment(ctx, tx, target); err != nil {
 		return nil, err
 	}
 	w, err = a.invalidateWorkflow(ctx, tx, w)
@@ -195,10 +172,18 @@ func (a *App) manualAssign(ctx context.Context, resumeID, targetID any, reason s
 	return at, tx.Commit(ctx)
 }
 func canTransfer(p *Principal) bool {
-	return p.has("attempt.transfer_department") && (p.has("attempt.view_all") || (truth(p.Contact["is_active"]) && p.Contact["contact_level"] == "secondary" && truth(p.Contact["can_delegate"]) && num(p.Department["level"]) == 2))
+	if p.has("attempt.view_all") && p.has("attempt.transfer_department") {
+		return true
+	}
+	for _, grant := range p.departmentGrants() {
+		if grantCanDelegate(p, grant) {
+			return true
+		}
+	}
+	return false
 }
 func (a *App) departmentOptions(ctx context.Context, p *Principal) ([]Object, error) {
-	departments, err := rows(ctx, a.Pool, "SELECT row_to_json(d) FROM core_department d WHERE level IN (2,3) ORDER BY level,name,id")
+	departments, err := rows(ctx, a.Pool, "SELECT row_to_json(d) FROM core_department d WHERE level IN (1,2) ORDER BY level,name,id")
 	if err != nil {
 		return nil, err
 	}
@@ -243,6 +228,9 @@ func (a *App) mutateAttempt(ctx context.Context, id any, action string, body Obj
 	if num(at["current_department_id"]) != num(initial["current_department_id"]) {
 		return nil, &apiError{409, "当前接收部门已变更，请刷新后重试"}
 	}
+	if num(at["assigned_screener_id"]) != num(initial["assigned_screener_id"]) {
+		return nil, &apiError{409, "当前简历筛选人已变更，请刷新后重试"}
+	}
 	if !a.visibleAttempt(ctx, p, at) {
 		return nil, &apiError{404, "未找到记录"}
 	}
@@ -254,6 +242,9 @@ func (a *App) mutateAttempt(ctx context.Context, id any, action string, body Obj
 	metadata := Object{}
 	switch action {
 	case "dispatch_welink":
+		if !a.canManageAttempt(ctx, tx, p, at, "attempt.dispatch") {
+			return nil, &apiError{403, "无当前部门下发权限"}
+		}
 		if at["status"] != "pending_dispatch" {
 			return stateError("仅待下发尝试可以下发")
 		}
@@ -263,25 +254,48 @@ func (a *App) mutateAttempt(ctx context.Context, id any, action string, body Obj
 		to = at["current_department_id"]
 		metadata = a.notificationMetadata(ctx, tx, to)
 	case "transfer":
-		if !canTransfer(p) {
+		if !a.canTransferAttempt(ctx, tx, p, at, nil) {
 			return nil, &apiError{403, "当前接口人没有部门转派权限"}
 		}
 		if at["status"] != "dispatched" {
 			return stateError("仅已下发且未反馈的尝试可以转派")
 		}
+		if body["target_screener_id"] != nil {
+			if body["target_department_id"] != nil {
+				return nil, bad("一次只能选择部门或简历筛选人")
+			}
+			screener, err := one(ctx, tx, "SELECT row_to_json(c) FROM core_contact c WHERE id=$1 FOR SHARE", body["target_screener_id"])
+			if err != nil || !a.eligibleScreener(ctx, tx, screener, at) {
+				return nil, bad("请选择当前接收部门内已启用并有反馈权限的简历筛选人")
+			}
+			if num(at["assigned_screener_id"]) == num(screener["id"]) {
+				return nil, bad("该简历已转派给此筛选人")
+			}
+			values["assigned_screener_id"] = screener["id"]
+			values["assigned_screener_employee_no_snapshot"] = screener["employee_no"]
+			values["assigned_screener_name_snapshot"] = screener["name"]
+			values["screener_assigned_at"] = time.Now().UTC()
+			eventType = "screener_assigned"
+			metadata = Object{"from_screener_id": at["assigned_screener_id"], "to_screener_id": screener["id"], "to_screener_employee_no": screener["employee_no"], "to_screener_name": screener["name"], "department_id": at["current_department_id"]}
+			break
+		}
 		target, err := a.get(ctx, tx, "core_department", body["target_department_id"])
 		if err != nil {
 			return nil, bad("目标部门不存在")
 		}
-		if _, err = a.secondaryDepartment(ctx, tx, target); err != nil {
+		if _, err = a.receivingDepartment(ctx, tx, target); err != nil {
 			return nil, err
 		}
-		if !p.has("attempt.view_all") && num(target["level"]) == 3 && num(target["parent_id"]) != num(p.Department["id"]) {
-			return nil, bad("只能转派到本二级部门下的三级部门")
+		if !a.canTransferAttempt(ctx, tx, p, at, target) {
+			return nil, &apiError{403, "当前部门授权不允许转派到该目标部门"}
 		}
 		if num(target["id"]) == num(at["current_department_id"]) {
 			return nil, bad("目标部门与当前接收部门相同")
 		}
+		values["assigned_screener_id"] = nil
+		values["assigned_screener_employee_no_snapshot"] = ""
+		values["assigned_screener_name_snapshot"] = ""
+		values["screener_assigned_at"] = nil
 		values["current_department_id"] = target["id"]
 		values["current_department_name_snapshot"] = target["name"]
 		eventType = "department_transferred"
@@ -289,6 +303,9 @@ func (a *App) mutateAttempt(ctx context.Context, id any, action string, body Obj
 		to = target["id"]
 		metadata = a.notificationMetadata(ctx, tx, to)
 	case "confirm_review":
+		if !a.canManageAttempt(ctx, tx, p, at, "attempt.dispatch") {
+			return nil, &apiError{403, "无当前部门复核权限"}
+		}
 		if at["status"] != "pending_review" {
 			return stateError("仅待 HR 复核尝试可以确认")
 		}
@@ -328,6 +345,9 @@ func (a *App) mutateAttempt(ctx context.Context, id any, action string, body Obj
 		values["review_required"] = false
 		eventType = "review_confirmed"
 	case "cancel_attempt", "cancel_review":
+		if !a.canManageAttempt(ctx, tx, p, at, "attempt.dispatch") {
+			return nil, &apiError{403, "无当前部门复核或下发权限"}
+		}
 		required := "pending_dispatch"
 		if action == "cancel_review" {
 			required = "pending_review"
@@ -353,15 +373,8 @@ func (a *App) mutateAttempt(ctx context.Context, id any, action string, body Obj
 		if at["status"] != "dispatched" || at["feedback_at"] != nil {
 			return stateError("仅已下发且未反馈的尝试可以反馈")
 		}
-		if !p.has("attempt.view_department") || !truth(p.Contact["is_active"]) || num(p.Contact["department_id"]) != num(at["current_department_id"]) {
+		if !canFeedbackAttempt(p, at) {
 			return nil, &apiError{403, "只有当前接收部门的启用接口人可以提交反馈"}
-		}
-		current, err := a.get(ctx, tx, "core_department", at["current_department_id"])
-		if err != nil {
-			return nil, err
-		}
-		if (num(current["level"]) == 2 && p.Contact["contact_level"] != "secondary") || (num(current["level"]) == 3 && p.Contact["contact_level"] != "tertiary") {
-			return nil, &apiError{403, "接口人角色与接收部门不匹配"}
 		}
 		result, reason := str(body["result"]), str(body["reason_code"])
 		label := ""

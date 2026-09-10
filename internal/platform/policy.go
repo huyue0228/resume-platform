@@ -11,7 +11,7 @@ import (
 
 const protocolVersion = "resume-analysis/v2"
 const resultVersion = "resume-job-match/v1"
-const policyVersion = "go-policy-gate/v3"
+const policyVersion = "go-policy-gate/v4"
 
 func (a *App) ref(kind string, id any) string {
 	mac := hmac.New(sha256.New, []byte(a.Config.Secret))
@@ -123,7 +123,7 @@ func prepareSnapshot(s Object) Object {
 		missing := false
 		for _, v := range list(s["jobs"]) {
 			j := obj(v)
-			if entities[normalized(str(j["entity"]))] && names[normalized(str(j["position_name"]))] && str(j["department_ref"]) != "" && num(j["department_level"]) == 2 {
+			if entities[normalized(str(j["entity"]))] && names[normalized(str(j["position_name"]))] && str(j["department_ref"]) != "" && isJobDepartment(j["department_level"]) {
 				refs = append(refs, str(j["ref"]))
 				if strings.TrimSpace(str(j["responsibilities"])) == "" {
 					missing = true
