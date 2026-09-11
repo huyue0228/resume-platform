@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Alert, Button, Card, Empty, Popconfirm, Progress, Segmented, Space, Table, Tag, Typography, message } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Alert, Button, Card, Empty, Drawer, Input, Pagination, Popconfirm, Progress, Segmented, Select, Space, Spin, Table, Tabs, Tag, Typography, message } from 'antd'
 import {
   AppstoreOutlined,
   CheckCircleOutlined,
@@ -15,11 +15,17 @@ import {
   UserOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons'
-import { cancelPipelineRun } from '../api/services'
+import { cancelPipelineRun, fetchPipelineRun, createProcessingSchedule } from '../api/services'
 import useProcessingRuns from './useProcessingRuns'
 import './ProcessingTaskCenter.css'
 import TaskMaterials from './TaskMaterials'
+import ProcessingSchedules from './ProcessingSchedules'
+import useTaskRecords from './useTaskRecords'
+import ResumeProcessModal from '../pages/resumes/ResumeProcessModal'
+import { useRole } from '../contexts/roleState'
+import { useProcessRunner } from './useProcessRunner'
 
+const SOURCE_LABELS = { manual: '手动触发', schedule: '定时触发', resume_import: '导入后处理', ai_retry: '单份重试' }
 const ACTIVE_STATUSES = new Set(['pending', 'running', 'waiting_conflict', 'cancelling'])
 const STATUS_META = {
   pending: { text: '排队中', color: 'default' },
@@ -146,6 +152,7 @@ function TaskExecutionNodes({ run }) {
 }
 
 function taskTitle(run) {
+  if (run.scope_summary?.task_name || run.scope?.task_name) return run.scope_summary?.task_name || run.scope?.task_name
   if (run.step === 'resume_process') return '上传后候选人处理'
   if (run.step === 'step2') return '准入核验与岗位分析'
   if (run.step === 'all') return '候选人完整处理'
@@ -156,8 +163,8 @@ function scopeSummaryText(run) {
   const summary = run.scope_summary || {}
   const parts = []
   if (summary.candidate_count != null) parts.push(`候选人 ${summary.candidate_count} 名`)
-  if (summary.system_statuses?.length) parts.push(`状态 ${summary.system_statuses.join('、')}`)
-  if (summary.source) parts.push(`来源 ${summary.source}`)
+  if (summary.system_statuses?.length) parts.push(`状态 ${summary.system_statuses.map((status) => RESUME_STATUSES[status]?.text || status).join('、')}`)
+  if (summary.source) parts.push(`来源 ${SOURCE_LABELS[summary.source] || '系统触发'}`)
   return parts.join(' · ')
 }
 
@@ -292,7 +299,7 @@ function TaskListResults({ run, onOpenCandidates }) {
   )
 }
 
-function TaskTable({ runs, cancellingId, onCancel, onOpenCandidates }) {
+function TaskTable({ runs, cancellingId, onCancel, onOpenCandidates, onOpenRun, loading }) {
   const columns = [
     {
       title: '任务',
@@ -301,11 +308,11 @@ function TaskTable({ runs, cancellingId, onCancel, onOpenCandidates }) {
       render: (_, run) => (
         <div className="processing-task-table-task">
           <div>
-            <Typography.Text strong>{taskTitle(run)}</Typography.Text>
+            <Button type="link" size="small" onClick={() => onOpenRun(run.id)}>{taskTitle(run)}</Button>
             <Typography.Text type="secondary">#{run.id}</Typography.Text>
           </div>
           <Typography.Text type="secondary">
-            {run.mode === 'ai' ? 'Agent 分配' : '历史规则分配'} · {run.created_by_username_snapshot || '系统'}
+            {SOURCE_LABELS[run.scope_summary?.source || run.scope?.source || 'manual'] || '系统触发'} · {run.created_by_username_snapshot || '系统'}
           </Typography.Text>
         </div>
       ),
@@ -391,6 +398,7 @@ function TaskTable({ runs, cancellingId, onCancel, onOpenCandidates }) {
         rowKey="id"
         columns={columns}
         dataSource={runs}
+        loading={loading}
         pagination={false}
         expandable={{
           rowExpandable: (run) => Boolean(run.stages?.length),
@@ -436,7 +444,7 @@ function TaskCard({ run, cancellingId, onCancel, onOpenCandidates }) {
 
         <div className="processing-task-meta">
           <span><UserOutlined /> {run.created_by_username_snapshot || '系统'}</span>
-          <span><RobotOutlined /> {run.mode === 'ai' ? 'Agent 分配' : '历史规则分配'}</span>
+          <span><RobotOutlined /> {SOURCE_LABELS[run.scope_summary?.source || run.scope?.source || 'manual'] || '系统触发'}</span>
           <span>提交于 {formatTime(run.created_at)}</span>
         </div>
 
@@ -508,101 +516,117 @@ function TaskCard({ run, cancellingId, onCancel, onOpenCandidates }) {
   )
 }
 
-// 处理任务独立页主体：所有有 pipeline.view 权限的 HR/管理员看到同一份服务端任务状态。
+const fetchRunDetail = async ({ id }, options) => {
+  const { data } = await fetchPipelineRun(id, options)
+  return { data: { results: [data], count: 1 } }
+}
+const QUERY_KEYS = ['search', 'state', 'source', 'created_from', 'created_to', 'mine', 'created_by', 'schedule_id', 'status', 'repeat', 'ordering', 'page']
+const STATUS_OPTIONS = Object.entries(STATUS_META).map(([value, item]) => ({ value, label: item.text }))
+const RESUME_STATUSES = { raw: { text: '待处理' }, pending_allocation: { text: '入池待分配' }, archived: { text: '已归档' }, pending_reallocation: { text: '待重新分配' }, pending_review: { text: '待复核' }, pending_dispatch: { text: '待下发' }, pending_screening: { text: '待业务反馈' }, screening_passed: { text: '通过' }, screening_rejected: { text: '不通过' } }
+
 export default function ProcessingTaskCenter() {
   const navigate = useNavigate()
-  const { runs, loading, error: refreshError, refresh } = useProcessingRuns()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { hasPermission } = useRole()
+  const { run: submitRun } = useProcessRunner()
+  const tab = searchParams.get('tab') === 'schedules' ? 'schedules' : 'runs'
+  const viewMode = searchParams.get('view') === 'card' ? 'card' : 'list'
+  const query = useMemo(() => Object.fromEntries(QUERY_KEYS.filter((key) => searchParams.get(key)).map((key) => [key, searchParams.get(key)])), [searchParams])
+  const { runs, count, summary, loading, error: refreshError, refresh } = useProcessingRuns({ ...query, include_summary: 'true' }, tab === 'runs')
+  const detailId = searchParams.get('run_id') || ''
+  const detail = useTaskRecords(fetchRunDetail, { id: detailId }, { enabled: Boolean(detailId), activeStatus: ACTIVE_STATUSES })
+  const selectedRun = detail.results[0]
   const [cancellingId, setCancellingId] = useState(null)
-  const [viewMode, setViewMode] = useState('card')
+  const [searchText, setSearchText] = useState(query.search || '')
+  const [createOpen, setCreateOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState('')
+  const [scopeStatuses, setScopeStatuses] = useState(['raw'])
+  useEffect(() => { setSearchText(query.search || '') }, [query.search])
 
-  const activeRuns = useMemo(() => runs.filter((run) => ACTIVE_STATUSES.has(run.status)), [runs])
-  const visibleRuns = useMemo(() => [...activeRuns, ...runs.filter((run) => !ACTIVE_STATUSES.has(run.status))], [activeRuns, runs])
-  const finishedCount = useMemo(() => runs.filter((run) => FINISHED_STATUSES.has(run.status)).length, [runs])
-  const attentionCount = useMemo(() => runs.filter((run) => ATTENTION_STATUSES.has(run.status)).length, [runs])
-
+  const updateQuery = (changes) => {
+    const next = new URLSearchParams(searchParams)
+    if (!Object.hasOwn(changes, 'page') && !Object.hasOwn(changes, 'run_id') && !Object.hasOwn(changes, 'view')) next.delete('page')
+    for (const [key, value] of Object.entries(changes)) {
+      if (value == null || value === '') next.delete(key)
+      else next.set(key, String(value))
+    }
+    setSearchParams(next, { replace: !Object.hasOwn(changes, 'run_id') })
+  }
+  const switchTab = (value) => setSearchParams({ tab: value }, { replace: true })
+  const openRun = (id) => updateQuery({ run_id: id })
+  const openHistory = (record) => setSearchParams({ tab: 'runs', schedule_id: String(record.id), schedule_name: record.name })
   const cancel = async (run) => {
     setCancellingId(run.id)
     try {
       const { data } = await cancelPipelineRun(run.id)
       message.success(data.status === 'cancelled' ? '任务已取消' : '已请求取消任务')
-      await refresh()
-    } finally {
-      setCancellingId(null)
-    }
+      await Promise.all([refresh(), detail.refresh()])
+    } catch (error) { message.error(error.response?.data?.detail || '取消失败，请重试') }
+    finally { setCancellingId(null) }
   }
-
-  const openCandidates = (run, result) => {
-    navigate({
-      pathname: '/resumes',
-      search: `?processing_run_id=${run.id}&processing_result=${result}`,
-    })
+  const openCandidates = (run, result) => navigate({ pathname: '/resumes', search: `?processing_run_id=${run.id}&processing_result=${result}` })
+  const create = async (timing) => {
+    setCreating(true)
+    setCreateError('')
+    try {
+      const scope = { system_statuses: scopeStatuses }
+      if (timing.repeat === 'now') {
+        const response = await submitRun([{ step: 'step2' }], '', { scope, ...(timing.name ? { name: timing.name } : {}) })
+        if (!response.success) { setCreateError(response.error); return }
+        const id = response.run?.processing_runs?.[0]?.id
+        setSearchParams({ tab: 'runs', ...(id ? { run_id: String(id) } : {}) })
+        message.success('已提交处理任务')
+      } else {
+        await createProcessingSchedule({ ...timing, name: timing.name || '定时简历处理', scope })
+        window.dispatchEvent(new Event('srf:processing-schedule-created'))
+        setSearchParams({ tab: 'schedules' })
+        message.success('已创建定时计划')
+      }
+      setCreateOpen(false)
+    } catch (error) {
+      setCreateError(['ECONNABORTED', 'ETIMEDOUT'].includes(error.code) || [502, 504].includes(error.response?.status)
+        ? '提交请求超时，计划可能已创建。请先查询任务中心，避免重复提交。'
+        : error.response?.data?.detail || '创建失败，请重试')
+    } finally { setCreating(false) }
   }
+  const fallbackSummary = { total: count, active: runs.filter((run) => ACTIVE_STATUSES.has(run.status)).length, attention: runs.filter((run) => ATTENTION_STATUSES.has(run.status)).length, finished: runs.filter((run) => FINISHED_STATUSES.has(run.status)).length }
+  const totals = summary || fallbackSummary
 
-  return (
-    <section className="processing-task-center">
-      <div className="processing-task-toolbar">
-        <div>
-          <Typography.Title level={4}>任务概览</Typography.Title>
-          <Typography.Text type="secondary">最近 {runs.length} 条任务 · 处理中每 2 秒更新，空闲时降低刷新频率</Typography.Text>
-        </div>
-        <div className="processing-task-toolbar-actions">
-          <Segmented
-            aria-label="任务展示方式"
-            value={viewMode}
-            onChange={setViewMode}
-            options={[
-              { label: '卡片', value: 'card', icon: <AppstoreOutlined /> },
-              { label: '列表', value: 'list', icon: <UnorderedListOutlined /> },
-            ]}
-          />
-          <Button
-            aria-label="刷新任务"
-            icon={<ReloadOutlined />}
-            onClick={refresh}
-            loading={loading}
-          >
-            刷新
-          </Button>
-        </div>
+  return <section className="processing-task-center">
+    <div className="processing-task-toolbar">
+      <div><Typography.Title level={4}>任务中心</Typography.Title><Typography.Text type="secondary">创建处理任务，管理触发计划，查询每一次执行。</Typography.Text></div>
+      {hasPermission('pipeline.run') && hasPermission('resume.view') && <Button type="primary" onClick={() => { setCreateError(''); setScopeStatuses(['raw']); setCreateOpen(true) }}>处理简历</Button>}
+    </div>
+    <Tabs className="processing-task-tabs" activeKey={tab} onChange={switchTab} items={[{ key: 'runs', label: '执行记录' }, { key: 'schedules', label: '定时计划' }]} />
+    <div className="processing-task-filters">
+      <Input.Search aria-label="搜索任务" value={searchText} onChange={(event) => setSearchText(event.target.value)} onSearch={(value) => updateQuery({ search: value.trim() })} placeholder="名称、编号或创建人工号" allowClear style={{ width: 270 }} />
+      <Select aria-label="创建人范围" value={query.mine || 'all'} onChange={(value) => updateQuery({ mine: value === 'all' ? '' : value })} options={[{ value: 'all', label: '全部创建人' }, { value: 'true', label: '我创建的' }]} style={{ width: 130 }} />
+      {tab === 'runs' ? <>
+        <Select aria-label="执行状态" value={query.status || undefined} placeholder="全部执行状态" allowClear onChange={(value) => updateQuery({ status: value, state: '' })} options={STATUS_OPTIONS} style={{ width: 155 }} />
+        <Select aria-label="触发来源" value={query.source || undefined} placeholder="全部触发来源" allowClear onChange={(value) => updateQuery({ source: value })} options={Object.entries(SOURCE_LABELS).map(([value, label]) => ({ value, label }))} style={{ width: 155 }} />
+      </> : <>
+        <Select aria-label="计划状态" value={query.state || undefined} placeholder="全部计划状态" allowClear onChange={(value) => updateQuery({ state: value })} options={[{ value: 'active', label: '已启用' }, { value: 'paused', label: '已暂停' }, { value: 'completed', label: '已触发' }, { value: 'failed', label: '触发失败' }, { value: 'cancelled', label: '已取消' }]} style={{ width: 150 }} />
+        <Select aria-label="触发频率" value={query.repeat || undefined} placeholder="全部触发频率" allowClear onChange={(value) => updateQuery({ repeat: value })} options={[{ value: 'once', label: '仅一次' }, { value: 'daily', label: '每天' }, { value: 'weekly', label: '每周' }]} style={{ width: 150 }} />
+      </>}
+      <Space size={6}><span>创建日期</span><Input aria-label="创建开始日期" type="date" value={query.created_from || ''} onChange={(event) => updateQuery({ created_from: event.target.value })} /><span>至</span><Input aria-label="创建结束日期" type="date" value={query.created_to || ''} onChange={(event) => updateQuery({ created_to: event.target.value })} /></Space>
+      <Button type="link" onClick={() => setSearchParams({ tab }, { replace: true })}>重置筛选</Button>
+    </div>
+    {query.schedule_id && <Alert className="processing-history-context" type="info" showIcon message={`计划「${searchParams.get('schedule_name') || `#${query.schedule_id}`}」的执行历史`} action={<Button size="small" onClick={() => switchTab('schedules')}>返回定时计划</Button>} />}
+    {tab === 'schedules' ? <ProcessingSchedules query={query} onQueryChange={updateQuery} onOpenRun={openRun} onHistory={openHistory} /> : <>
+      <div className="processing-task-summary" aria-label="查询范围内任务概览">
+        {[['', '全部执行', totals.total], ['active', '进行中', totals.active], ['attention', '需关注', totals.attention], ['finished', '已结束', totals.finished]].map(([key, label, total]) => <button key={key} type="button" className={`${query.state === key || (!query.state && !key) ? 'is-selected' : ''} ${key === 'attention' ? 'has-attention' : ''}`} onClick={() => updateQuery({ state: key, status: '' })} aria-pressed={(query.state || '') === key}><span>{label}</span><strong>{total}</strong></button>)}
       </div>
-      {refreshError && <Alert banner showIcon type="warning" message={runs.length ? '更新暂时失败，当前显示上次获取的状态' : '暂时无法获取任务，请点击刷新重试'} />}
-      <div className="processing-task-summary" aria-label="最近任务概览">
-        <div>
-          <SyncOutlined spin={Boolean(activeRuns.length)} />
-          <span>进行中</span>
-          <strong>{activeRuns.length}</strong>
-        </div>
-        <div>
-          <CheckCircleOutlined />
-          <span>已结束</span>
-          <strong>{finishedCount}</strong>
-        </div>
-        <div className={attentionCount ? 'has-attention' : ''}>
-          <ExclamationCircleOutlined />
-          <span>需关注</span>
-          <strong>{attentionCount}</strong>
-        </div>
-      </div>
-      {viewMode === 'card' ? (
-        <div className="processing-task-list">
-          {visibleRuns.length ? visibleRuns.map((run) => (
-            <TaskCard
-              key={run.id}
-              run={run}
-              cancellingId={cancellingId}
-              onCancel={cancel}
-              onOpenCandidates={openCandidates}
-            />
-          )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无处理任务" />}
-        </div>
-      ) : (
-        <TaskTable
-          runs={visibleRuns}
-          cancellingId={cancellingId}
-          onCancel={cancel}
-          onOpenCandidates={openCandidates}
-        />
-      )}
-    </section>
-  )
+      <div className="processing-record-toolbar"><Typography.Text type="secondary">共 {count} 条匹配记录 · 概览按当前搜索、来源和日期范围统计 · 处理中自动刷新</Typography.Text><Space><Segmented aria-label="任务展示方式" value={viewMode} onChange={(value) => updateQuery({ view: value })} options={[{ label: '列表', value: 'list', icon: <UnorderedListOutlined /> }, { label: '卡片', value: 'card', icon: <AppstoreOutlined /> }]} /><Button aria-label="刷新任务" icon={<ReloadOutlined />} loading={loading} onClick={refresh}>刷新</Button></Space></div>
+      {refreshError && <Alert banner showIcon type="warning" message="任务查询失败，请检查筛选条件或刷新重试" />}
+      {viewMode === 'card' ? <div className="processing-task-list">{runs.length ? runs.map((run) => <TaskCard key={run.id} run={run} cancellingId={cancellingId} onCancel={cancel} onOpenCandidates={openCandidates} />) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无匹配的执行记录" />}</div> : <TaskTable runs={runs} cancellingId={cancellingId} onCancel={cancel} onOpenCandidates={openCandidates} onOpenRun={openRun} loading={loading} />}
+      <div className="processing-task-pagination"><Pagination current={Number(query.page) || 1} pageSize={20} total={count} showSizeChanger={false} showTotal={(total) => `共 ${total} 条`} onChange={(page) => updateQuery({ page })} /></div>
+    </>}
+    <Drawer title={`执行详情 #${detailId}`} open={Boolean(detailId)} width={960} onClose={() => updateQuery({ run_id: '' })}>
+      <Typography.Paragraph type="secondary">此详情可通过当前地址直接访问，运行中自动更新。</Typography.Paragraph>
+      {detail.error && <Alert type="error" message="无法获取执行记录" action={<Button onClick={detail.refresh}>重试</Button>} />}
+      {selectedRun ? <TaskCard run={selectedRun} cancellingId={cancellingId} onCancel={cancel} onOpenCandidates={openCandidates} /> : detail.loading && <Spin />}
+    </Drawer>
+    <ResumeProcessModal open={createOpen} processing={creating} error={createError} processCurrentSelected={false} processCandidateCount={0} processStatusSelection={scopeStatuses} statusOptions={RESUME_STATUSES} onCurrentSelectedChange={() => {}} onStatusChange={setScopeStatuses} onConfirm={create} onCancel={() => { if (!creating) setCreateOpen(false) }} />
+  </section>
 }

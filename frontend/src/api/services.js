@@ -235,11 +235,27 @@ export function runPipeline(body) {
 export function fetchPipelineRuns(params, options = {}) {
   return client.get('/pipeline/runs/', { ...options, params })
 }
-export function fetchPipelineRun(id) {
-  return client.get(`/pipeline/runs/${id}/`)
+export function fetchPipelineRun(id, options = {}) {
+  return client.get(`/pipeline/runs/${id}/`, options)
 }
 export function cancelPipelineRun(id) {
   return client.post(`/pipeline/runs/${id}/cancel/`)
+}
+
+export function createProcessingSchedule(body) {
+  return client.post('/pipeline/schedules/', body)
+}
+export function fetchProcessingSchedules(params = {}, options = {}) {
+  return client.get('/pipeline/schedules/', { ...options, params })
+}
+export function cancelProcessingSchedule(id) {
+  return client.post(`/pipeline/schedules/${id}/cancel/`)
+}
+export function pauseProcessingSchedule(id) {
+  return client.post(`/pipeline/schedules/${id}/pause/`)
+}
+export function resumeProcessingSchedule(id) {
+  return client.post(`/pipeline/schedules/${id}/resume/`)
 }
 
 // ---- Recruitment analytics ----

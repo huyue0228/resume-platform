@@ -110,6 +110,9 @@ func (a *App) Handler(static http.Handler) http.Handler {
 	})
 }
 func (a *App) api(w http.ResponseWriter, r *http.Request, path string, p *Principal) error {
+	if path == "pipeline/schedules" || strings.HasPrefix(path, "pipeline/schedules/") {
+		return a.schedulesAPI(w, r, path, p)
+	}
 	if path == "position-pools/config" {
 		return a.poolConfigAPI(w, r, p)
 	}
@@ -253,6 +256,9 @@ func (a *App) api(w http.ResponseWriter, r *http.Request, path string, p *Princi
 	return &apiError{404, "未找到"}
 }
 func (a *App) readResource(w http.ResponseWriter, r *http.Request, resource string, id any, p *Principal) error {
+	if resource == "pipeline/runs" && id == nil {
+		return a.taskList(w, r, p, false)
+	}
 	if id != nil {
 		row, err := a.get(r.Context(), a.Pool, a.Spec.Resources[resource].Table, id)
 		if err != nil {

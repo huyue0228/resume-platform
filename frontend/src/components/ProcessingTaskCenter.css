@@ -34,29 +34,41 @@
 
 .processing-task-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1px;
   border-bottom: 1px solid #e4e9f0;
   background: #e4e9f0;
 }
 
-.processing-task-summary > div {
+.processing-task-summary > button {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
   min-width: 0;
   padding: 14px 16px;
   color: #475467;
   background: #fff;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
 }
 
-.processing-task-summary .anticon {
-  margin-right: 7px;
-  color: var(--srf-primary);
-}
-
-.processing-task-summary > div:nth-child(2) .anticon {
-  color: #039855;
+.processing-task-summary > button.is-selected { background: #edf5f1; box-shadow: inset 0 -3px var(--srf-primary); }
+.processing-task-summary > button:focus-visible { outline: 2px solid var(--srf-primary); outline-offset: -2px; }
+.processing-task-tabs { padding: 0 22px; }
+.processing-task-tabs .ant-tabs-nav { margin-bottom: 0; }
+.processing-task-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 20px 22px; border-bottom: 1px solid var(--srf-border); }
+.processing-task-filters .ant-input[type=date] { width: 146px; }
+.processing-record-toolbar, .processing-plan-note { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 16px 22px 0; }
+.processing-record-toolbar > .ant-typography { font-size: 12px; }
+.processing-task-pagination { display: flex; justify-content: flex-end; padding: 0 22px 22px; }
+.processing-schedules > .ant-table-wrapper { padding: 20px 22px; }
+.processing-history-context { margin: 16px 22px 0; }
+@media (max-width: 700px) {
+  .processing-task-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .processing-task-filters { padding: 14px; }
 }
 
 .processing-task-summary span {
@@ -72,7 +84,6 @@
   font-weight: 650;
 }
 
-.processing-task-summary .has-attention .anticon,
 .processing-task-summary .has-attention strong {
   color: #d92d20;
 }
@@ -478,8 +489,7 @@
     width: 100%;
   }
 
-  .processing-task-summary > div {
-    grid-template-columns: auto 1fr;
+  .processing-task-summary > button {
     padding: 12px;
   }
 

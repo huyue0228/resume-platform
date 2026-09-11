@@ -40,6 +40,10 @@ func pageBounds(r *http.Request, total int) (int, int, error) {
 }
 
 func writePage(w http.ResponseWriter, r *http.Request, values []Object, total, page, size int) {
+	write(w, 200, pageResponse(r, values, total, page, size))
+}
+
+func pageResponse(r *http.Request, values []Object, total, page, size int) Object {
 	next, previous := any(nil), any(nil)
 	link := func(page int) string {
 		u := *r.URL
@@ -62,7 +66,7 @@ func writePage(w http.ResponseWriter, r *http.Request, values []Object, total, p
 	if page > 1 {
 		previous = link(page - 1)
 	}
-	write(w, 200, Object{"count": total, "next": next, "previous": previous, "results": values})
+	return Object{"count": total, "next": next, "previous": previous, "results": values}
 }
 
 // 常用列表先在 PostgreSQL 中分页，再加载当前页的关联对象，避免为二十行页面展开整个简历库。

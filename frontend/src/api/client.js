@@ -19,6 +19,8 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Navigation and polling cleanup deliberately abort requests.
+    if (axios.isCancel(error)) return Promise.reject(error)
     if (error?.response?.status === 401) {
       localStorage.removeItem('srf_token')
       if (window.location.pathname !== '/login') {

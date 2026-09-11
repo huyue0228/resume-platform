@@ -5,9 +5,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProcessingTaskCenter from './ProcessingTaskCenter'
 
 const fetchPipelineRuns = vi.hoisted(() => vi.fn())
+const fetchPipelineRun = vi.hoisted(() => vi.fn())
+const querySchedules = vi.hoisted(() => vi.fn().mockResolvedValue({ data: { count: 0, results: [] } }))
+const canCreate = vi.hoisted(() => ({ value: false }))
+const runPipeline = vi.hoisted(() => vi.fn())
+vi.mock('../contexts/roleState', () => ({ useRole: () => ({ hasPermission: () => canCreate.value }) }))
 
 vi.mock('../api/services', () => ({
   fetchPipelineRuns,
+  fetchPipelineRun,
+  fetchProcessingSchedules: querySchedules,
+  runPipeline,
+  cancelProcessingSchedule: vi.fn(),
   cancelPipelineRun: vi.fn(),
 }))
 
@@ -39,12 +48,54 @@ function taskWithNodes(current = 'queued', status = 'pending') {
 
 function showTask(run) {
   fetchPipelineRuns.mockResolvedValue({ data: { results: [run] } })
-  return render(<MemoryRouter><ProcessingTaskCenter /></MemoryRouter>)
+  return render(<MemoryRouter initialEntries={['/processing-tasks?view=card']}><ProcessingTaskCenter /></MemoryRouter>)
 }
 
 describe('ProcessingTaskCenter', () => {
   beforeEach(() => {
     fetchPipelineRuns.mockReset()
+    fetchPipelineRun.mockReset()
+    querySchedules.mockClear()
+    canCreate.value = false
+  })
+
+  it('restores query filters from the URL and uses totals outside the visible page', async () => {
+    fetchPipelineRuns.mockResolvedValue({ data: { results: [], count: 25, summary: { total: 80, active: 35, attention: 25, finished: 45 } } })
+    render(<MemoryRouter initialEntries={['/processing-tasks?search=Night&state=attention&source=schedule&page=2']}><ProcessingTaskCenter /><CurrentLocation /></MemoryRouter>)
+    await waitFor(() => expect(fetchPipelineRuns).toHaveBeenCalledWith(expect.objectContaining({ search: 'Night', source: 'schedule', state: 'attention', page: '2', include_summary: 'true' }), expect.anything()))
+    expect(screen.getByRole('button', { name: /进行中.*35/ })).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: /进行中.*35/ }))
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toContain('state=active'))
+    expect(screen.getByTestId('location').textContent).not.toContain('page=2')
+    expect(screen.getByTestId('location').textContent).toContain('search=Night')
+  })
+
+  it('queries the complete history of a schedule and opens an older execution by URL', async () => {
+    querySchedules.mockResolvedValueOnce({ data: { count: 1, results: [{ id: 9, name: '每日计划', scope_label: '待处理', repeat: 'daily', status: 'active' }] } })
+    fetchPipelineRuns.mockResolvedValue({ data: { results: [taskWithNodes()], count: 1 } })
+    render(<MemoryRouter initialEntries={['/processing-tasks?tab=schedules']}><ProcessingTaskCenter /><CurrentLocation /></MemoryRouter>)
+    await userEvent.click(await screen.findByRole('button', { name: '执行历史' }))
+    await waitFor(() => expect(fetchPipelineRuns).toHaveBeenCalledWith(expect.objectContaining({ schedule_id: '9' }), expect.anything()))
+    expect(screen.getByText('计划「每日计划」的执行历史')).toBeTruthy()
+    fetchPipelineRun.mockResolvedValue({ data: taskWithNodes() })
+    await userEvent.click(await screen.findByRole('button', { name: '候选人完整处理' }))
+    expect(await screen.findByText('执行详情 #42')).toBeTruthy()
+    expect(screen.getByTestId('location').textContent).toContain('run_id=42')
+    expect(screen.getByTestId('location').textContent).toContain('schedule_id=9')
+  })
+
+  it('creates a named immediate task from the same processing dialog', async () => {
+    canCreate.value = true
+    fetchPipelineRuns.mockResolvedValue({ data: { results: [], count: 0 } })
+    fetchPipelineRun.mockResolvedValue({ data: taskWithNodes() })
+    runPipeline.mockResolvedValue({ data: { processing_runs: [{ id: 42 }] } })
+    render(<MemoryRouter><ProcessingTaskCenter /></MemoryRouter>)
+    await userEvent.click(screen.getByRole('button', { name: '处理简历' }))
+    await userEvent.type(screen.getByLabelText('任务名称'), '本周简历处理')
+    expect(screen.getByRole('radio', { name: '立即执行' }).checked).toBe(true)
+    expect(screen.getByRole('radio', { name: '指定时间' })).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '开始处理' }))
+    await waitFor(() => expect(runPipeline).toHaveBeenCalledWith({ name: '本周简历处理', step: 'step2', scope: { system_statuses: ['raw'] } }))
   })
 
   it('shows the entire ordered plan as soon as the task is queued', async () => {
@@ -122,7 +173,7 @@ describe('ProcessingTaskCenter', () => {
     })
 
     render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={['/processing-tasks?view=card']}>
         <ProcessingTaskCenter />
         <CurrentLocation />
       </MemoryRouter>,
@@ -160,7 +211,7 @@ describe('ProcessingTaskCenter', () => {
       },
     })
 
-    render(<MemoryRouter><ProcessingTaskCenter /></MemoryRouter>)
+    render(<MemoryRouter initialEntries={['/processing-tasks?view=card']}><ProcessingTaskCenter /></MemoryRouter>)
     const expandButtons = await screen.findAllByRole('button', { name: '展开成功子项' })
     await userEvent.click(expandButtons[0])
     await userEvent.click(expandButtons[1])
@@ -196,7 +247,7 @@ describe('ProcessingTaskCenter', () => {
     })
 
     render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={['/processing-tasks?view=card']}>
         <ProcessingTaskCenter />
         <CurrentLocation />
       </MemoryRouter>,
@@ -232,7 +283,7 @@ describe('ProcessingTaskCenter', () => {
     })
 
     render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={['/processing-tasks?view=card']}>
         <ProcessingTaskCenter />
         <CurrentLocation />
       </MemoryRouter>,

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 var stageLabels = map[string]string{"queued": "等待后台处理", "initialize": "检查处理服务", "preparing": "准备候选人材料", "step1": "整理简历与志愿", "step2": "核验学历与院校", "step3": "匹配可选岗位", "step4": "提取文字、分析与保存结果", "finalize": "汇总处理结果"}
@@ -74,7 +75,7 @@ func (a *App) submitRun(w http.ResponseWriter, r *http.Request, p *Principal) er
 			return bad("处理范围 scope 必须是对象")
 		}
 	}
-	for _, key := range []string{"source", "retry_decision_id", "retry_resume_id", "expected_workflow_revision", "trigger"} {
+	for _, key := range []string{"source", "retry_decision_id", "retry_resume_id", "expected_workflow_revision", "trigger", "schedule_id", "scheduled_for", "task_name"} {
 		if _, ok := scope[key]; ok {
 			return bad("续办与 AI 重试只能从对应业务入口发起")
 		}
@@ -94,55 +95,18 @@ func (a *App) submitRun(w http.ResponseWriter, r *http.Request, p *Principal) er
 			return err
 		}
 	}
-	ids := []int64{}
-	if v, ok := scope["candidate_ids"]; ok {
-		ids, err = positiveIDs(v)
-		if err != nil {
-			return err
+	if name, exists := body["name"]; exists {
+		value, ok := name.(string)
+		if !ok || utf8.RuneCountInString(value) > 100 {
+			return bad("任务名称最多 100 个字符")
 		}
-	} else {
-		query := url.Values{}
-		if v, ok := scope["candidate_filters"]; ok {
-			filters, ok := v.(map[string]any)
-			if !ok {
-				return bad("candidate_filters 必须是对象")
-			}
-			for k, v := range filters {
-				if vs, ok := v.([]any); ok {
-					query.Set(k, strings.Join(stringValues(vs), ","))
-				} else {
-					query.Set(k, str(v))
-				}
-			}
+		if value = strings.TrimSpace(value); value != "" {
+			scope["task_name"] = value
 		}
-		if v, ok := scope["system_statuses"]; ok {
-			statuses, ok := v.([]any)
-			if !ok || len(statuses) == 0 {
-				return bad("system_statuses 必须是非空数组")
-			}
-			for _, s := range statuses {
-				if _, ok := systemLabels[str(s)]; !ok {
-					return bad("未知系统状态")
-				}
-			}
-			query.Set("system_statuses", strings.Join(stringValues(v), ","))
-		}
-		filterReq := r.Clone(r.Context())
-		u := *r.URL
-		filterReq.URL = &u
-		u.RawQuery = query.Encode()
-		var candidates []Object
-		if len(query) == 0 && p.has("resume.view") {
-			candidates, err = rows(r.Context(), a.Pool, "SELECT json_build_object('id',id) FROM core_candidate ORDER BY id")
-		} else {
-			candidates, err = a.filtered(r.Context(), "candidates", filterReq, p)
-		}
-		if err != nil {
-			return err
-		}
-		for _, c := range candidates {
-			ids = append(ids, num(c["id"]))
-		}
+	}
+	ids, err := a.resolveRunCandidates(r, p, scope)
+	if err != nil {
+		return err
 	}
 	tx, err := a.Pool.Begin(r.Context())
 	if err != nil {
@@ -164,11 +128,65 @@ func (a *App) submitRun(w http.ResponseWriter, r *http.Request, p *Principal) er
 	write(w, 202, Object{"processing_runs": []any{value}})
 	return nil
 }
+func (a *App) resolveRunCandidates(r *http.Request, p *Principal, scope Object) ([]int64, error) {
+	var err error
+	ids := []int64{}
+	if v, ok := scope["candidate_ids"]; ok {
+		ids, err = positiveIDs(v)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		query := url.Values{}
+		if v, ok := scope["candidate_filters"]; ok {
+			filters, ok := v.(map[string]any)
+			if !ok {
+				return nil, bad("candidate_filters 必须是对象")
+			}
+			for k, v := range filters {
+				if vs, ok := v.([]any); ok {
+					query.Set(k, strings.Join(stringValues(vs), ","))
+				} else {
+					query.Set(k, str(v))
+				}
+			}
+		}
+		if v, ok := scope["system_statuses"]; ok {
+			statuses, ok := v.([]any)
+			if !ok || len(statuses) == 0 {
+				return nil, bad("system_statuses 必须是非空数组")
+			}
+			for _, s := range statuses {
+				if _, ok := systemLabels[str(s)]; !ok {
+					return nil, bad("未知系统状态")
+				}
+			}
+			query.Set("system_statuses", strings.Join(stringValues(v), ","))
+		}
+		filterReq := r.Clone(r.Context())
+		u := *r.URL
+		filterReq.URL = &u
+		u.RawQuery = query.Encode()
+		var candidates []Object
+		if len(query) == 0 && p.has("resume.view") {
+			candidates, err = rows(r.Context(), a.Pool, "SELECT json_build_object('id',id) FROM core_candidate ORDER BY id")
+		} else {
+			candidates, err = a.filtered(r.Context(), "candidates", filterReq, p)
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range candidates {
+			ids = append(ids, num(c["id"]))
+		}
+	}
+	return ids, nil
+}
 func (a *App) createRun(ctx context.Context, db DB, step string, scope Object, ids []int64, p *Principal) (Object, error) {
 	scope = clone(scope)
 	delete(scope, "candidate_ids")
 	summary := Object{"candidate_count": len(ids)}
-	for _, key := range []string{"system_statuses", "source"} {
+	for _, key := range []string{"system_statuses", "source", "task_name", "schedule_id"} {
 		if v, ok := scope[key]; ok {
 			summary[key] = v
 		}
@@ -244,8 +262,9 @@ func (a *App) wakeQueue(ctx context.Context) {
 }
 func (a *App) Workers(ctx context.Context) {
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(2)
 	go func() { defer wg.Done(); a.maintenance(ctx) }()
+	go func() { defer wg.Done(); a.scheduler(ctx) }()
 	for i := 0; i < 2; i++ {
 		wg.Add(1)
 		go func() { defer wg.Done(); a.worker(ctx) }()

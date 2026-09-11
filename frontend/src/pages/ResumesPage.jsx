@@ -46,6 +46,7 @@ import {
   fetchFeedbackReasons,
   submitAllocationFeedback,
   exportAllocations,
+  createProcessingSchedule,
 } from '../api/services'
 import ImportButton from '../components/ImportButton'
 import ResumePreview from '../components/ResumePreview'
@@ -57,7 +58,7 @@ import { useProcessRunner } from '../components/useProcessRunner'
 import { useRole } from '../contexts/roleState'
 import { downloadBlobFromResponse } from '../utils/download'
 import ResumeProcessModal from './resumes/ResumeProcessModal'
-import { buildResumeProcessingScope } from './resumes/resumeProcessing'
+import { buildResumeProcessingScope, describeProcessingFilters } from './resumes/resumeProcessing'
 import './ResumesPage.css'
 
 const RESUME_IMPORT_FIELDS = [
@@ -346,6 +347,7 @@ export default function ResumesPage() {
   const [processStatusSelection, setProcessStatusSelection] = useState([])
   const [processCurrentSelected, setProcessCurrentSelected] = useState(false)
   const [processCandidateSnapshot, setProcessCandidateSnapshot] = useState([])
+  const [processFilterSnapshot, setProcessFilterSnapshot] = useState({})
   const [lastQuery, setLastQuery] = useState({})
   const [selectedRowKeys, setSelectedRowKeys] = useState([])
   const [selectedCandidates, setSelectedCandidates] = useState([])
@@ -843,6 +845,7 @@ export default function ResumesPage() {
 
   const handleProcessSelectedStatuses = () => {
     setProcessCandidateSnapshot([...selectedRowKeys])
+    setProcessFilterSnapshot({ ...lastQuery })
     setProcessCurrentSelected(selectedRowKeys.length > 0)
     setProcessStatusSelection([])
     setProcessError('')
@@ -860,7 +863,7 @@ export default function ResumesPage() {
     if (statuses.length) setProcessCurrentSelected(false)
   }
 
-  const handleConfirmProcess = async () => {
+  const handleConfirmProcess = async (schedule) => {
     const statuses = processStatusSelection
     if (!processCurrentSelected && !statuses.length) {
       message.warning('请先勾选当前选中或需要处理的简历状态')
@@ -869,16 +872,24 @@ export default function ResumesPage() {
     setProcessError('')
     setProcessing(true)
     try {
+      if (schedule?.repeat && schedule.repeat !== 'now') {
+        const scope = buildResumeProcessingScope({ processCurrentSelected, processCandidateSnapshot, processStatusSelection: statuses, lastQuery: processFilterSnapshot })
+        await createProcessingSchedule({ ...schedule, name: schedule.name || '定时简历处理', scope })
+        message.success('定时任务已创建，可在任务中心查看或取消')
+        window.dispatchEvent(new Event('srf:processing-schedule-created'))
+        setProcessModalOpen(false)
+        return
+      }
       const scope = buildResumeProcessingScope({
         processCurrentSelected,
         processCandidateSnapshot,
         processStatusSelection: statuses,
-        lastQuery,
+        lastQuery: processFilterSnapshot,
       })
       const r = await run(
         [{ step: 'step2', label: '院校准入 → 固定业务引用 → Agent 筛选' }],
         '正在提交 Agent 简历处理任务',
-        { scope },
+        { scope, ...(schedule?.name ? { name: schedule.name } : {}) },
       )
       if (r.success) {
         message.success('已提交重新处理任务，可继续操作并在任务中心查看进度')
@@ -891,6 +902,10 @@ export default function ResumesPage() {
       } else {
         setProcessError(r.error || '提交处理任务失败，请重试')
       }
+    } catch (error) {
+      setProcessError(['ECONNABORTED', 'ETIMEDOUT'].includes(error.code) || [502, 504].includes(error.response?.status)
+        ? '提交请求超时，任务可能已创建。请先查看任务中心确认，避免重复提交。'
+        : error.response?.data?.detail || '提交处理任务失败，请重试')
     } finally {
       setProcessing(false)
     }
@@ -1432,6 +1447,8 @@ export default function ResumesPage() {
       />
       <ResumeProcessModal
         open={processModalOpen}
+        allowScheduling={hasPermission('resume.view')}
+        filterSummary={describeProcessingFilters(processFilterSnapshot)}
         processing={processing}
         error={processError}
         processCurrentSelected={processCurrentSelected}

@@ -5,7 +5,7 @@ export default function ProcessingTasksPage() {
   return (
     <PageContainer
       title="处理任务"
-      content="查看处理任务进度、业务结果和异常，并可继续筛选对应候选人。"
+      content="统一创建立即或定时处理任务，按状态、来源与时间查询执行记录。"
     >
       <ProcessingTaskCenter />
     </PageContainer>

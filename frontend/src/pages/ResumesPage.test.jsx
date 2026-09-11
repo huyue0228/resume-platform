@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 import ResumesPage from './ResumesPage'
 import {
   exportAllocations,
+  createProcessingSchedule,
   exportCandidates,
   fetchCandidates,
   fetchAgentDecisions,
@@ -241,6 +242,7 @@ vi.mock('../components/SmartDataTable', () => ({
 }))
 
 vi.mock('../api/services', () => ({
+  createProcessingSchedule: vi.fn(),
   deleteCandidate: vi.fn(),
   bulkDeleteCandidates: vi.fn(),
   exportCandidates: vi.fn(),
@@ -304,6 +306,8 @@ describe('ResumesPage detail', () => {
     roleState.isContact = false
     roleState.isSecondaryContact = false
     runProcess.mockReset()
+    createProcessingSchedule.mockReset()
+    createProcessingSchedule.mockResolvedValue({ data: { id: 5 } })
     runProcess.mockResolvedValue({ success: true })
     fetchAgentDecisions.mockReset()
     fetchAgentDecisions.mockResolvedValue({ data: { results: [] } })
@@ -699,6 +703,41 @@ describe('ResumesPage detail', () => {
     expect(screen.getByText('第 2 次尝试')).toBeTruthy()
   })
 
+  it('creates a recurring schedule with a dynamic status scope and explicit Beijing time', async () => {
+    roleState.permissions = new Set(['pipeline.run', 'resume.view'])
+    render(<MemoryRouter><ResumesPage /></MemoryRouter>)
+    await userEvent.click(screen.getByRole('button', { name: /处理简历/ }))
+    await userEvent.click(screen.getByRole('radio', { name: '每天' }))
+    const submit = screen.getByRole('button', { name: '创建定时任务' })
+    expect(submit.disabled).toBe(true)
+    await userEvent.type(screen.getByLabelText('任务名称'), '每天夜间处理')
+    fireEvent.change(screen.getByLabelText('首次触发时间（北京时间 UTC+8）'), { target: { value: '2099-09-12T02:30' } })
+    await userEvent.click(screen.getByRole('radio', { name: '每天' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: '待处理' }))
+    await userEvent.click(submit)
+    await waitFor(() => expect(createProcessingSchedule).toHaveBeenCalledWith({
+      name: '每天夜间处理', run_at: '2099-09-11T18:30:00.000Z', repeat: 'daily', scope: { system_statuses: ['raw'], candidate_filters: {} },
+    }))
+    expect(runProcess).not.toHaveBeenCalled()
+  })
+
+  it('preserves the selected schedule scope and form after submission fails', async () => {
+    roleState.permissions = new Set(['pipeline.run', 'resume.view'])
+    createProcessingSchedule.mockRejectedValue({ response: { data: { detail: '触发时间必须是带时区的未来时间' } } })
+    render(<MemoryRouter><ResumesPage /></MemoryRouter>)
+    await userEvent.click(screen.getByRole('button', { name: '选择两名候选人' }))
+    await userEvent.click(screen.getByRole('button', { name: /处理简历/ }))
+    await userEvent.click(screen.getByRole('radio', { name: '指定时间' }))
+    await userEvent.type(screen.getByLabelText('任务名称'), '固定候选人')
+    fireEvent.change(screen.getByLabelText('首次触发时间（北京时间 UTC+8）'), { target: { value: '2099-09-12T02:30' } })
+    fireEvent.click(screen.getByRole('button', { name: '改选一名候选人' }))
+    await userEvent.click(screen.getByRole('button', { name: '创建定时任务' }))
+    expect(await screen.findByText('触发时间必须是带时区的未来时间')).toBeTruthy()
+    expect(screen.getByLabelText('任务名称').value).toBe('固定候选人')
+    expect(createProcessingSchedule).toHaveBeenCalledWith(expect.objectContaining({ scope: { candidate_ids: [1, 2], force_reprocess: true } }))
+    expect(runProcess).not.toHaveBeenCalled()
+  })
+
   it('always shows the fixed processing choices and disables an empty current selection', async () => {
     roleState.permissions = new Set(['pipeline.run'])
     render(<MemoryRouter><ResumesPage /></MemoryRouter>)
@@ -851,8 +890,8 @@ describe('ResumesPage detail', () => {
     render(<MemoryRouter><ResumesPage /></MemoryRouter>)
 
     await userEvent.click(screen.getByRole('button', { name: /处理简历/ }))
-    expect(screen.getByText(/系统将使用 Agent Kernel/)).not.toBeNull()
-    expect(screen.queryByRole('radio')).toBeNull()
+    expect(screen.getByRole('dialog', { name: '处理简历' })).toBeTruthy()
+    expect(screen.getByRole('radio', { name: '立即执行' }).checked).toBe(true)
     await userEvent.click(screen.getByRole('checkbox', { name: '待处理' }))
     await userEvent.click(screen.getByRole('button', { name: '开始处理' }))
 

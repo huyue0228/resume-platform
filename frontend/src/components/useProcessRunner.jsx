@@ -18,6 +18,7 @@ export function useProcessRunner() {
       const scope = normalizedSteps[0]?.scope || options.scope
       const { data } = await runPipeline({
         step,
+        ...(options.name ? { name: options.name } : {}),
         ...(scope ? { scope } : {}),
       })
       window.dispatchEvent(new Event('srf:processing-run-created'))
