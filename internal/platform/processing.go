@@ -207,7 +207,7 @@ func (a *App) prepareItem(ctx context.Context, run Object, id any, step string) 
 		if reason == "" {
 			reason = "agent_no_recommendation"
 		}
-		message := map[string]string{"job_not_found": "当前志愿未找到对应岗位", "job_pool_empty": "岗位缺少有效一级或二级部门", "job_mapping_ambiguous": "外部岗位对应多个内部职位，请修正岗位配置", "internal_position_name_missing": "岗位缺少内部职位名称", "job_responsibility_missing": "岗位职责未填写，请补齐后重试"}[str(d["status"])]
+		message := map[string]string{"assessment_standard_missing": "当前投递尚未关联评估标准，请在职位池配置中补齐", "job_not_found": "当前志愿未找到对应岗位", "job_pool_empty": "岗位缺少有效一级或二级部门", "job_mapping_ambiguous": "当前投递关联多个评估标准，请修正映射配置", "internal_position_name_missing": "岗位缺少内部职位名称", "job_responsibility_missing": "岗位职责未填写，请补齐后重试"}[str(d["status"])]
 		if message == "" {
 			message = "当前志愿未通过准入与岗位检查"
 		}
@@ -216,6 +216,15 @@ func (a *App) prepareItem(ctx context.Context, run Object, id any, step string) 
 		}
 		if err = a.touchWorkflow(ctx, tx, w, resume); err != nil {
 			return false, err
+		}
+		if contains([]string{"assessment_standard_missing", "job_mapping_ambiguous", "job_responsibility_missing"}, str(d["status"])) {
+			if err = a.closePoolMemberships(ctx, tx, w["id"], nil, "assessment_unavailable"); err != nil {
+				return false, err
+			}
+			if _, err = a.save(ctx, tx, "core_candidateworkflow", w["id"], Object{"block_reason": d["status"], "block_detail": message}); err != nil {
+				return false, err
+			}
+			return outcome("needs_attention", str(d["status"]), message)
 		}
 		if err = a.archiveWorkflow(ctx, tx, w, reason, message); err != nil {
 			return false, err
@@ -471,51 +480,21 @@ func (a *App) processItem(ctx context.Context, run Object, id any) error {
 	return tx.Commit(ctx)
 }
 func (a *App) validateLiveJobs(ctx context.Context, db DB, frozen Object) error {
-	refs := stringValues(obj(frozen["preflight"])["job_refs"])
-	liveJobs, err := rows(ctx, db, "SELECT row_to_json(j) FROM core_job j WHERE is_active ORDER BY id FOR UPDATE")
+	config, err := a.poolPolicy(ctx, db)
 	if err != nil {
 		return err
 	}
-	liveValues := []any{}
-	for _, j := range liveJobs {
-		dep, readErr := a.get(ctx, db, "core_department", j["department_id"])
-		if readErr != nil && j["department_id"] != nil {
-			return readErr
-		}
-		ref := ""
-		if dep != nil {
-			ref = a.ref("department", dep["id"])
-		}
-		liveValues = append(liveValues, Object{"ref": a.ref("job", j["id"]), "entity": j["entity"], "public_name": j["public_name"], "position_name": j["position_name"], "responsibilities": j["responsibilities"], "department_ref": ref, "department_level": dep["level"]})
+	snapshot := clone(obj(frozen["snapshot"]))
+	snapshot["pool_policy"] = config["policy"]
+	current := prepareSnapshot(snapshot)
+	prior := obj(frozen["preflight"])
+	if current["status"] != "ready" || current["standard_code"] != prior["standard_code"] || current["pool_code"] != prior["pool_code"] {
+		return taskError("ai_reference_invalidated", "投递评估标准或关联职位池已变化，请重新分析")
 	}
-	liveSnapshot := clone(obj(frozen["snapshot"]))
-	liveSnapshot["jobs"] = liveValues
-	current := prepareSnapshot(liveSnapshot)
-	liveRefs := stringValues(current["job_refs"])
-	if current["status"] != "ready" || len(liveRefs) != len(refs) {
-		return taskError("ai_reference_invalidated", "合规岗位池已变化，请重新分析")
-	}
-	for _, ref := range liveRefs {
-		if !contains(refs, ref) {
-			return taskError("ai_reference_invalidated", "合规岗位池已变化，请重新分析")
-		}
-	}
-	for _, value := range list(obj(frozen["snapshot"])["jobs"]) {
-		job := obj(value)
-		if !contains(refs, str(job["ref"])) {
-			continue
-		}
-		live, err := one(ctx, db, "SELECT row_to_json(j) FROM core_job j WHERE id=$1 FOR UPDATE", obj(frozen["job_ids"])[str(job["ref"])])
-		if err != nil {
-			return taskError("ai_reference_invalidated", "岗位已失效，请重新分析")
-		}
-		content, err := a.jobContent(ctx, db, live)
-		if err != nil {
-			return err
-		}
-		if fingerprint(content) != str(job["content_hash"]) {
-			return taskError("ai_reference_invalidated", "岗位职责或所属部门已变化，请重新分析")
-		}
+	standard := policyItem(obj(config["policy"]), "standards", str(current["standard_code"]))
+	jobs := list(obj(frozen["snapshot"])["jobs"])
+	if len(jobs) != 1 || standardJob(obj(config["policy"]), standard)["content_hash"] != obj(jobs[0])["content_hash"] {
+		return taskError("ai_reference_invalidated", "投递标准或能力标签定义已变化，请重新分析")
 	}
 	return nil
 }
@@ -572,122 +551,7 @@ func recommendation(result, match, frozen Object) string {
 	return r
 }
 func (a *App) applyAnalysis(ctx context.Context, db DB, run, w, resume, item, frozen, result Object) (string, string, error) {
-	matches := list(result["matches"])
-	if len(matches) == 0 {
-		return "", "", taskError("agent_invalid_output", "分析未覆盖岗位")
-	}
-	selected := obj(matches[0])
-	rec := recommendation(result, selected, frozen)
-	capacities := map[int64]Object{}
-	for _, ref := range stringValues(obj(frozen["preflight"])["job_refs"]) {
-		jobID := obj(frozen["job_ids"])[ref]
-		cap, err := one(ctx, db, "SELECT row_to_json(c) FROM core_processingrunjobcapacity c WHERE run_id=$1 AND job_id=$2 FOR UPDATE", run["id"], jobID)
-		if err != nil {
-			return "", "", err
-		}
-		job, err := a.get(ctx, db, "core_job", jobID)
-		if err != nil {
-			return "", "", err
-		}
-		cap, err = a.save(ctx, db, "core_processingrunjobcapacity", cap["id"], Object{"capacity": num(job["headcount"]) * num(run["job_hc_coefficient_snapshot"])})
-		if err != nil {
-			return "", "", err
-		}
-		capacities[num(jobID)] = cap
-	}
-	if rec != "archive" {
-		for _, value := range matches {
-			match := obj(value)
-			cap := capacities[num(obj(frozen["job_ids"])[str(match["job_ref"])])]
-			if num(cap["used_count"]) < num(cap["capacity"]) {
-				selected = match
-				rec = recommendation(result, selected, frozen)
-				break
-			}
-		}
-	}
-	job, err := a.get(ctx, db, "core_job", obj(frozen["job_ids"])[str(selected["job_ref"])])
-	if err != nil {
-		return "", "", err
-	}
-	profile, err := a.persistProfile(ctx, db, resume, result)
-	if err != nil {
-		return "", "", err
-	}
-	risks := []any{}
-	seen := map[string]bool{}
-	for _, value := range append(list(selected["risks"]), list(obj(result["profile"])["risks"])...) {
-		if !seen[str(value)] {
-			risks = append(risks, value)
-			seen[str(value)] = true
-		}
-	}
-	evidence := []any{}
-	for _, v := range list(selected["evidence"]) {
-		evidence = append(evidence, obj(v)["quote"])
-	}
-	values := a.auditValues(run)
-	pin := obj(result["pin"])
-	values["kernel_pin_id"] = pin["pin_id"]
-	values["kernel_build"] = pin["kernel_build"]
-	values["workflow_id"] = w["id"]
-	values["resume_id"] = resume["id"]
-	values["profile_id"] = profile["id"]
-	values["processing_run_id"] = run["id"]
-	values["recommendation"] = rec
-	values["evaluated_job_id"] = job["id"]
-	values["recommended_job_id"] = job["id"]
-	values["recommended_department_id"] = job["department_id"]
-	values["matched_job_category"] = job["category"]
-	values["confidence_score"] = selected["score"]
-	values["score_breakdown"] = selected["dimensions"]
-	values["summary"] = selected["reason"]
-	values["reason"] = selected["reason"]
-	values["evidence"] = evidence
-	values["risks"] = risks
-	values["risk_flags"] = risks
-	values["kernel_result"] = result
-	values["safe_trace"] = result["safe_trace"]
-	decision, err := a.save(ctx, db, "core_agentdispatchdecision", nil, values)
-	if err != nil {
-		return "", "", err
-	}
-	if _, err = a.save(ctx, db, "core_resume", resume["id"], Object{"job_id": job["id"], "job_category": job["category"], "category_mode": "ai", "category_reason": selected["reason"]}); err != nil {
-		return "", "", err
-	}
-	var capacityID any
-	if rec != "archive" && frozen["lane"] != "review_only" {
-		cap := capacities[num(job["id"])]
-		if num(cap["used_count"]) >= num(cap["capacity"]) {
-			message := "当前任务岗位 HC 容量已用尽，保留当前志愿等待重新分配"
-			_, err = a.save(ctx, db, "core_candidateworkflow", w["id"], Object{"block_reason": "job_hc_exhausted", "block_detail": message})
-			return "job_hc_exhausted", message, err
-		}
-		if _, err = a.save(ctx, db, "core_processingrunjobcapacity", cap["id"], Object{"used_count": num(cap["used_count"]) + 1}); err != nil {
-			return "", "", err
-		}
-		capacityID = cap["id"]
-	}
-	if rec == "archive" {
-		err = a.archiveWorkflow(ctx, db, w, "agent_no_recommendation", "AI 建议归档或置信度低于人工复核阈值")
-		return "ai_archived", str(selected["reason"]), err
-	}
-	target, err := a.get(ctx, db, "core_department", job["department_id"])
-	if err != nil {
-		return "", "", err
-	}
-	attemptValues := Object{"source": "ai", "match_mode": "ai", "matched_rule_id": item["matched_rule_id"], "agent_decision_id": decision["id"], "confidence_score": selected["score"], "match_reason": selected["reason"], "capacity_reservation_id": capacityID, "review_required": rec == "review"}
-	if rec == "review" {
-		attemptValues["status"] = "pending_review"
-	}
-	if _, err = a.createAttempt(ctx, db, w, resume, target, attemptValues, nil); err != nil {
-		return "", "", err
-	}
-	code := "ai_dispatched"
-	if rec == "review" {
-		code = "ai_review"
-	}
-	return code, str(selected["reason"]), nil
+	return a.savePoolAssessment(ctx, db, run, w, resume, item, frozen, result)
 }
 func (a *App) persistProfile(ctx context.Context, db DB, resume, result Object) (Object, error) {
 	existing, _ := one(ctx, db, "SELECT row_to_json(p) FROM core_resumeprofile p WHERE resume_id=$1", resume["id"])

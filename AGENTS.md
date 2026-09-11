@@ -2,8 +2,8 @@
 
 - Go 1.25 业务平台，React JSX 前端嵌入 Go；PostgreSQL、Redis 和独立 Go Agent Kernel，共四个常驻容器。Python 仅用于构建/验收工具。
 - 主入口 `cmd/resume-platform/main.go`；API、RBAC、导入、业务工作流和任务编排在 `internal/platform`，Poppler 提取在 `internal/pdftext`。
-- 提交只冻结范围并返回 202；后台按有效志愿、准入和岗位池处理，Kernel 只收到单候选人完整文本与合规岗位。保留既有 API、评分、HC、反馈和证据约束。
-- 公开协议 `resume-analysis/v2`，结果 `resume-job-match/v1`。`internal/contract/bundle` 是 resume-contracts 2.0.0 固定副本，仅由协议仓生成工具更新，禁止手改。
+- 提交只冻结范围并返回 202；后台按有效志愿和准入固定一个投递标准，Kernel 只收到单候选人完整文本、该标准和受控标签字典；平台负责复核入池及按标签/HC 分配。保留既有 API、评分、HC、反馈和证据约束。
+- 公开协议 `resume-analysis/v3`，结果 `resume-application-assessment/v1`。`internal/contract/bundle` 是 resume-contracts 3.0.0 固定副本，仅由协议仓生成工具更新，禁止手改。
 - `internal/compat` 中数据库字段、表和约束用于升级兼容；不能因为含历史命名就删掉。`DJANGO_SECRET_KEY` 等环境变量为兼容保留。
 - `make check` 验证 Go race/vet/build、React 与发布工具。集成测试使用独立 `TEST_DATABASE_URL`、`TEST_REDIS_URL`，不得连接生产库。`make build` 构建并嵌入 React。
 - 生产登录仅 W3；账号保持不可用密码，禁止恢复密码登录或 admin 页面。开发 Token 仅在 DEBUG 且 W3 未就绪时签发。

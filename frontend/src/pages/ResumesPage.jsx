@@ -133,6 +133,7 @@ function renderEntityTag(entity) {
 }
 
 const SYSTEM_STATUS_OPTIONS = {
+  pending_allocation: { text: '入池待分配', color: 'processing' },
   raw: {
     text: '待处理',
     color: 'default',
@@ -438,7 +439,11 @@ export default function ResumesPage() {
     )
   }, [detailRecord])
 
+  const decisionsRequest = useRef(0)
   const loadAgentDecisions = useCallback(async (workflowId) => {
+    const requestId = ++decisionsRequest.current
+    setAgentDecisions([])
+    setAgentDecisionDetail(null)
     if (!workflowId || !canViewAgentDecisions) {
       setAgentDecisions([])
       return
@@ -446,22 +451,26 @@ export default function ResumesPage() {
     setAgentDecisionsLoading(true)
     try {
       const { data } = await fetchAgentDecisions({ workflow: workflowId, page_size: 100 })
-      setAgentDecisions(data?.results || [])
+      if (requestId === decisionsRequest.current) setAgentDecisions(data?.results || [])
     } catch {
-      setAgentDecisions([])
+      if (requestId === decisionsRequest.current) setAgentDecisions([])
     } finally {
-      setAgentDecisionsLoading(false)
+      if (requestId === decisionsRequest.current) setAgentDecisionsLoading(false)
     }
   }, [canViewAgentDecisions])
 
   useEffect(() => {
     const workflowId = detailRecord?.workflow_id
     if (!workflowId) {
+      ++decisionsRequest.current
+      setAgentDecisionsLoading(false)
       setAgentDecisions([])
       setAgentDecisionDetail(null)
       return
     }
     loadAgentDecisions(workflowId)
+    const generation = decisionsRequest
+    return () => { ++generation.current }
   }, [detailRecord?.workflow_id, loadAgentDecisions])
 
   const handleRetryAgentDecision = async (decision) => {

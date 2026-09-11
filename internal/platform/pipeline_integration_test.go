@@ -104,7 +104,11 @@ type pipelineFixture struct {
 }
 
 func newPipelineFixture(t *testing.T) *pipelineFixture {
-	a := integrationApp(t)
+	return newPipelineFixtureWithApp(t, integrationApp(t))
+}
+
+func newPipelineFixtureWithApp(t *testing.T, a *App) *pipelineFixture {
+	t.Helper()
 	ctx := context.Background()
 	p := adminPrincipal(t, a)
 	f := &pipelineFixture{a: a, p: p}
@@ -180,6 +184,11 @@ func newPipelineFixture(t *testing.T) *pipelineFixture {
 			matches = append(matches, match)
 		}
 		result["matches"] = matches
+		tags := []any{}
+		for _, v := range list(obj(request["scope"])["tag_catalog"]) {
+			tags = append(tags, Object{"code": obj(v)["code"], "status": "supported", "confidence": .95, "evidence": obj(matches[0])["evidence"]})
+		}
+		obj(result["profile"])["tags"] = tags
 		obj(result["manifest"])["covered_jobs"] = refs
 		if f.resultHook != nil {
 			f.resultHook(result)
@@ -202,6 +211,7 @@ func newPipelineFixture(t *testing.T) *pipelineFixture {
 	primary := mustSave(t, a, "core_department", Object{"name": "测试一级" + suffix, "level": 1})
 	department := mustSave(t, a, "core_department", Object{"name": "测试二级" + suffix, "level": 2, "parent_id": primary["id"]})
 	job := mustSave(t, a, "core_job", Object{"public_name": "测试岗位" + suffix, "position_name": "开发" + suffix, "entity": "YLS", "responsibilities": "负责后端服务开发、测试与交付", "headcount": 1, "department_id": department["id"]})
+	installTestPoolPolicy(t, a, job)
 	candidate := mustSave(t, a, "core_candidate", Object{"name": "候选人" + suffix, "phone": "13800138000", "identity_hash": identity(suffix, "13800138000"), "household_province": "上海", "highest_education": "bachelor"})
 	filename := "test-" + suffix + ".pdf"
 	if err := os.MkdirAll(filepath.Join(a.Config.MediaRoot, "resumes"), 0700); err != nil {
@@ -244,7 +254,7 @@ func TestGoPipelineTextToSavedDecision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decision["recommendation"] != "review" || num(decision["recommended_job_id"]) != num(job["id"]) {
+	if decision["recommendation"] != "review" || decision["recommended_job_id"] != nil {
 		t.Fatal("review-only decision or job changed")
 	}
 	profile, err := one(ctx, a.Pool, "SELECT row_to_json(p) FROM core_resumeprofile p WHERE resume_id=$1", resume["id"])
@@ -254,17 +264,26 @@ func TestGoPipelineTextToSavedDecision(t *testing.T) {
 	if profile["raw_text"] != strings.Join(pages, "\f") {
 		t.Fatal("saved profile lost full text")
 	}
+	member := poolMemberForTest(t, f)
+	var attempts, reservations int
+	a.Pool.QueryRow(ctx, "SELECT count(*) FROM core_assignmentattempt WHERE workflow_id=$1", member["workflow_id"]).Scan(&attempts)
+	a.Pool.QueryRow(ctx, "SELECT COALESCE(sum(used_count),0) FROM core_processingrunjobcapacity WHERE run_id=$1", run["id"]).Scan(&reservations)
+	if member["status"] != "pending_review" || attempts != 0 || reservations != 0 {
+		t.Fatalf("review reserved allocation: member=%v attempts=%d HC=%d", member["status"], attempts, reservations)
+	}
+	confirmed := responseObject(t, apiRequest(t, a, p, "POST", "/api/position-pools/members/"+str(member["id"])+"/review/", Object{"revision": member["revision"], "decision": "approve", "note": "确认原文符合投递标准"}), 200)
+	if confirmed["code"] != "pool_allocated" {
+		t.Fatalf("review confirmation failed: %v", confirmed)
+	}
 	at, err := one(ctx, a.Pool, "SELECT row_to_json(a) FROM core_assignmentattempt a WHERE agent_decision_id=$1", decision["id"])
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || at["status"] != "pending_dispatch" || at["capacity_reservation_id"] == nil {
+		t.Fatalf("missing allocation: %v %v", at, err)
 	}
-	if at["capacity_reservation_id"] != nil || at["status"] != "pending_review" {
-		t.Fatal("review-only consumed HC or bypassed review")
+	decision, _ = a.get(ctx, a.Pool, "core_agentdispatchdecision", decision["id"])
+	if num(decision["recommended_job_id"]) != num(job["id"]) {
+		t.Fatal("allocation targeted wrong demand")
 	}
-	confirmed := responseObject(t, apiRequest(t, a, p, "POST", "/api/workflow-attempts/"+str(at["id"])+"/confirm-review/", Object{}), 200)
-	if confirmed["status"] != "pending_dispatch" {
-		t.Fatal("review confirmation failed")
-	}
+
 	responseObject(t, apiRequest(t, a, p, "GET", "/api/pipeline/runs/"+str(run["id"])+"/materials/", nil), 200)
 	if analyses.Load() != 1 || extractions.Load() != 1 {
 		t.Fatalf("unexpected work counts: analyze=%d extract=%d", analyses.Load(), extractions.Load())

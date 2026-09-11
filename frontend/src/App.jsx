@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage'
 
 const BasicLayout = lazy(() => import('./layouts/BasicLayout'))
 const ResumesPage = lazy(() => import('./pages/ResumesPage'))
+const PositionPoolsPage = lazy(() => import('./pages/PositionPoolsPage'))
 const JobsPage = lazy(() => import('./pages/JobsPage'))
 const SchoolsPage = lazy(() => import('./pages/SchoolsPage'))
 const DepartmentsPage = lazy(() => import('./pages/DepartmentsPage'))
@@ -64,6 +65,7 @@ function AppRoutes() {
           path="/resumes"
           element={guarded('/resumes', <ResumesPage />)}
         />
+        <Route path="/position-pools" element={guarded('/position-pools', <PositionPoolsPage />)} />
         <Route path="/jobs" element={guarded('/jobs', <JobsPage />)} />
         <Route path="/schools" element={guarded('/schools', <SchoolsPage />)} />
         <Route

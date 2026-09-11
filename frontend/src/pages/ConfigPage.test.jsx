@@ -17,6 +17,7 @@ describe('ConfigPage', () => {
       '院校准入规则',
       '专业大类词表',
       '分配参数',
+      '职位池与标签',
     ])
     expect(tabs[0].getAttribute('aria-selected')).toBe('true')
     expect(screen.getByText('院校标签内容')).toBeTruthy()

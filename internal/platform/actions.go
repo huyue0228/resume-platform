@@ -179,7 +179,11 @@ func (a *App) resourceAction(w http.ResponseWriter, r *http.Request, resource, a
 		if err != nil {
 			return err
 		}
-		if str(decision["error_code"]) == "" && decision["recommendation"] != "archive" && (decision["confidence_score"] == nil || floatValue(decision["confidence_score"]) >= floatValue(a.configValue(ctx, "ai_dispatch_threshold", .75))) {
+		member, memberErr := one(ctx, a.Pool, "SELECT row_to_json(m) FROM platform_pool_memberships m JOIN core_candidateworkflow w ON w.id=m.workflow_id WHERE m.decision_id=$1 AND m.status='needs_reanalysis' AND w.current_resume_id=m.resume_id ORDER BY m.id DESC LIMIT 1", id)
+		if memberErr != nil && !noPoolRecord(memberErr) {
+			return memberErr
+		}
+		if member == nil && str(decision["error_code"]) == "" && decision["recommendation"] != "archive" && (decision["confidence_score"] == nil || floatValue(decision["confidence_score"]) >= floatValue(a.configValue(ctx, "ai_dispatch_threshold", .75))) {
 			return bad("仅失败、建议归档或低于自动下发阈值的 AI 决策可以重试")
 		}
 		workflow, err := a.get(ctx, a.Pool, "core_candidateworkflow", decision["workflow_id"])

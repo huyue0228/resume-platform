@@ -2,10 +2,10 @@
   "instruction_version": "fixture-instructions/v1",
   "kernel_build": "dev",
   "mock": false,
-  "protocol_version": "resume-analysis/v2",
-  "result_schema_version": "resume-job-match/v1",
+  "protocol_version": "resume-analysis/v3",
+  "result_schema_version": "resume-application-assessment/v1",
   "task_kinds": [
-    "candidate.resume_job_match"
+    "candidate.application_assessment"
   ],
   "toolset_version": "fixture-tools/v1"
 }

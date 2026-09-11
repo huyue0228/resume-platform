@@ -73,8 +73,9 @@ func TestPrivateConnectionEncryption(t *testing.T) {
 }
 func TestAdmissionNeverSkipsVolunteer(t *testing.T) {
 	s := Object{"candidate": Object{"household_province": "上海", "first_degree_tag_ref": "first", "highest_degree_tag_ref": "highest", "highest_education": "bachelor"}, "workflow": Object{}, "volunteers": []any{Object{"ref": "north", "entity": "GW", "position_name": "有岗位", "apply_date": "2026-09-01"}, Object{"ref": "south", "entity": "YLS", "position_name": "未配置岗位", "apply_date": "2026-09-02"}}, "admission_rules": []any{Object{"ref": "rule", "priority": 1, "first_tag_refs": []any{"first"}, "highest_tag_refs": []any{"highest"}, "educations": []any{"bachelor"}}}, "jobs": []any{Object{"ref": "job", "entity": "GW", "public_name": "有岗位", "position_name": "开发", "department_ref": "dep", "department_level": 2, "responsibilities": "服务开发"}}}
+	s["pool_policy"] = Object{"pools": []any{Object{"code": "pool", "entity": "GW"}}, "standards": []any{Object{"code": "standard", "pool_code": "pool", "entity": "GW", "application_names": []any{"有岗位"}, "responsibilities": "服务开发"}}}
 	d := prepareSnapshot(s)
-	if d["current_volunteer_ref"] != "south" || d["status"] != "job_not_found" {
+	if d["current_volunteer_ref"] != "south" || d["status"] != "assessment_standard_missing" {
 		t.Fatalf("volunteer boundary changed: %v", d)
 	}
 	obj(list(s["volunteers"])[1])["rejected"] = true

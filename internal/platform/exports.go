@@ -594,7 +594,7 @@ func (a *App) resultReport(w http.ResponseWriter, r *http.Request, p *Principal)
 	if err != nil {
 		return err
 	}
-	statuses := []string{"raw", "archived", "pending_reallocation", "pending_review", "pending_dispatch", "pending_screening", "screening_passed", "screening_rejected"}
+	statuses := []string{"raw", "archived", "pending_reallocation", "pending_allocation", "pending_review", "pending_dispatch", "pending_screening", "screening_passed", "screening_rejected"}
 	groups := map[string]Object{}
 	rejections := map[string]int{}
 	total := Object{"imported": 0, "allocated": 0}

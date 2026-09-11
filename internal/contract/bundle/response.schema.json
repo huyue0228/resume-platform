@@ -23,6 +23,14 @@
           "maxLength": 1000000,
           "title": "Source Text",
           "type": "string"
+        },
+        "tags": {
+          "items": {
+            "$ref": "#/$defs/TagAssertionV1"
+          },
+          "maxItems": 200,
+          "title": "Tags",
+          "type": "array"
         }
       },
       "required": [
@@ -256,6 +264,46 @@
       "title": "ScoreBreakdown",
       "type": "object"
     },
+    "TagAssertionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Code",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceV1"
+          },
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "supported",
+            "needs_verification"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "confidence",
+        "status",
+        "evidence"
+      ],
+      "title": "TagAssertionV1",
+      "type": "object"
+    },
     "TaskManifestV1": {
       "additionalProperties": false,
       "properties": {
@@ -358,14 +406,14 @@
           "type": "string"
         },
         "protocol_version": {
-          "const": "resume-analysis/v2",
-          "default": "resume-analysis/v2",
+          "const": "resume-analysis/v3",
+          "default": "resume-analysis/v3",
           "title": "Protocol Version",
           "type": "string"
         },
         "result_schema_version": {
-          "const": "resume-job-match/v1",
-          "default": "resume-job-match/v1",
+          "const": "resume-application-assessment/v1",
+          "default": "resume-application-assessment/v1",
           "title": "Result Schema Version",
           "type": "string"
         },
@@ -518,6 +566,7 @@
       "items": {
         "$ref": "#/$defs/JobMatchV1"
       },
+      "maxItems": 1,
       "title": "Matches",
       "type": "array"
     },
@@ -536,8 +585,8 @@
       "default": null
     },
     "protocol_version": {
-      "const": "resume-analysis/v2",
-      "default": "resume-analysis/v2",
+      "const": "resume-analysis/v3",
+      "default": "resume-analysis/v3",
       "title": "Protocol Version",
       "type": "string"
     },
@@ -563,6 +612,6 @@
     "manifest",
     "safe_trace"
   ],
-  "title": "AnalysisResponseV2",
+  "title": "AnalysisResponseV3",
   "type": "object"
 }

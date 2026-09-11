@@ -110,6 +110,12 @@ func (a *App) Handler(static http.Handler) http.Handler {
 	})
 }
 func (a *App) api(w http.ResponseWriter, r *http.Request, path string, p *Principal) error {
+	if path == "position-pools/config" {
+		return a.poolConfigAPI(w, r, p)
+	}
+	if strings.HasPrefix(path, "position-pools/members") {
+		return a.poolMembersAPI(w, r, path, p)
+	}
 	switch path {
 	case "":
 		if r.Method != "GET" && r.Method != "HEAD" {
@@ -462,6 +468,10 @@ func (a *App) filtered(ctx context.Context, resource string, r *http.Request, p 
 					matched = false
 				}
 			} else if _, ok := actual.(bool); ok {
+				if str(actual) != q {
+					matched = false
+				}
+			} else if f, ok := fieldFor(a, a.Spec.Resources[resource].Table, field); ok && f.Relation != "" {
 				if str(actual) != q {
 					matched = false
 				}

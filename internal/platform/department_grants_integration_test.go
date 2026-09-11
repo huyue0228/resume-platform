@@ -208,11 +208,13 @@ func TestSecondaryHRCanReviewEvidenceForOwnDepartment(t *testing.T) {
 	createGrant(t, f.a, f.p, employee, dep, "secondary_hr", true)
 	hr := grantPrincipal(t, f.a, employee)
 	f.executeJob(t, f.submit(t), ctx)
+	responseObject(t, apiRequest(t, f.a, hr, "GET", "/api/candidates/"+str(f.candidate["id"])+"/", nil), 404)
+	responseObject(t, apiRequest(t, f.a, hr, "GET", "/api/position-pools/members/", nil), 403)
+	approvePoolForTest(t, f)
 	view := responseObject(t, apiRequest(t, f.a, hr, "GET", "/api/candidates/"+str(f.candidate["id"])+"/", nil), 200)
 	at := obj(view["current_attempt"])
-	if at["status"] != "pending_review" || !truth(at["can_dispatch"]) || obj(at["agent_decision_summary"])["id"] == nil {
+	if at["status"] != "pending_dispatch" || !truth(at["can_dispatch"]) || obj(at["agent_decision_summary"])["id"] == nil {
 		t.Fatal("department HR cannot inspect evidence before review")
 	}
-	responseObject(t, apiRequest(t, f.a, hr, "POST", "/api/workflow-attempts/"+str(at["id"])+"/confirm-review/", Object{}), 200)
 	responseObject(t, apiRequest(t, f.a, hr, "POST", "/api/workflow-attempts/"+str(at["id"])+"/dispatch/", Object{}), 200)
 }

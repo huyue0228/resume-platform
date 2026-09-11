@@ -256,6 +256,15 @@ func (a *App) serialize(ctx context.Context, resource string, row Object, p *Pri
 		}
 
 	case "agent-decisions":
+		member, err := one(ctx, a.Pool, "SELECT row_to_json(m) FROM platform_pool_memberships m WHERE decision_id=$1 ORDER BY id DESC LIMIT 1", row["id"])
+		if err != nil && !noPoolRecord(err) {
+			return nil, err
+		}
+		if member != nil {
+			result["pool_membership"] = member
+			delete(member, "file_checksum")
+		}
+
 		for _, key := range []string{"evaluated_job", "recommended_job"} {
 			job, _ := a.get(ctx, a.Pool, "core_job", row[key+"_id"])
 			name := str(job["public_name"])
@@ -337,7 +346,7 @@ func (a *App) candidateTags(ctx context.Context, c Object) ([]Object, error) {
 	return tags, nil
 }
 
-var systemLabels = map[string]string{"raw": "待处理", "archived": "已归档", "pending_reallocation": "待重新分配", "pending_review": "待复核", "pending_dispatch": "待下发", "pending_screening": "待业务反馈", "screening_passed": "通过", "screening_rejected": "不通过"}
+var systemLabels = map[string]string{"raw": "待处理", "pending_allocation": "入池待分配", "archived": "已归档", "pending_reallocation": "待重新分配", "pending_review": "待复核", "pending_dispatch": "待下发", "pending_screening": "待业务反馈", "screening_passed": "通过", "screening_rejected": "不通过"}
 
 func (a *App) candidateJSON(ctx context.Context, c, result Object, p *Principal, detail bool) (Object, error) {
 	workflow, _ := one(ctx, a.Pool, "SELECT row_to_json(w) FROM core_candidateworkflow w WHERE candidate_id=$1", c["id"])
@@ -426,6 +435,23 @@ func (a *App) candidateJSON(ctx context.Context, c, result Object, p *Principal,
 			status = "pending_reallocation"
 		} else if workflow["started_at"] != nil || str(workflow["archive_reason"]) != "" || len(attempts) > 0 {
 			status = "archived"
+		}
+	}
+	if p.has("resume.view") {
+		member, err := one(ctx, a.Pool, "SELECT row_to_json(m) FROM platform_pool_memberships m WHERE candidate_id=$1 AND resume_id=$2 AND status IN ('pending_review','pending_allocation','allocated','needs_reanalysis') ORDER BY id DESC LIMIT 1", c["id"], current["id"])
+		if err != nil && !noPoolRecord(err) {
+			return nil, err
+		}
+		if member != nil {
+			result["pool_membership"] = member
+			delete(member, "file_checksum")
+			if attempt == nil {
+				if member["status"] == "pending_review" {
+					status = "pending_review"
+				} else if member["status"] == "pending_allocation" || member["status"] == "needs_reanalysis" {
+					status = "pending_allocation"
+				}
+			}
 		}
 	}
 	result["system_status"] = status

@@ -20,20 +20,20 @@
       "type": "boolean"
     },
     "protocol_version": {
-      "const": "resume-analysis/v2",
-      "default": "resume-analysis/v2",
+      "const": "resume-analysis/v3",
+      "default": "resume-analysis/v3",
       "title": "Protocol Version",
       "type": "string"
     },
     "result_schema_version": {
-      "const": "resume-job-match/v1",
-      "default": "resume-job-match/v1",
+      "const": "resume-application-assessment/v1",
+      "default": "resume-application-assessment/v1",
       "title": "Result Schema Version",
       "type": "string"
     },
     "task_kinds": {
       "items": {
-        "const": "candidate.resume_job_match",
+        "const": "candidate.application_assessment",
         "type": "string"
       },
       "minItems": 1,

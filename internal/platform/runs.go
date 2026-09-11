@@ -444,30 +444,8 @@ func (a *App) executeRun(ctx context.Context, id any) error {
 				return err
 			}
 		}
-		items, err := rows(ctx, a.Pool, "SELECT row_to_json(i) FROM core_processingrunscopeitem i WHERE run_id=$1 ORDER BY candidate_id", id)
-		if err != nil {
+		if err = a.prepareRunSnapshots(ctx, run, pin); err != nil {
 			return err
-		}
-		for _, item := range items {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if terminalItem(str(item["status"])) || len(obj(item["kernel_snapshot"])) > 0 {
-				continue
-			}
-			candidate, err := a.get(ctx, a.Pool, "core_candidate", item["candidate_id"])
-			if err != nil {
-				return err
-			}
-			frozen, err := a.freezeCase(ctx, run, candidate, pin)
-			if err != nil {
-				return err
-			}
-			d := obj(frozen["preflight"])
-			values := Object{"kernel_snapshot": frozen, "workflow_revision_at_prepare": obj(obj(frozen["snapshot"])["workflow"])["revision"], "prepared_resume_id": obj(frozen["volunteer_ids"])[str(d["current_volunteer_ref"])], "matched_rule_id": obj(frozen["rule_ids"])[str(d["admission_rule_ref"])]}
-			if _, err = a.save(ctx, a.Pool, "core_processingrunscopeitem", item["id"], values); err != nil {
-				return err
-			}
 		}
 		params["snapshot_preparation"] = "ready"
 		if _, err = a.save(ctx, a.Pool, "core_processingrun", id, Object{"params": params}); err != nil {

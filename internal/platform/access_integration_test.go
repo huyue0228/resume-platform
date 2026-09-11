@@ -14,6 +14,7 @@ func TestBulkAndDrilldownPreserveSelectedScope(t *testing.T) {
 	ctx := context.Background()
 	run := f.submit(t)
 	f.executeJob(t, run, ctx)
+	approvePoolForTest(t, f)
 	for _, filters := range []Object{{"unknown": "value"}, {"system_status": ""}, {"current_entity_in": []any{Object{"x": 1}}}} {
 		responseObject(t, apiRequest(t, f.a, f.p, "POST", "/api/candidates/bulk-dispatch/", Object{"candidate_filters": filters}), 400)
 	}
@@ -36,6 +37,7 @@ func TestDepartmentAccessDoesNotLeakOtherCandidatesOrDecisions(t *testing.T) {
 	f := newPipelineFixture(t)
 	ctx := context.Background()
 	f.executeJob(t, f.submit(t), ctx)
+	approvePoolForTest(t, f)
 	at, err := one(ctx, f.a.Pool, "SELECT row_to_json(a) FROM core_assignmentattempt a WHERE resume_id=$1 ORDER BY id DESC LIMIT 1", f.resume["id"])
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +53,6 @@ func TestDepartmentAccessDoesNotLeakOtherCandidatesOrDecisions(t *testing.T) {
 		}
 	}
 	responseObject(t, apiRequest(t, f.a, principal, "GET", "/api/candidates/"+str(f.candidate["id"])+"/", nil), 404)
-	responseObject(t, apiRequest(t, f.a, f.p, "POST", "/api/workflow-attempts/"+str(at["id"])+"/confirm-review/", Object{}), 200)
 	responseObject(t, apiRequest(t, f.a, f.p, "POST", "/api/workflow-attempts/"+str(at["id"])+"/dispatch/", Object{}), 200)
 	result := responseObject(t, apiRequest(t, f.a, principal, "GET", "/api/candidates/"+str(f.candidate["id"])+"/", nil), 200)
 	if result["phone"] != "" {
@@ -63,6 +64,7 @@ func TestDepartmentAccessDoesNotLeakOtherCandidatesOrDecisions(t *testing.T) {
 	}
 	responseObject(t, apiRequest(t, f.a, principal, "GET", "/api/candidates/?analytics_dimension=candidate", nil), 400)
 	responseObject(t, apiRequest(t, f.a, principal, "GET", "/api/agent-decisions/", nil), 403)
+	responseObject(t, apiRequest(t, f.a, principal, "GET", "/api/position-pools/members/", nil), 403)
 	other := mustSave(t, f.a, "core_candidate", Object{"name": token(8), "phone": "13811111111", "identity_hash": token(32)})
 	responseObject(t, apiRequest(t, f.a, principal, "GET", "/api/candidates/"+str(other["id"])+"/", nil), 404)
 	// A contact of another department cannot submit feedback even with the same role.

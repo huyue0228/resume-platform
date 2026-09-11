@@ -19,7 +19,7 @@ func TestBundleChecksumsAndExamples(t *testing.T) {
 	if err = json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if manifest.Version != "2.0.0" {
+	if manifest.Version != "3.0.0" {
 		t.Fatal("unexpected protocol bundle version")
 	}
 	for name, want := range manifest.Files {
@@ -51,7 +51,7 @@ func TestOldPDFProtocolRejected(t *testing.T) {
 	if Validate("request", changed) == nil {
 		t.Fatal("v1 accepted as v2")
 	}
-	request["protocol_version"] = "resume-analysis/v2"
+	request["protocol_version"] = "resume-analysis/v3"
 	scope := request["scope"].(map[string]any)
 	delete(scope, "resume_text")
 	scope["artifact"] = map[string]any{"path": "file.pdf"}

@@ -82,13 +82,9 @@ func TestImportJobsWithoutSecondaryDepartment(t *testing.T) {
 
 func TestJobPoolAcceptsPrimaryAndSecondaryDepartments(t *testing.T) {
 	for _, level := range []int{0, 1, 2, 3} {
-		s := Object{"volunteers": []any{Object{"ref": "volunteer", "entity": "YLS", "position_name": "岗位"}}, "jobs": []any{Object{"ref": "job", "entity": "YLS", "public_name": "岗位", "position_name": "开发", "department_ref": "department", "department_level": level, "responsibilities": "开发服务"}}}
-		want := "job_pool_empty"
-		if level == 1 || level == 2 {
-			want = "ready"
-		}
-		if got := prepareSnapshot(s)["status"]; got != want {
-			t.Fatalf("department level=%d: got=%v want=%s", level, got, want)
+		want := level == 1 || level == 2
+		if got := isJobDepartment(level); got != want {
+			t.Fatalf("department level=%d: got=%v want=%v", level, got, want)
 		}
 	}
 }

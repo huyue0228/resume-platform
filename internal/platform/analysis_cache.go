@@ -20,7 +20,7 @@ func analysisContentKey(frozen, pin Object, text pdftext.Text) string {
 		}
 	}
 	sort.Strings(jobs)
-	return fingerprint(Object{"pin": pin, "candidate": brief(obj(snapshot["candidate"]), "highest_major", "highest_education"), "volunteer": obj(frozen["preflight"])["current_volunteer_ref"], "file_sha256": text.FileSHA256, "text_sha256": text.TextSHA256, "extractor_version": text.ExtractorVersion, "jobs": jobs, "taxonomy": snapshot["taxonomy"]})
+	return fingerprint(Object{"pin": pin, "candidate": brief(obj(snapshot["candidate"]), "highest_major", "highest_education"), "volunteer": obj(frozen["preflight"])["current_volunteer_ref"], "file_sha256": text.FileSHA256, "text_sha256": text.TextSHA256, "extractor_version": text.ExtractorVersion, "jobs": jobs, "taxonomy": snapshot["taxonomy"], "tag_catalog": snapshot["tag_catalog"]})
 }
 
 // 容量和流程修订变化可复用已验证分析；正文、岗位要求、模型或未冻结的外部知识变化必须重新分析。

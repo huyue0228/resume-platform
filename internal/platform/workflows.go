@@ -8,6 +8,9 @@ import (
 )
 
 func (a *App) touchWorkflow(ctx context.Context, db DB, w, resume Object) error {
+	if err := a.closePoolMemberships(ctx, db, w["id"], resume["id"], "volunteer_changed"); err != nil {
+		return err
+	}
 	values := Object{"status": "in_progress", "current_resume_id": resume["id"], "current_rank": resume["volunteer_rank"], "dispatch_strategy": "ai", "archive_reason": "", "archive_detail": "", "block_reason": "", "block_detail": "", "completed_at": nil}
 	if w["started_at"] == nil {
 		values["started_at"] = time.Now().UTC()
@@ -16,6 +19,9 @@ func (a *App) touchWorkflow(ctx context.Context, db DB, w, resume Object) error 
 	return err
 }
 func (a *App) archiveWorkflow(ctx context.Context, db DB, w Object, reason, detail string) error {
+	if err := a.closePoolMemberships(ctx, db, w["id"], nil, reason); err != nil {
+		return err
+	}
 	_, err := a.save(ctx, db, "core_candidateworkflow", w["id"], Object{"status": "archived", "archive_reason": reason, "archive_detail": detail, "block_reason": "", "block_detail": "", "completed_at": time.Now().UTC()})
 	return err
 }
@@ -163,6 +169,9 @@ func (a *App) manualAssign(ctx context.Context, resumeID, targetID any, reason s
 		return nil, err
 	}
 	if err = a.cancelOpenAttempts(ctx, tx, w, "manual_replaced", nil); err != nil {
+		return nil, err
+	}
+	if err := a.closePoolMemberships(ctx, tx, w["id"], nil, "manual_replaced"); err != nil {
 		return nil, err
 	}
 	at, err := a.createAttempt(ctx, tx, w, resume, target, Object{"source": "manual", "match_mode": "manual", "match_reason": "HR 手动强制分配", "manual_reason": reason}, p)

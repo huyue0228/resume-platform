@@ -103,6 +103,16 @@ function MatchWorkspace({ matches }) {
   )
 }
 
+function ApplicationAssessment({ result, member }) {
+  const match = result.matches[0]
+  return <section className="candidate-analysis-match" aria-label="当前投递评估">
+    <header className="candidate-analysis-match-heading"><div><span className="candidate-analysis-section-label">当前投递评估</span><h3>{match.job_title || member?.assessment?.standard?.name || '投递标准'}</h3><p>通过后进入：{member?.assessment?.pool?.name || '对应内部职位池'}</p></div><div className="candidate-analysis-score"><strong>{scoreText(match.score)}</strong><span>/ 100 匹配分</span></div></header>
+    <p className="candidate-analysis-reason">{match.reason}</p><Dimensions values={match.dimensions} /><h4>判断依据</h4><Evidence items={match.evidence} /><Risks items={match.risks} />
+    <h4>能力标签</h4>{(result.profile?.tags || []).map((tag) => <div key={tag.code}><Tag color={tag.status === 'supported' ? 'blue' : 'orange'}>{member?.assessment?.tag_catalog?.find((d) => d.code === tag.code)?.name || tag.code} · {tag.status === 'supported' ? '已确认' : '待核实'}</Tag><Evidence items={tag.evidence} /></div>)}
+    <p className="candidate-analysis-muted">此处保留评估时的标签。人工修订和部门分配记录可在“职位候选人池”查看。</p>
+  </section>
+}
+
 function Profile({ profile }) {
   if (!profile?.claims?.length) return <Empty description="该历史记录没有结构化候选人画像" />
   return (
@@ -178,11 +188,13 @@ export default function CandidateAnalysis({ decision, onRetry, retrying = false 
   const current = loaded || decision
   const result = current.kernel_result || {}
   const hasMatches = Array.isArray(result.matches) && result.matches.length > 0
-  const [outcome, color] = current.error_code ? ['分析未完成', 'error'] : OUTCOMES[current.recommendation] || ['等待处理', 'default']
+  const isApplication = result.protocol_version === 'resume-analysis/v3'
+  const poolOutcomes = { pending_review: ['入池待复核', 'warning'], pending_allocation: ['入池待分配', 'processing'], allocated: ['已分配', 'success'], needs_reanalysis: ['需要重新评估', 'warning'], closed: ['入池资格已关闭', 'default'], rejected: ['复核未通过', 'default'] }
+  const [outcome, color] = current.error_code ? ['分析未完成', 'error'] : poolOutcomes[current.pool_membership?.status] || OUTCOMES[current.recommendation] || ['等待处理', 'default']
   return (
     <div className="candidate-analysis">
       <header className="candidate-analysis-overview">
-        <div><div className="candidate-analysis-eyebrow">候选人分析</div><h2>{current.candidate_name || '简历'}<span>{current.position_name || '当前志愿'}</span></h2><p>从简历证据到岗位比较，每项判断都可追溯。</p></div>
+        <div><div className="candidate-analysis-eyebrow">候选人分析</div><h2>{current.candidate_name || '简历'}<span>{current.position_name || '当前志愿'}</span></h2><p>{isApplication ? '评估当前投递的契合度；通过后按能力标签分配部门需求。' : '从简历证据到岗位比较，每项判断都可追溯。'}</p></div>
         <Tag color={color}>{outcome}</Tag>
       </header>
       {current.error_code && <Alert showIcon type="warning" message={current.error_message || '这次分析未完成'} description="可以重新分析，也可以返回候选人详情进行人工分配。" />}
@@ -190,7 +202,7 @@ export default function CandidateAnalysis({ decision, onRetry, retrying = false 
       {result.manifest?.reused_from_task_id && <p className="candidate-analysis-reused"><CheckCircleOutlined /> 已复用内容未变化的分析，本次仅重新检查分配条件。</p>}
       {loading && current.kernel_result?.match_count ? <Skeleton active paragraph={{ rows: 8 }} /> : hasMatches ? (
         <Tabs items={[
-          { key: 'matches', label: `岗位比较 · ${result.matches.length}`, children: <MatchWorkspace matches={result.matches} /> },
+          { key: 'matches', label: isApplication ? '当前投递契合度' : `岗位比较 · ${result.matches.length}`, children: isApplication ? <ApplicationAssessment result={result} member={current.pool_membership} /> : <MatchWorkspace matches={result.matches} /> },
           { key: 'profile', label: '候选人画像', children: <Profile profile={result.profile} /> },
         ]} />
       ) : <LegacyAnalysis decision={current} />}

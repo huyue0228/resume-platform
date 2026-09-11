@@ -20,6 +20,15 @@ const decision = {
 }
 
 describe('CandidateAnalysis', () => {
+  it('shows only the current application assessment and separates admission from allocation', () => {
+    const current = { ...decision, pool_membership: { status: 'pending_allocation', assessment: { pool: { name: '机械工程师池' }, tag_catalog: [{ code: 'cad', name: '三维设计' }] } }, kernel_result: { ...decision.kernel_result, protocol_version: 'resume-analysis/v3', matches: [{ ...decision.kernel_result.matches[0], job_title: '机械工程师投递标准' }], profile: { tags: [{ code: 'cad', status: 'supported', evidence: evidence('完成三维机构设计与验证') }] } } }
+    render(<CandidateAnalysis decision={current} />)
+    expect(screen.getByRole('tab', { name: '当前投递契合度' })).toBeTruthy()
+    expect(screen.getByText('入池待分配')).toBeTruthy()
+    expect(screen.getByText('完成三维机构设计与验证')).toBeTruthy()
+    expect(screen.queryByRole('complementary', { name: '合规岗位排名' })).toBeNull()
+    expect(screen.queryByText('智能应用开发')).toBeNull()
+  })
   it('selects the assigned job and lets HR compare another rank with its own evidence', async () => {
     render(<CandidateAnalysis decision={decision} />)
     const panel = screen.getByRole('region', { name: '所选岗位分析' })

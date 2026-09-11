@@ -707,7 +707,8 @@ describe('ResumesPage detail', () => {
 
     const currentSelected = screen.getByRole('checkbox', { name: '当前选中（0）' })
     expect(currentSelected.disabled).toBe(true)
-    expect(screen.getAllByRole('checkbox')).toHaveLength(9)
+    expect(screen.getAllByRole('checkbox')).toHaveLength(10)
+    expect(screen.getByRole('checkbox', { name: '入池待分配' })).toBeTruthy()
     for (const checkbox of screen.getAllByRole('checkbox')) {
       expect(checkbox.checked).toBe(false)
     }

@@ -1,6 +1,45 @@
 {
   "$defs": {
-    "AnalysisScopeV2": {
+    "AbilityTagV1": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "enum": [
+            "direction",
+            "skill",
+            "experience"
+          ],
+          "title": "Category",
+          "type": "string"
+        },
+        "code": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Code",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "name",
+        "category",
+        "description"
+      ],
+      "title": "AbilityTagV1",
+      "type": "object"
+    },
+    "AnalysisScopeV3": {
       "additionalProperties": false,
       "properties": {
         "candidate": {
@@ -10,13 +49,21 @@
           "items": {
             "$ref": "#/$defs/JobRequirementV1"
           },
-          "maxItems": 2000,
+          "maxItems": 1,
           "minItems": 1,
           "title": "Jobs",
           "type": "array"
         },
         "resume_text": {
           "$ref": "#/$defs/ResumeTextV2"
+        },
+        "tag_catalog": {
+          "items": {
+            "$ref": "#/$defs/AbilityTagV1"
+          },
+          "maxItems": 200,
+          "title": "Tag Catalog",
+          "type": "array"
         },
         "taxonomy": {
           "items": {
@@ -38,7 +85,7 @@
         "resume_text",
         "jobs"
       ],
-      "title": "AnalysisScopeV2",
+      "title": "AnalysisScopeV3",
       "type": "object"
     },
     "CandidateContextV1": {
@@ -348,14 +395,14 @@
           "type": "string"
         },
         "protocol_version": {
-          "const": "resume-analysis/v2",
-          "default": "resume-analysis/v2",
+          "const": "resume-analysis/v3",
+          "default": "resume-analysis/v3",
           "title": "Protocol Version",
           "type": "string"
         },
         "result_schema_version": {
-          "const": "resume-job-match/v1",
-          "default": "resume-job-match/v1",
+          "const": "resume-application-assessment/v1",
+          "default": "resume-application-assessment/v1",
           "title": "Result Schema Version",
           "type": "string"
         },
@@ -396,13 +443,13 @@
       "$ref": "#/$defs/TaskPinV1"
     },
     "protocol_version": {
-      "const": "resume-analysis/v2",
-      "default": "resume-analysis/v2",
+      "const": "resume-analysis/v3",
+      "default": "resume-analysis/v3",
       "title": "Protocol Version",
       "type": "string"
     },
     "scope": {
-      "$ref": "#/$defs/AnalysisScopeV2"
+      "$ref": "#/$defs/AnalysisScopeV3"
     },
     "task_id": {
       "maxLength": 128,
@@ -411,8 +458,8 @@
       "type": "string"
     },
     "task_kind": {
-      "const": "candidate.resume_job_match",
-      "default": "candidate.resume_job_match",
+      "const": "candidate.application_assessment",
+      "default": "candidate.application_assessment",
       "title": "Task Kind",
       "type": "string"
     },
@@ -435,6 +482,6 @@
     "scope",
     "model"
   ],
-  "title": "AnalysisRequestV2",
+  "title": "AnalysisRequestV3",
   "type": "object"
 }

@@ -1,5 +1,15 @@
 # 海纳智聘离线部署
 
+## v3.0.0 升级与职位池配置
+
+本包配套平台 v3.0.0、Kernel v3.0.0 和协议 resume-contracts 3.0.0，使用 `resume-analysis/v3`。升级前在旧平台完成或取消全部在途任务；迁移会拒绝带旧协议的未完成任务。平台与 Kernel 必须一起升级，HTTP 路径仍为 `/v2/tasks/execute`，正文保持按页完整文本。
+
+已有环境保留原 Compose 项目名、数据卷、密钥、W3 和 CA。参考本包 `.env.example` 同步 app、Kernel 的版本与镜像引用，不要整体覆盖现场 `.env`，不要重新初始化已有业务库。旧分析和分配历史保留，升级不会自动把它们标记为已入池。
+
+启动后，管理员在「配置项 → 职位池与标签」依次维护能力标签、内部职位池、投递评估标准及部门分配规则。投递映射按招聘主体关联唯一标准，未映射投递进入待处理。评估只针对当前投递，标签保存原文证据；通过后按同池标签、部门需求和 HC 分配。`review_only` 保持先人工复核；`enforced` 使用既有评估阈值。无符合标签的需求或无名额时留池，可直接重新分配，无需重复调用模型。
+
+筛选人反馈不通过后的逻辑保持现状：关闭本次投递资格，自动进入下一有效志愿；无下一志愿则归档。本版本未增加“部门拒绝后在同池尝试其他部门”，也未调整拒绝后的 HC 释放口径。
+
 本目录是 `linux/amd64` 纯镜像离线包。优先使用随包附带的部署 Skill：
 
 ```bash
@@ -22,7 +32,7 @@ bash smart-resume-offline-deploy-skill/scripts/deploy.sh
 
 首次执行只创建 `.env` 和四项随机密钥后退出；补齐生产域名、反向代理、W3 配置后，再次执行同一条部署命令完成镜像导入、初始化和启动。检测到已有安全的 `USAGE_METRICS_TOKEN`、`AGENT_KERNEL_TOKEN` 时不会轮换；旧环境缺少其中一项时只补齐新密钥，不替换其它密钥。
 
-启动后应有 `app`、`agent-kernel`、`db`、`redis` 四个常驻容器。Go app 统一提供 React 页面、业务 API 和后台任务；`resume-platform healthcheck` 检查 HTTP、PostgreSQL 和 Redis。查看业务日志使用 `docker compose logs -f app`。升级时沿用原 `COMPOSE_PROJECT_NAME`，更新 `APP_VERSION` 和 app 镜像引用，保留原密钥、W3 和 Kernel/CA 配置。
+启动后应有 `app`、`agent-kernel`、`db`、`redis` 四个常驻容器。Go app 统一提供 React 页面、业务 API 和后台任务；`resume-platform healthcheck` 检查 HTTP、PostgreSQL 和 Redis。查看业务日志使用 `docker compose logs -f app`。升级时沿用原 `COMPOSE_PROJECT_NAME`，更新 `APP_VERSION` 和 app 镜像引用；本次协议升级还需同步更新 `AGENT_KERNEL_IMAGE` 和 `AGENT_KERNEL_VERSION`，保留原密钥、W3 和现场 CA 配置。
 
 **模型路由器使用企业 CA 时，必须为平台和 Kernel 配置 CA。** 将现场已有的 CA PEM 文件绝对路径写入 `.env` 的 `AGENT_KERNEL_CA_BUNDLE`，保持 `AGENT_KERNEL_MODEL_INSECURE_SKIP_VERIFY=False`。部署脚本向两端自动只读挂载并设置 `SSL_CERT_FILE`；文件须可被容器内 `agent` 用户读取。CA 内容更新后需重建平台和 Kernel 容器。
 

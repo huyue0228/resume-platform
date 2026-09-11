@@ -64,6 +64,7 @@ func TestDockerTextPipelineWithTLS(t *testing.T) {
 	primary := call("POST", "/api/departments/", Object{"name": "联调一级" + suffix, "level": 1, "parent": nil}, 201)
 	department := call("POST", "/api/departments/", Object{"name": "联调二级" + suffix, "level": 2, "parent": primary["id"]}, 201)
 	job := call("POST", "/api/jobs/", Object{"department": department["id"], "entity": "YLS", "public_name": "岗位" + suffix, "position_name": "后端开发" + suffix, "responsibilities": "开发 Go 服务并完成测试", "headcount": 1}, 201)
+	installTestPoolPolicy(t, a, job)
 	var csvBody, zipBody, body bytes.Buffer
 	headers := a.Spec.ImportSchemas["resume_list"].Headers
 	record := Object{"招聘主体": "YLS", "姓名": "Docker联调" + suffix, "应聘ID": suffix, "手机号": "13812340000", "对外职位名称": job["public_name"], "学历": "本科", "户口所在地": "上海"}
@@ -123,17 +124,17 @@ func TestDockerTextPipelineWithTLS(t *testing.T) {
 		t.Fatalf("container pipeline failed: %v", brief(run, "id", "status", "error", "message"))
 	}
 	detail := call("GET", "/api/candidates/"+str(candidate["id"])+"/", nil, 200)
-	attempt := obj(detail["current_attempt"])
-	if attempt["status"] != "pending_review" {
-		t.Fatalf("unexpected business result: %v", attempt["status"])
+	member := obj(detail["pool_membership"])
+	if member["status"] != "pending_review" || detail["current_attempt"] != nil {
+		t.Fatalf("unexpected business result: %v", member["status"])
 	}
-	decision := call("GET", "/api/agent-decisions/"+str(attempt["agent_decision"])+"/", nil, 200)
+	decision := call("GET", "/api/agent-decisions/"+str(member["decision_id"])+"/", nil, 200)
 	manifest := obj(obj(decision["kernel_result"])["manifest"])
 	if manifest["terminal_state"] != "DONE" || num(manifest["ocr_pages"]) != 0 {
 		t.Fatal("Kernel did not complete text-only analysis")
 	}
 	matches := list(obj(decision["kernel_result"])["matches"])
-	if len(matches) != 1 || str(obj(matches[0])["job_title"]) != str(job["position_name"]) {
+	if len(matches) != 1 || str(obj(matches[0])["job_title"]) != "统一投递标准" {
 		t.Fatal("frozen job presentation changed")
 	}
 	profile, err := one(ctx, a.Pool, "SELECT row_to_json(p) FROM core_resumeprofile p WHERE resume_id=$1", resume["id"])

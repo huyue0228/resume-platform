@@ -52,11 +52,16 @@ func TestRetiredSpecialRoutingCannotOverrideJobOrReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	m := poolMemberForTest(t, f)
+	if decision["recommendation"] != "review" || m["status"] != "pending_review" {
+		t.Fatal("old routing bypassed pool review")
+	}
+	approvePoolForTest(t, f)
 	attempt, err := one(ctx, a.Pool, "SELECT row_to_json(a) FROM core_assignmentattempt a WHERE agent_decision_id=$1", decision["id"])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decision["recommendation"] != "review" || attempt["status"] != "pending_review" || !truth(attempt["review_required"]) {
+	if attempt["status"] != "pending_dispatch" {
 		t.Fatal("old routing bypassed ordinary review")
 	}
 	if num(attempt["current_department_id"]) != num(f.job["department_id"]) || truth(decision["special_route_applied"]) || str(attempt["route_code"]) != "" {

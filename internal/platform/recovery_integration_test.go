@@ -98,7 +98,7 @@ func TestManualAssignmentDuringAnalysisWins(t *testing.T) {
 	}
 }
 
-func TestEditedJobInvalidatesInFlightAnalysis(t *testing.T) {
+func TestEditedApplicationStandardInvalidatesInFlightAnalysis(t *testing.T) {
 	f := newPipelineFixture(t)
 	entered, resume := make(chan struct{}), make(chan struct{})
 	f.analyzeHook = func(ctx context.Context, _ Object) error {
@@ -114,9 +114,7 @@ func TestEditedJobInvalidatesInFlightAnalysis(t *testing.T) {
 	done := make(chan struct{})
 	go func() { defer close(done); f.executeJob(t, run, context.Background()) }()
 	waitSignal(t, entered, "model did not start")
-	if _, err := f.a.save(context.Background(), f.a.Pool, "core_job", f.job["id"], Object{"responsibilities": "已修改职责，旧结果不可采纳"}); err != nil {
-		t.Fatal(err)
-	}
+	editTestStandard(t, f)
 	close(resume)
 	waitSignal(t, done, "invalidated analysis did not finish")
 	decision, err := one(context.Background(), f.a.Pool, "SELECT row_to_json(d) FROM core_agentdispatchdecision d WHERE processing_run_id=$1", run["id"])
@@ -129,7 +127,7 @@ func TestEditedJobInvalidatesInFlightAnalysis(t *testing.T) {
 	}
 }
 
-func TestVerifiedAnalysisReuseInvalidatesChangedJob(t *testing.T) {
+func TestVerifiedAnalysisReuseInvalidatesChangedApplicationStandard(t *testing.T) {
 	f := newPipelineFixture(t)
 	ctx := context.Background()
 	f.executeJob(t, f.submit(t), ctx)
@@ -150,9 +148,7 @@ func TestVerifiedAnalysisReuseInvalidatesChangedJob(t *testing.T) {
 	if err != nil || str(obj(obj(decision["kernel_result"])["manifest"])["reused_from_task_id"]) == "" {
 		t.Fatal("reuse lost provenance")
 	}
-	if _, err = f.a.save(ctx, f.a.Pool, "core_job", f.job["id"], Object{"responsibilities": "新的 Go 平台职责和接口开发要求"}); err != nil {
-		t.Fatal(err)
-	}
+	editTestStandard(t, f)
 	rerun()
 	if f.analyses.Load() != 2 {
 		t.Fatal("changed job reused stale analysis")
@@ -221,11 +217,12 @@ func TestFeedbackRejectAdvancesThenPassCompletesWorkflow(t *testing.T) {
 		t.Fatal("rejected feedback did not queue next volunteer")
 	}
 	f.executeJob(t, run, ctx)
+	approvePoolForTest(t, f)
 	next, err := one(ctx, f.a.Pool, "SELECT row_to_json(a) FROM core_assignmentattempt a WHERE resume_id=$1 ORDER BY id DESC LIMIT 1", second["id"])
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, action := range []string{"confirm_review", "dispatch_welink"} {
+	for _, action := range []string{"dispatch_welink"} {
 		if _, err = f.a.mutateAttempt(ctx, next["id"], action, Object{}, f.p, nil); err != nil {
 			t.Fatal(err)
 		}

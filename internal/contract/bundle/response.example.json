@@ -2,11 +2,10 @@
   "idempotency_key": "fixture-key",
   "manifest": {
     "covered_jobs": [
-      "job-a",
-      "job-b"
+      "job-a"
     ],
     "failure_code": "",
-    "input_hash": "74013c341827bce79b7d3ce89cf5f6a3499c57907476acf574f0eff8c5d11115",
+    "input_hash": "3ef03482a0e0d457c7e3d68d0906e7fb5a64bfda0b981949414405c52c9ddbc7",
     "ocr_pages": 0,
     "resume_checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "reused_from_task_id": "",
@@ -39,29 +38,6 @@
       "reason": "合成测试结果，仅用于开发验收",
       "risks": [],
       "score": 0.8
-    },
-    {
-      "confidence": 0.8,
-      "dimensions": {
-        "experience_evidence": 0.8,
-        "job_requirement": 0.8,
-        "major_match": 0.8,
-        "resume_quality": 0.8,
-        "skills_match": 0.8
-      },
-      "evidence": [
-        {
-          "end_line": 1,
-          "page": 1,
-          "quote": "负责后端服务开发与测试工作",
-          "start_line": 1
-        }
-      ],
-      "job_ref": "job-b",
-      "rank": 2,
-      "reason": "合成测试结果，仅用于开发验收",
-      "risks": [],
-      "score": 0.8
     }
   ],
   "pin": {
@@ -70,8 +46,8 @@
     "model_config_revision": "fixture-model",
     "pin_id": "fixture-pin",
     "policy_version": "fixture-policy/v1",
-    "protocol_version": "resume-analysis/v2",
-    "result_schema_version": "resume-job-match/v1",
+    "protocol_version": "resume-analysis/v3",
+    "result_schema_version": "resume-application-assessment/v1",
     "toolset_version": "fixture-tools/v1"
   },
   "profile": {
@@ -99,9 +75,10 @@
       }
     ],
     "risks": [],
-    "source_text": "负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n"
+    "source_text": "负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n负责后端服务开发与测试工作，完成接口设计和自动化测试。\n",
+    "tags": []
   },
-  "protocol_version": "resume-analysis/v2",
+  "protocol_version": "resume-analysis/v3",
   "safe_trace": {
     "finished_at": null,
     "input_tokens": 0,

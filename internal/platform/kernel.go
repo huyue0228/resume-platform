@@ -235,6 +235,13 @@ func (a *App) analyze(ctx context.Context, item, frozen Object, text pdftext.Tex
 	snapshot := obj(frozen["snapshot"])
 	d := obj(frozen["preflight"])
 	refs := stringValues(d["job_refs"])
+	resolved := prepareSnapshot(snapshot)
+	if resolved["status"] != "ready" || resolved["standard_code"] != d["standard_code"] || resolved["pool_code"] != d["pool_code"] {
+		return nil, taskError("agent_snapshot_unavailable", "冻结投递与评估标准不一致，请重新提交")
+	}
+	if len(refs) != 1 || d["standard_code"] != refs[0] || obj(frozen["pin"])["policy_version"] != policyVersion {
+		return nil, taskError("agent_snapshot_unavailable", "任务未固定当前投递的评估标准，请重新提交")
+	}
 	jobs := []any{}
 	for _, v := range list(snapshot["jobs"]) {
 		job := obj(v)
@@ -243,7 +250,7 @@ func (a *App) analyze(ctx context.Context, item, frozen Object, text pdftext.Tex
 		}
 	}
 	taskID := str(frozen["task_id"]) + "-" + str(item["attempt_count"])
-	request := Object{"protocol_version": protocolVersion, "task_kind": "candidate.resume_job_match", "task_id": taskID, "trigger": "processing_run", "workflow_revision": obj(snapshot["workflow"])["revision"], "pin": pin, "scope": Object{"candidate": brief(obj(snapshot["candidate"]), "ref", "highest_major", "highest_education"), "volunteer_ref": d["current_volunteer_ref"], "resume_text": text, "jobs": jobs, "taxonomy": snapshot["taxonomy"]}, "model": Object{"api_style": c["api_style"], "base_url": c["base_url"], "model_name": c["model_name"], "structured_output_mode": a.configValue(ctx, "ai_connection_structured_output_mode", "json_compat"), "timeout_seconds": a.configValue(ctx, "ai_timeout_seconds", 60), "retry_count": a.configValue(ctx, "ai_retry_count", 1), "insecure_skip_verify": boolEnv("AGENT_KERNEL_MODEL_INSECURE_SKIP_VERIFY")}, "budget": Object{"max_turns": 32, "max_tool_calls": 256, "max_duration_seconds": 600, "max_tokens": 120000}}
+	request := Object{"protocol_version": protocolVersion, "task_kind": "candidate.application_assessment", "task_id": taskID, "trigger": "processing_run", "workflow_revision": obj(snapshot["workflow"])["revision"], "pin": pin, "scope": Object{"candidate": brief(obj(snapshot["candidate"]), "ref", "highest_major", "highest_education"), "volunteer_ref": d["current_volunteer_ref"], "resume_text": text, "jobs": jobs, "taxonomy": snapshot["taxonomy"], "tag_catalog": snapshot["tag_catalog"]}, "model": Object{"api_style": c["api_style"], "base_url": c["base_url"], "model_name": c["model_name"], "structured_output_mode": a.configValue(ctx, "ai_connection_structured_output_mode", "json_compat"), "timeout_seconds": a.configValue(ctx, "ai_timeout_seconds", 60), "retry_count": a.configValue(ctx, "ai_retry_count", 1), "insecure_skip_verify": boolEnv("AGENT_KERNEL_MODEL_INSECURE_SKIP_VERIFY")}, "budget": Object{"max_turns": 32, "max_tool_calls": 256, "max_duration_seconds": 600, "max_tokens": 120000}}
 	request["idempotency_key"] = fingerprint(Object{"task_id": taskID, "pin": pin, "scope": request["scope"], "workflow_revision": request["workflow_revision"]})
 	raw := canonicalJSON(request, false)
 	if len(raw) > 2<<20 {
@@ -355,6 +362,27 @@ func validateAnalysis(request, result Object, text pdftext.Text, refs []string) 
 			if !verify(obj(e)) {
 				return invalid
 			}
+		}
+	}
+	knownTags := map[string]bool{}
+	for _, v := range list(obj(request["scope"])["tag_catalog"]) {
+		knownTags[str(obj(v)["code"])] = true
+	}
+	seenTags := map[string]bool{}
+	for _, v := range list(obj(result["profile"])["tags"]) {
+		tag := obj(v)
+		code := str(tag["code"])
+		if !knownTags[code] || seenTags[code] {
+			return invalid
+		}
+		seenTags[code] = true
+		for _, evidence := range list(tag["evidence"]) {
+			if !verify(obj(evidence)) {
+				return invalid
+			}
+		}
+		if floatValue(tag["confidence"]) < .8 {
+			tag["status"] = "needs_verification"
 		}
 	}
 	seen := map[string]bool{}

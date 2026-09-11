@@ -2,6 +2,7 @@ export const DEFAULT_AUTHENTICATED_PATH = '/analytics'
 
 export const ROUTE_PERMISSIONS = {
   '/resumes': ['resume.view', 'attempt.view_department'],
+  '/position-pools': ['resume.view'],
   '/jobs': ['job.view'],
   '/schools': ['school.view'],
   '/departments': ['department.view'],
@@ -21,6 +22,7 @@ const AUTHENTICATED_HOME_CANDIDATES = [
   '/analytics',
   '/processing-tasks',
   '/resumes',
+  '/position-pools',
   '/jobs',
   '/schools',
   '/departments',
