@@ -129,6 +129,7 @@ func TestEditedApplicationStandardInvalidatesInFlightAnalysis(t *testing.T) {
 
 func TestVerifiedAnalysisReuseInvalidatesChangedApplicationStandard(t *testing.T) {
 	f := newPipelineFixture(t)
+	f.resultHook = func(result Object) { obj(result["profile"])["tags"] = []any{} }
 	ctx := context.Background()
 	f.executeJob(t, f.submit(t), ctx)
 	rerun := func() Object {
@@ -179,7 +180,7 @@ func TestConcurrentCandidatesRespectRunCapacity(t *testing.T) {
 	}
 }
 
-func TestFeedbackRejectAdvancesThenPassCompletesWorkflow(t *testing.T) {
+func TestFeedbackRejectWaitsForScheduleThenPassCompletesWorkflow(t *testing.T) {
 	f := newPipelineFixture(t)
 	ctx := context.Background()
 	second := mustSave(t, f.a, "core_resume", Object{"candidate_id": f.candidate["id"], "apply_id": token(6), "entity": "YLS", "position_name": f.job["public_name"], "resume_file": f.resume["resume_file"], "volunteer_rank": 2})
@@ -209,15 +210,25 @@ func TestFeedbackRejectAdvancesThenPassCompletesWorkflow(t *testing.T) {
 	if _, err = f.a.mutateAttempt(ctx, at["id"], "feedback", Object{"result": "rejected", "reason_code": reason}, p, nil); err != nil {
 		t.Fatal(err)
 	}
-	run, err := one(ctx, f.a.Pool, "SELECT row_to_json(r) FROM core_processingrun r JOIN core_processingrunscopeitem i ON i.run_id=r.id WHERE i.candidate_id=$1 ORDER BY r.id DESC LIMIT 1", f.candidate["id"])
+	var queued int
+	if err = f.a.Pool.QueryRow(ctx, "SELECT count(*) FROM core_processingrunscopeitem WHERE candidate_id=$1", f.candidate["id"]).Scan(&queued); err != nil || queued != 0 {
+		t.Fatalf("department rejection must not queue work: %d %v", queued, err)
+	}
+	view, err := f.a.serialize(ctx, "candidates", f.candidate, f.p, true)
+	if err != nil || view["system_status"] != "raw" || view["workflow_status"] != "waiting_next" || num(obj(view["current_resume"])["id"]) != num(second["id"]) {
+		t.Fatalf("not waiting for next application: %v %v", brief(view, "system_status", "workflow_status", "current_resume"), err)
+	}
+	assertApplicationState(t, f, f.resume, "department_rejected")
+	schedule, due := scheduleFixture(t, f.a, f.p, "once", Object{"system_statuses": []any{"raw"}, "candidate_filters": Object{"name": f.candidate["name"]}})
+	if claimed, triggerErr := f.a.triggerSchedule(ctx, due); triggerErr != nil || !claimed {
+		t.Fatalf("schedule: %v %v", claimed, triggerErr)
+	}
+	schedule = storedSchedule(t, f.a, schedule["id"])
+	run, err := f.a.get(ctx, f.a.Pool, "core_processingrun", schedule["last_run_id"])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if obj(run["scope"])["trigger"] != "feedback_rejected" {
-		t.Fatal("rejected feedback did not queue next volunteer")
-	}
 	f.executeJob(t, run, ctx)
-	approvePoolForTest(t, f)
 	next, err := one(ctx, f.a.Pool, "SELECT row_to_json(a) FROM core_assignmentattempt a WHERE resume_id=$1 ORDER BY id DESC LIMIT 1", second["id"])
 	if err != nil {
 		t.Fatal(err)

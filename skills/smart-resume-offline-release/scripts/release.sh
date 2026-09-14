@@ -228,6 +228,8 @@ render_template "${ASSET_DIR}/docker-compose.yml" "${PACKAGE_DIR}/docker-compose
 render_template "${ASSET_DIR}/env.example" "${PACKAGE_DIR}/.env.example"
 render_template "${ASSET_DIR}/README-offline-deploy.md" "${PACKAGE_DIR}/README-offline-deploy.md"
 render_template "${ASSET_DIR}/AGENT-offline-deploy-guide.md" "${PACKAGE_DIR}/AGENT-offline-deploy-guide.md"
+cp "${REPO_ROOT}/ops/two-agent-allocation.md" "${PACKAGE_DIR}/two-agent-allocation.md"
+cp "${REPO_ROOT}/ops/task-center.md" "${PACKAGE_DIR}/task-center.md"
 cp -R "${REPO_ROOT}/skills/smart-resume-offline-deploy" \
   "${PACKAGE_DIR}/smart-resume-offline-deploy-skill"
 check_usage_metrics_contract \

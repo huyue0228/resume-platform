@@ -51,17 +51,17 @@ func (a *App) savePoolAssessment(ctx context.Context, db DB, run, w, resume, ite
 		return "", "", err
 	}
 	if rec == "archive" {
-		err = a.archiveWorkflow(ctx, db, w, "agent_no_recommendation", "当前投递岗位契合度未通过")
-		return "ai_archived", str(match["reason"]), err
+		err = a.applicationState(ctx, db, resume["id"], "ai_rejected", str(match["reason"]), Object{"run_id": run["id"], "decision_id": decision["id"]})
+		return "ai_rejected", str(match["reason"]), err
 	}
 	policy := obj(obj(frozen["snapshot"])["pool_policy"])
 	standard := policyItem(policy, "standards", str(d["standard_code"]))
 	pool := policyItem(policy, "pools", str(d["pool_code"]))
 	status := "pending_allocation"
-	if rec == "review" {
-		status = "pending_review"
+	if err = a.applicationState(ctx, db, resume["id"], status, str(match["reason"]), Object{"run_id": run["id"], "decision_id": decision["id"]}); err != nil {
+		return "", "", err
 	}
-	assessment := Object{"standard": standard, "pool": pool, "requirement": standardJob(policy, standard), "tag_catalog": obj(frozen["snapshot"])["tag_catalog"], "candidate": brief(obj(obj(frozen["snapshot"])["candidate"]), "highest_major", "highest_education"), "score": match["score"], "reason": match["reason"], "evidence": match["evidence"], "pin": pin}
+	assessment := Object{"admission_threshold": obj(frozen["thresholds"])["dispatch"], "standard": standard, "pool": pool, "requirement": standardJob(policy, standard), "tag_catalog": obj(frozen["snapshot"])["tag_catalog"], "candidate": brief(obj(obj(frozen["snapshot"])["candidate"]), "highest_major", "highest_education"), "score": match["score"], "reason": match["reason"], "evidence": match["evidence"], "pin": pin}
 	tags := list(obj(result["profile"])["tags"])
 	member, err := one(ctx, db, `INSERT INTO platform_pool_memberships(candidate_id,workflow_id,resume_id,decision_id,run_id,standard_code,pool_code,status,tags,assessment,file_checksum) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11) RETURNING row_to_json(platform_pool_memberships)`, item["candidate_id"], w["id"], resume["id"], decision["id"], run["id"], d["standard_code"], d["pool_code"], status, string(canonicalJSON(tags, false)), string(canonicalJSON(assessment, false)), obj(result["manifest"])["resume_checksum"])
 	if err != nil {
@@ -70,11 +70,11 @@ func (a *App) savePoolAssessment(ctx context.Context, db DB, run, w, resume, ite
 	if err = a.poolEvent(ctx, db, member, "assessment_saved", Object{"status": status, "tags": tags, "decision_id": decision["id"]}, nil); err != nil {
 		return "", "", err
 	}
-	if status == "pending_review" {
-		return "pool_pending_review", "投递评估待复核，通过后可入池分配", nil
-	}
 	w, err = a.get(ctx, db, "core_candidateworkflow", w["id"])
 	if err != nil {
+		return "", "", err
+	}
+	if _, err = a.saveScreeningQualification(ctx, db, member, true); err != nil {
 		return "", "", err
 	}
 	return a.allocatePoolMember(ctx, db, member, w, nil)
@@ -161,15 +161,28 @@ func (a *App) waitInPool(ctx context.Context, db DB, member Object, code, messag
 	if err != nil {
 		return "", "", err
 	}
+	if err = a.applicationState(ctx, db, member["resume_id"], status, message, Object{"pool_membership_id": member["id"], "reason_code": code}); err != nil {
+		return "", "", err
+	}
 	err = a.poolEvent(ctx, db, member, "allocation_waiting", Object{"code": code, "message": message}, p)
 	return code, message, err
 }
 
 func (a *App) allocatePoolMember(ctx context.Context, db DB, member, w Object, p *Principal) (string, string, error) {
+	scope, err := a.allocationScope(ctx, db, member, true)
+	if err != nil {
+		return "", "", err
+	}
+	if truth(scope["paused"]) || scope["allocation_mode"] != "legacy" {
+		return "allocation_queued", "筛选通过，已入池等待独立分配", nil
+	}
+	return a.legacyAllocatePoolMember(ctx, db, member, w, p)
+}
+func (a *App) legacyAllocatePoolMember(ctx context.Context, db DB, member, w Object, p *Principal) (string, string, error) {
 	if member["status"] != "pending_allocation" {
 		return "", "", bad("仅入池待分配的候选人可执行分配")
 	}
-	if num(w["current_resume_id"]) != num(member["resume_id"]) || contains([]string{"passed", "archived"}, str(w["status"])) {
+	if num(w["current_resume_id"]) != num(member["resume_id"]) || contains([]string{"passed", "archived", "waiting_next", "talent_pool"}, str(w["status"])) {
 		return "", "", bad("当前有效志愿已变化，不能使用历史入池资格")
 	}
 	var active bool
@@ -264,6 +277,9 @@ func (a *App) allocatePoolMember(ctx context.Context, db DB, member, w Object, p
 		if err != nil {
 			return "", "", err
 		}
+		if err = a.recordLegacyTarget(ctx, db, member, attempt, job); err != nil {
+			return "", "", err
+		}
 		if _, err = a.save(ctx, db, "core_resume", resume["id"], Object{"job_id": job["id"], "job_category": job["category"], "category_mode": "ai", "category_reason": reason}); err != nil {
 			return "", "", err
 		}
@@ -290,6 +306,15 @@ func (a *App) poolMemberDetail(ctx context.Context, db DB, member Object) (Objec
 		return nil, err
 	}
 	value["events"] = events
+	item, e := one(ctx, db, `SELECT row_to_json(i) FROM platform_allocation_work_items i WHERE member_id=$1 ORDER BY id DESC LIMIT 1`, member["id"])
+	if e != nil && !noPoolRecord(e) {
+		return nil, e
+	}
+	target, e := one(ctx, db, `SELECT row_to_json(t) FROM platform_assignment_targets t JOIN core_assignmentattempt a ON a.id=t.attempt_id WHERE t.member_id=$1 AND a.status IN ('pending_review','pending_dispatch','dispatched','passed') ORDER BY a.id DESC LIMIT 1`, member["id"])
+	if e != nil && !noPoolRecord(e) {
+		return nil, e
+	}
+	value["allocation"] = Object{"task_id": item["task_id"], "status": item["status"], "reason_code": item["reason_code"], "reason": allocationReason(str(item["reason_code"])), "target": target}
 	return value, nil
 }
 
@@ -317,10 +342,15 @@ func (a *App) poolMembersAPI(w http.ResponseWriter, r *http.Request, path string
 		if err != nil {
 			return err
 		}
+		visible := []Object{}
 		for _, m := range members {
+			if !a.canReadPoolMember(ctx, p, m) {
+				continue
+			}
+			visible = append(visible, m)
 			delete(m, "file_checksum")
 		}
-		return paginate(w, r, members)
+		return paginate(w, r, visible)
 	}
 	if len(parts) < 3 {
 		return &apiError{404, "未找到记录"}
@@ -332,6 +362,9 @@ func (a *App) poolMembersAPI(w http.ResponseWriter, r *http.Request, path string
 	member, err := one(ctx, a.Pool, "SELECT row_to_json(m) FROM platform_pool_memberships m WHERE id=$1", id)
 	if err != nil {
 		return err
+	}
+	if !a.canReadPoolMember(ctx, p, member) {
+		return &apiError{403, "No access to this pool membership"}
 	}
 	if len(parts) == 3 && r.Method == "GET" {
 		v, err := a.poolMemberDetail(ctx, a.Pool, member)
@@ -345,7 +378,10 @@ func (a *App) poolMembersAPI(w http.ResponseWriter, r *http.Request, path string
 		return &apiError{405, "请求方法不允许"}
 	}
 	if !p.has("attempt.dispatch") {
-		return &apiError{403, "无入池复核或分配权限"}
+		return &apiError{403, "无职位池分配权限"}
+	}
+	if parts[3] == "review" {
+		return &apiError{410, "待复核阶段已取消，请按当前入池状态继续处理"}
 	}
 	body, err := readBody(w, r)
 	if err != nil {
@@ -371,44 +407,21 @@ func (a *App) poolMembersAPI(w http.ResponseWriter, r *http.Request, path string
 		return bad("该记录不属于当前有效志愿")
 	}
 	code, message := "", ""
+	var allocationTask Object
 	switch parts[3] {
-	case "review":
-		if strings.TrimSpace(str(body["note"])) == "" {
-			return bad("复核必须填写依据")
-		}
-		if member["status"] != "pending_review" {
-			return bad("当前记录不处于待复核状态")
-		}
-		if body["decision"] == "approve" {
-			member["status"] = "pending_allocation"
-			if _, err = tx.Exec(ctx, "UPDATE platform_pool_memberships SET status='pending_allocation',revision=revision+1,updated_at=now() WHERE id=$1", id); err != nil {
-				return err
-			}
-			if err = a.poolEvent(ctx, tx, member, "review_approved", Object{"note": str(body["note"])}, p); err != nil {
-				return err
-			}
-			code, message, err = a.allocatePoolMember(ctx, tx, member, wf, p)
-		} else if body["decision"] == "reject" {
-			_, err = tx.Exec(ctx, "UPDATE platform_pool_memberships SET status='rejected',revision=revision+1,updated_at=now() WHERE id=$1", id)
-			if err != nil {
-				return err
-			}
-			if err = a.poolEvent(ctx, tx, member, "review_rejected", Object{"note": str(body["note"])}, p); err != nil {
-				return err
-			}
-			if _, err = a.save(ctx, tx, "core_agentdispatchdecision", member["decision_id"], Object{"recommendation": "archive"}); err != nil {
-				return err
-			}
-			err = a.archiveWorkflow(ctx, tx, wf, "agent_no_recommendation", "投递评估经人工复核未通过")
-			code, message = "pool_rejected", "复核未通过"
-		} else {
-			return bad("请选择通过或不通过")
-		}
 	case "allocate":
-		code, message, err = a.allocatePoolMember(ctx, tx, member, wf, p)
+		scope, e := a.allocationScope(ctx, tx, member, false)
+		if e != nil {
+			return e
+		}
+		if !a.canAccessAllocationScope(ctx, tx, p, scope, true) {
+			return &apiError{403, "无当前范围分配权限"}
+		}
+		allocationTask, err = a.enqueuePoolAllocation(ctx, tx, member, p)
+		code, message = "allocation_queued", "分配任务已提交，可在分配任务中查看进度"
 	case "tags":
-		if !contains([]string{"pending_review", "pending_allocation"}, str(member["status"])) {
-			return bad("仅待复核或待分配记录可修订标签")
+		if member["status"] != "pending_allocation" {
+			return bad("仅待分配记录可修订标签")
 		}
 		if strings.TrimSpace(str(body["note"])) == "" {
 			return bad("人工修订必须填写依据")
@@ -443,6 +456,16 @@ func (a *App) poolMembersAPI(w http.ResponseWriter, r *http.Request, path string
 			return err
 		}
 		_, err = tx.Exec(ctx, "UPDATE platform_pool_memberships SET tags=$2::jsonb,revision=revision+1,updated_at=now() WHERE id=$1", id, string(canonicalJSON(tags, false)))
+		if err != nil {
+			return err
+		}
+		revised, e := one(ctx, tx, "SELECT row_to_json(m) FROM platform_pool_memberships m WHERE id=$1", id)
+		if e != nil {
+			return e
+		}
+		if _, err = a.saveScreeningQualification(ctx, tx, revised, false); err != nil {
+			return err
+		}
 		code, message = "pool_tags_updated", "标签已修订，可重新执行分配"
 	default:
 		return &apiError{404, "未找到操作"}
@@ -456,7 +479,14 @@ func (a *App) poolMembersAPI(w http.ResponseWriter, r *http.Request, path string
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
-	write(w, 200, Object{"code": code, "detail": message})
+	a.wakeAllocation(ctx)
+	response := Object{"code": code, "detail": message}
+	status := 200
+	if allocationTask != nil {
+		response["task_id"] = allocationTask["id"]
+		status = 202
+	}
+	write(w, status, response)
 	return nil
 }
 

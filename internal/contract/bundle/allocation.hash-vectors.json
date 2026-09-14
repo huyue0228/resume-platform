@@ -1,0 +1,64 @@
+[
+  {
+    "canonical": "{\"demands\":[{\"demand_id\":1,\"department_ref\":\"department-1\",\"last_allocation_sequence\":0,\"preferred_tags\":[],\"priority\":1,\"recent_supply_count\":0,\"reception_state\":\"receiving\",\"required_tags\":[\"backend\"],\"revision\":1}],\"entity_ref\":\"entity-1\",\"epoch\":1,\"members\":[{\"admitted\":true,\"allowed_demand_ids\":[1],\"application_ref\":\"application-1\",\"candidate_ref\":\"candidate-1\",\"counted_demand_ids\":[],\"created_at\":\"2026-09-13T00:00:00Z\",\"member_id\":1,\"member_revision\":1,\"qualification_ref\":\"qualification-1\",\"qualification_revision\":1,\"source_revision\":1,\"standard_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"standard_ref\":\"standard-1\",\"tags\":[{\"assertion_ref\":\"assertion-1\",\"code\":\"backend\",\"confidence_bps\":9000,\"source\":\"model\",\"status\":\"supported\",\"verified\":true}],\"tags_hash\":\"409bdc5208542cc9cdff2974c36bfe11ad128bf2d3c1c7532ed663844a312bc0\",\"workflow_revision\":1}],\"next_sequence\":1,\"policy_revision\":1,\"pool_ref\":\"pool-1\",\"scope_ref\":\"scope-1\",\"scope_revision\":1,\"snapshot_at\":\"2026-09-14T00:00:00Z\",\"snapshot_id\":\"snapshot-1\",\"window_seconds\":604800}",
+    "sha256": "ff9d2bdd50fb853348a3c434472494be58d1197c49d98a42172b6ed71850f2a2",
+    "snapshot": {
+      "demands": [
+        {
+          "demand_id": 1,
+          "department_ref": "department-1",
+          "last_allocation_sequence": 0,
+          "preferred_tags": [],
+          "priority": 1,
+          "recent_supply_count": 0,
+          "reception_state": "receiving",
+          "required_tags": [
+            "backend"
+          ],
+          "revision": 1
+        }
+      ],
+      "entity_ref": "entity-1",
+      "epoch": 1,
+      "members": [
+        {
+          "admitted": true,
+          "allowed_demand_ids": [
+            1
+          ],
+          "application_ref": "application-1",
+          "candidate_ref": "candidate-1",
+          "counted_demand_ids": [],
+          "created_at": "2026-09-13T00:00:00Z",
+          "member_id": 1,
+          "member_revision": 1,
+          "qualification_ref": "qualification-1",
+          "qualification_revision": 1,
+          "source_revision": 1,
+          "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "standard_ref": "standard-1",
+          "tags": [
+            {
+              "assertion_ref": "assertion-1",
+              "code": "backend",
+              "confidence_bps": 9000,
+              "source": "model",
+              "status": "supported",
+              "verified": true
+            }
+          ],
+          "tags_hash": "409bdc5208542cc9cdff2974c36bfe11ad128bf2d3c1c7532ed663844a312bc0",
+          "workflow_revision": 1
+        }
+      ],
+      "next_sequence": 1,
+      "policy_revision": 1,
+      "pool_ref": "pool-1",
+      "scope_ref": "scope-1",
+      "scope_revision": 1,
+      "snapshot_at": "2026-09-14T00:00:00Z",
+      "snapshot_id": "snapshot-1",
+      "window_seconds": 604800
+    }
+  }
+]

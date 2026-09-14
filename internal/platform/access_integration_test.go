@@ -14,7 +14,6 @@ func TestBulkAndDrilldownPreserveSelectedScope(t *testing.T) {
 	ctx := context.Background()
 	run := f.submit(t)
 	f.executeJob(t, run, ctx)
-	approvePoolForTest(t, f)
 	for _, filters := range []Object{{"unknown": "value"}, {"system_status": ""}, {"current_entity_in": []any{Object{"x": 1}}}} {
 		responseObject(t, apiRequest(t, f.a, f.p, "POST", "/api/candidates/bulk-dispatch/", Object{"candidate_filters": filters}), 400)
 	}
@@ -37,7 +36,6 @@ func TestDepartmentAccessDoesNotLeakOtherCandidatesOrDecisions(t *testing.T) {
 	f := newPipelineFixture(t)
 	ctx := context.Background()
 	f.executeJob(t, f.submit(t), ctx)
-	approvePoolForTest(t, f)
 	at, err := one(ctx, f.a.Pool, "SELECT row_to_json(a) FROM core_assignmentattempt a WHERE resume_id=$1 ORDER BY id DESC LIMIT 1", f.resume["id"])
 	if err != nil {
 		t.Fatal(err)

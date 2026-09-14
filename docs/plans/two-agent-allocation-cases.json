@@ -1,0 +1,105 @@
+{
+  "format": "two-agent-design-cases/v1",
+  "status": "DESIGN_ONLY_NOT_A_PUBLISHED_PROTOCOL",
+  "description": "全部为合成标签和整数引用。默认 candidate 已入池，拥有 supported/cad、supported/design，置信度为 9000 基点；默认 demand 启用、接收中、要求 cad、优先 design、priority=1、近期供给为 0。省略字段只用于压缩设计案例，不是生产 DTO 默认值。business_metadata 只在平台存在，不进入分配投影。",
+  "cases": [
+    {
+      "id": "A02_nonpublic_receives",
+      "business_metadata": {"20": {"is_public": false, "headcount": 0}},
+      "candidates": [{"id": 1, "allowed": [10, 20]}],
+      "demands": [{"id": 10, "recent_supply_count": 4}, {"id": 20}],
+      "expected": [{"member_id": 1, "demand_id": 20}]
+    },
+    {
+      "id": "A03_hc_change_does_not_change_result",
+      "business_metadata": {"10": {"is_public": true, "headcount": 100}, "20": {"is_public": false, "headcount": 1}},
+      "candidates": [{"id": 1, "allowed": [10, 20]}],
+      "demands": [{"id": 10, "recent_supply_count": 4}, {"id": 20}],
+      "expected": [{"member_id": 1, "demand_id": 20}]
+    },
+    {
+      "id": "A04_matching_precedes_balance_and_priority",
+      "candidates": [{"id": 1, "allowed": [10, 20]}],
+      "demands": [{"id": 10, "preferred_tags": ["design"], "priority": 9, "recent_supply_count": 50}, {"id": 20, "preferred_tags": ["simulation"], "priority": 0}],
+      "expected": [{"member_id": 1, "demand_id": 10}]
+    },
+    {
+      "id": "A05_priority_precedes_balance",
+      "candidates": [{"id": 1, "allowed": [10, 20]}],
+      "demands": [{"id": 10, "priority": 0, "recent_supply_count": 50}, {"id": 20, "priority": 1}],
+      "expected": [{"member_id": 1, "demand_id": 10}]
+    },
+    {
+      "id": "A06_batch_provisional_supply",
+      "candidates": [{"id": 4, "allowed": [10, 20]}, {"id": 2, "allowed": [10, 20]}, {"id": 3, "allowed": [10, 20]}, {"id": 1, "allowed": [10, 20]}],
+      "demands": [{"id": 10}, {"id": 20}],
+      "expected": [{"member_id": 1, "demand_id": 10}, {"member_id": 2, "demand_id": 20}, {"member_id": 3, "demand_id": 10}, {"member_id": 4, "demand_id": 20}]
+    },
+    {
+      "id": "A06_cross_batch_existing_supply",
+      "candidates": [{"id": 1, "allowed": [10, 20]}, {"id": 2, "allowed": [10, 20]}, {"id": 3, "allowed": [10, 20]}],
+      "demands": [{"id": 10, "recent_supply_count": 2, "last_allocation_sequence": 8}, {"id": 20, "last_allocation_sequence": 3}],
+      "expected": [{"member_id": 1, "demand_id": 20}, {"member_id": 2, "demand_id": 20}, {"member_id": 3, "demand_id": 10}]
+    },
+    {
+      "id": "A07_last_recommendation_before_id",
+      "candidates": [{"id": 1, "allowed": [10, 20]}],
+      "demands": [{"id": 10, "last_allocation_sequence": 7}, {"id": 20, "last_allocation_sequence": 2}],
+      "expected": [{"member_id": 1, "demand_id": 20}]
+    },
+    {
+      "id": "A07_stable_id_tiebreak",
+      "candidates": [{"id": 1, "allowed": [10, 20]}],
+      "demands": [{"id": 20}, {"id": 10}],
+      "expected": [{"member_id": 1, "demand_id": 10}]
+    },
+    {
+      "id": "A08_low_confidence_required_tag",
+      "candidates": [{"id": 1, "allowed": [10], "tags": [{"code": "cad", "confidence_bp": 7900}]}],
+      "demands": [{"id": 10}],
+      "expected": [{"member_id": 1, "wait": "required_tags_unavailable"}]
+    },
+    {
+      "id": "A08_unverified_tag_is_not_supported",
+      "candidates": [{"id": 1, "allowed": [10], "tags": [{"code": "cad", "status": "needs_verification", "confidence_bp": 9900}]}],
+      "demands": [{"id": 10}],
+      "expected": [{"member_id": 1, "wait": "required_tags_unavailable"}]
+    },
+    {
+      "id": "A08_manual_assertion_with_verified_provenance",
+      "candidates": [{"id": 1, "allowed": [10], "tags": [{"code": "cad", "source": "manual", "confidence_bp": 0, "evidence_verified": true}]}],
+      "demands": [{"id": 10}],
+      "expected": [{"member_id": 1, "demand_id": 10}]
+    },
+    {
+      "id": "A08_no_preferred_hit_without_required",
+      "candidates": [{"id": 1, "allowed": [10]}],
+      "demands": [{"id": 10, "required_tags": [], "preferred_tags": ["simulation"]}],
+      "expected": [{"member_id": 1, "wait": "required_tags_unavailable"}]
+    },
+    {
+      "id": "A09_paused_demand_excluded",
+      "candidates": [{"id": 1, "allowed": [10, 20]}],
+      "demands": [{"id": 10, "reception_state": "paused", "priority": 0}, {"id": 20, "recent_supply_count": 99}],
+      "expected": [{"member_id": 1, "demand_id": 20}]
+    },
+    {
+      "id": "A09_all_demands_closed",
+      "candidates": [{"id": 1, "allowed": [10, 20]}],
+      "demands": [{"id": 10, "reception_state": "paused"}, {"id": 20, "reception_state": "closed"}],
+      "expected": [{"member_id": 1, "wait": "no_receiving_demand"}]
+    },
+    {
+      "id": "A09_mapping_cannot_expand_by_balance",
+      "candidates": [{"id": 1, "allowed": [20]}],
+      "demands": [{"id": 10}, {"id": 20, "recent_supply_count": 99}],
+      "expected": [{"member_id": 1, "demand_id": 20}]
+    },
+    {
+      "id": "A09_no_allowed_mapping",
+      "candidates": [{"id": 1, "allowed": []}],
+      "demands": [{"id": 10}],
+      "expected": [{"member_id": 1, "wait": "no_active_mapping"}]
+    }
+  ]
+}

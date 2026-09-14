@@ -20,6 +20,7 @@ import useProcessingRuns from './useProcessingRuns'
 import './ProcessingTaskCenter.css'
 import TaskMaterials from './TaskMaterials'
 import ProcessingSchedules from './ProcessingSchedules'
+import AllocationWorkspace from './AllocationWorkspace'
 import useTaskRecords from './useTaskRecords'
 import ResumeProcessModal from '../pages/resumes/ResumeProcessModal'
 import { useRole } from '../contexts/roleState'
@@ -176,9 +177,9 @@ const RESULT_METRICS = [
   { key: 'cancelled', label: '取消' },
 ]
 const SUCCESS_DETAIL_METRICS = [
-  { key: 'review', label: '待复核' },
-  { key: 'dispatch', label: '待下发' },
-  { key: 'archive', label: '建议归档' },
+  { key: 'review', label: '历史复核' },
+  { key: 'dispatch', label: '达标入池' },
+  { key: 'archive', label: '志愿不通过' },
 ]
 
 function hasTaskResults(run) {
@@ -522,14 +523,14 @@ const fetchRunDetail = async ({ id }, options) => {
 }
 const QUERY_KEYS = ['search', 'state', 'source', 'created_from', 'created_to', 'mine', 'created_by', 'schedule_id', 'status', 'repeat', 'ordering', 'page']
 const STATUS_OPTIONS = Object.entries(STATUS_META).map(([value, item]) => ({ value, label: item.text }))
-const RESUME_STATUSES = { raw: { text: '待处理' }, pending_allocation: { text: '入池待分配' }, archived: { text: '已归档' }, pending_reallocation: { text: '待重新分配' }, pending_review: { text: '待复核' }, pending_dispatch: { text: '待下发' }, pending_screening: { text: '待业务反馈' }, screening_passed: { text: '通过' }, screening_rejected: { text: '不通过' } }
+const RESUME_STATUSES = { raw: { text: '待处理' }, talent_pool: { text: '人才库' }, pending_allocation: { text: '入池待分配' }, archived: { text: '已归档' }, pending_reallocation: { text: '待重新分配' }, pending_dispatch: { text: '待下发' }, pending_screening: { text: '待业务反馈' }, screening_passed: { text: '通过' }, screening_rejected: { text: '不通过' } }
 
 export default function ProcessingTaskCenter() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { hasPermission } = useRole()
   const { run: submitRun } = useProcessRunner()
-  const tab = searchParams.get('tab') === 'schedules' ? 'schedules' : 'runs'
+  const tab = ['schedules', 'allocation'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'runs'
   const viewMode = searchParams.get('view') === 'card' ? 'card' : 'list'
   const query = useMemo(() => Object.fromEntries(QUERY_KEYS.filter((key) => searchParams.get(key)).map((key) => [key, searchParams.get(key)])), [searchParams])
   const { runs, count, summary, loading, error: refreshError, refresh } = useProcessingRuns({ ...query, include_summary: 'true' }, tab === 'runs')
@@ -598,8 +599,9 @@ export default function ProcessingTaskCenter() {
       <div><Typography.Title level={4}>任务中心</Typography.Title><Typography.Text type="secondary">创建处理任务，管理触发计划，查询每一次执行。</Typography.Text></div>
       {hasPermission('pipeline.run') && hasPermission('resume.view') && <Button type="primary" onClick={() => { setCreateError(''); setScopeStatuses(['raw']); setCreateOpen(true) }}>处理简历</Button>}
     </div>
-    <Tabs className="processing-task-tabs" activeKey={tab} onChange={switchTab} items={[{ key: 'runs', label: '执行记录' }, { key: 'schedules', label: '定时计划' }]} />
-    <div className="processing-task-filters">
+    <Tabs className="processing-task-tabs" activeKey={tab} onChange={switchTab} items={[{ key: 'runs', label: '执行记录' }, { key: 'schedules', label: '定时计划' }, { key: 'allocation', label: '分配任务' }]} />
+    {tab === 'allocation' && <AllocationWorkspace />}
+    <div className="processing-task-filters" style={tab === 'allocation' ? { display: 'none' } : undefined}>
       <Input.Search aria-label="搜索任务" value={searchText} onChange={(event) => setSearchText(event.target.value)} onSearch={(value) => updateQuery({ search: value.trim() })} placeholder="名称、编号或创建人工号" allowClear style={{ width: 270 }} />
       <Select aria-label="创建人范围" value={query.mine || 'all'} onChange={(value) => updateQuery({ mine: value === 'all' ? '' : value })} options={[{ value: 'all', label: '全部创建人' }, { value: 'true', label: '我创建的' }]} style={{ width: 130 }} />
       {tab === 'runs' ? <>
@@ -613,7 +615,7 @@ export default function ProcessingTaskCenter() {
       <Button type="link" onClick={() => setSearchParams({ tab }, { replace: true })}>重置筛选</Button>
     </div>
     {query.schedule_id && <Alert className="processing-history-context" type="info" showIcon message={`计划「${searchParams.get('schedule_name') || `#${query.schedule_id}`}」的执行历史`} action={<Button size="small" onClick={() => switchTab('schedules')}>返回定时计划</Button>} />}
-    {tab === 'schedules' ? <ProcessingSchedules query={query} onQueryChange={updateQuery} onOpenRun={openRun} onHistory={openHistory} /> : <>
+    {tab === 'schedules' ? <ProcessingSchedules query={query} onQueryChange={updateQuery} onOpenRun={openRun} onHistory={openHistory} /> : tab === 'runs' ? <>
       <div className="processing-task-summary" aria-label="查询范围内任务概览">
         {[['', '全部执行', totals.total], ['active', '进行中', totals.active], ['attention', '需关注', totals.attention], ['finished', '已结束', totals.finished]].map(([key, label, total]) => <button key={key} type="button" className={`${query.state === key || (!query.state && !key) ? 'is-selected' : ''} ${key === 'attention' ? 'has-attention' : ''}`} onClick={() => updateQuery({ state: key, status: '' })} aria-pressed={(query.state || '') === key}><span>{label}</span><strong>{total}</strong></button>)}
       </div>
@@ -621,7 +623,7 @@ export default function ProcessingTaskCenter() {
       {refreshError && <Alert banner showIcon type="warning" message="任务查询失败，请检查筛选条件或刷新重试" />}
       {viewMode === 'card' ? <div className="processing-task-list">{runs.length ? runs.map((run) => <TaskCard key={run.id} run={run} cancellingId={cancellingId} onCancel={cancel} onOpenCandidates={openCandidates} />) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无匹配的执行记录" />}</div> : <TaskTable runs={runs} cancellingId={cancellingId} onCancel={cancel} onOpenCandidates={openCandidates} onOpenRun={openRun} loading={loading} />}
       <div className="processing-task-pagination"><Pagination current={Number(query.page) || 1} pageSize={20} total={count} showSizeChanger={false} showTotal={(total) => `共 ${total} 条`} onChange={(page) => updateQuery({ page })} /></div>
-    </>}
+    </> : null}
     <Drawer title={`执行详情 #${detailId}`} open={Boolean(detailId)} width={960} onClose={() => updateQuery({ run_id: '' })}>
       <Typography.Paragraph type="secondary">此详情可通过当前地址直接访问，运行中自动更新。</Typography.Paragraph>
       {detail.error && <Alert type="error" message="无法获取执行记录" action={<Button onClick={detail.refresh}>重试</Button>} />}

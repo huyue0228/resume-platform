@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildResumeProcessingScope } from './resumeProcessing'
 
 describe('buildResumeProcessingScope', () => {
-  it('uses only the frozen candidate ids for current selection reprocessing', () => {
+  it('uses only the frozen candidate ids for current selection continuation', () => {
     expect(buildResumeProcessingScope({
       processCurrentSelected: true,
       processCandidateSnapshot: [3, 5],
@@ -10,7 +10,6 @@ describe('buildResumeProcessingScope', () => {
       lastQuery: { name: '张三', system_status: 'raw' },
     })).toEqual({
       candidate_ids: [3, 5],
-      force_reprocess: true,
     })
   })
 

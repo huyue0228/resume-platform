@@ -1,0 +1,245 @@
+{
+  "$defs": {
+    "AllocationDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "assign",
+            "wait"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "assertion_refs": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Assertion Refs",
+          "type": "array"
+        },
+        "demand_id": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Demand Id",
+          "type": "integer"
+        },
+        "department_ref": {
+          "pattern": "^([A-Za-z0-9][A-Za-z0-9_.:/-]{0,127})?$",
+          "title": "Department Ref",
+          "type": "string"
+        },
+        "matched_tags": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Matched Tags",
+          "type": "array"
+        },
+        "member_id": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Member Id",
+          "type": "integer"
+        },
+        "order": {
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 5,
+          "title": "Order",
+          "type": "array"
+        },
+        "qualification_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Qualification Ref",
+          "type": "string"
+        },
+        "reason_code": {
+          "enum": [
+            "allocated",
+            "no_active_mapping",
+            "no_receiving_demand",
+            "required_tags_unavailable"
+          ],
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "member_id",
+        "qualification_ref",
+        "action",
+        "demand_id",
+        "department_ref",
+        "matched_tags",
+        "assertion_refs",
+        "order",
+        "sequence",
+        "reason_code"
+      ],
+      "title": "AllocationDecision",
+      "type": "object"
+    },
+    "AllocationPin": {
+      "additionalProperties": false,
+      "properties": {
+        "instruction_version": {
+          "const": "allocation-deterministic/v1",
+          "default": "allocation-deterministic/v1",
+          "title": "Instruction Version",
+          "type": "string"
+        },
+        "kernel_build": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Kernel Build",
+          "type": "string"
+        },
+        "pin_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Pin Id",
+          "type": "string"
+        },
+        "policy_version": {
+          "const": "allocation-order/v1",
+          "default": "allocation-order/v1",
+          "title": "Policy Version",
+          "type": "string"
+        },
+        "protocol_version": {
+          "const": "resume-allocation/v1",
+          "default": "resume-allocation/v1",
+          "title": "Protocol Version",
+          "type": "string"
+        },
+        "result_schema_version": {
+          "const": "resume-allocation-plan/v1",
+          "default": "resume-allocation-plan/v1",
+          "title": "Result Schema Version",
+          "type": "string"
+        },
+        "toolset_version": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Toolset Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pin_id",
+        "kernel_build",
+        "toolset_version"
+      ],
+      "title": "AllocationPin",
+      "type": "object"
+    },
+    "AllocationTrace": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "reused": {
+          "title": "Reused",
+          "type": "boolean"
+        },
+        "tool_call_count": {
+          "maximum": 16,
+          "minimum": 0,
+          "title": "Tool Call Count",
+          "type": "integer"
+        },
+        "tool_names": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Tool Names",
+          "type": "array"
+        }
+      },
+      "required": [
+        "tool_names",
+        "tool_call_count",
+        "duration_ms",
+        "reused"
+      ],
+      "title": "AllocationTrace",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "decisions": {
+      "items": {
+        "$ref": "#/$defs/AllocationDecision"
+      },
+      "maxItems": 100,
+      "minItems": 1,
+      "title": "Decisions",
+      "type": "array"
+    },
+    "idempotency_key": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "pin": {
+      "$ref": "#/$defs/AllocationPin"
+    },
+    "protocol_version": {
+      "const": "resume-allocation/v1",
+      "default": "resume-allocation/v1",
+      "title": "Protocol Version",
+      "type": "string"
+    },
+    "result_schema_version": {
+      "const": "resume-allocation-plan/v1",
+      "default": "resume-allocation-plan/v1",
+      "title": "Result Schema Version",
+      "type": "string"
+    },
+    "safe_trace": {
+      "$ref": "#/$defs/AllocationTrace"
+    },
+    "snapshot_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Snapshot Hash",
+      "type": "string"
+    },
+    "task_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "terminal_state": {
+      "const": "DONE",
+      "default": "DONE",
+      "title": "Terminal State",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id",
+    "idempotency_key",
+    "pin",
+    "snapshot_hash",
+    "decisions",
+    "safe_trace"
+  ],
+  "title": "AllocationResponse",
+  "type": "object"
+}

@@ -84,19 +84,23 @@ func TestAdmissionNeverSkipsVolunteer(t *testing.T) {
 		t.Fatalf("rejected volunteer did not advance: %v", d)
 	}
 }
-func TestReviewOnlyAndIncompleteProfile(t *testing.T) {
-	result := Object{"profile": Object{"risks": []any{"profile_incomplete"}}}
-	match := Object{"score": .95}
-	frozen := Object{"lane": "enforced", "thresholds": Object{"dispatch": .75, "review": .5}}
-	if recommendation(result, match, frozen) != "review" {
-		t.Fatal("incomplete profile auto-dispatched")
-	}
-	frozen["lane"] = "review_only"
-	match["score"] = .1
-	if recommendation(result, match, frozen) != "review" {
-		t.Fatal("review-only policy was bypassed")
+func TestSingleAdmissionThresholdNeverCreatesReview(t *testing.T) {
+	for _, lane := range []string{"enforced", "review_only"} {
+		for _, risk := range [][]any{{}, {"profile_incomplete"}} {
+			for _, test := range []struct {
+				score float64
+				want  string
+			}{{.1, "archive"}, {.5, "archive"}, {.7499, "archive"}, {.75, "dispatch"}, {.95, "dispatch"}} {
+				result := Object{"profile": Object{"risks": risk}}
+				frozen := Object{"lane": lane, "thresholds": Object{"dispatch": .75, "review": .5}}
+				if got := recommendation(result, Object{"score": test.score}, frozen); got != test.want {
+					t.Fatalf("lane=%s score=%v result=%s", lane, test.score, got)
+				}
+			}
+		}
 	}
 }
+
 func TestDurationNearestRank(t *testing.T) {
 	metric := durationMetric([]float64{10, 2, 4, 8})
 	if metric["avg"] != float64(6) || metric["median"] != float64(6) || metric["p90"] != float64(10) {

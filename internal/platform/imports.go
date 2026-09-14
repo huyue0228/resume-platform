@@ -373,6 +373,9 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if err = a.lockAllAllocationScopes(ctx, tx); err != nil {
+		return err
+	}
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(72460910)"); err != nil {
 		return err
 	}
@@ -657,11 +660,11 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 		isNew = resume == nil
 		if resume != nil && num(resume["candidate_id"]) != num(candidate["id"]) {
 			var history bool
-			if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM core_assignmentattempt WHERE resume_id=$1)", resume["id"]).Scan(&history); err != nil {
+			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM core_assignmentattempt WHERE resume_id=$1) OR EXISTS(SELECT 1 FROM core_agentdispatchdecision WHERE resume_id=$1) OR EXISTS(SELECT 1 FROM platform_applications WHERE resume_id=$1 AND status<>'pending')`, resume["id"]).Scan(&history); err != nil {
 				return err
 			}
 			if history {
-				return &apiError{409, "应聘 ID 已有分配历史，不能更换候选人身份"}
+				return &apiError{409, "应聘 ID 已有处理历史，不能更换候选人身份"}
 			}
 		}
 		status := str(row["应聘状态"])
@@ -670,6 +673,9 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 		}
 		resume, err = a.save(ctx, tx, "core_resume", resume["id"], Object{"apply_id": apply, "candidate_id": candidate["id"], "entity": row["招聘主体"], "org": row["所属机构"], "position_name": row["对外职位名称"], "status": status, "apply_date": dateCell(str(row["应聘日期"]))})
 		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO platform_applications(resume_id,candidate_id) VALUES($1,$2) ON CONFLICT(resume_id) DO UPDATE SET candidate_id=EXCLUDED.candidate_id`, resume["id"], candidate["id"]); err != nil {
 			return err
 		}
 		if isNew {
@@ -829,6 +835,7 @@ func (a *App) stagePackage(ctx context.Context, db DB, archive *zip.Reader, affe
 		if err = copyPackagePDF(ctx, entry, source); err != nil {
 			return result, err
 		}
+		name = immutableResumeFilename(name)
 		result.items = append(result.items, stagedFile{source: source, target: filepath.Join(dest, name), backup: source + ".backup"})
 		if _, err = a.save(ctx, db, "core_resume", resume["id"], Object{"resume_file": name}); err != nil {
 			return result, err
@@ -950,4 +957,14 @@ func (a *App) reuseLegacyJobs(ctx context.Context, db DB, imported, existing []O
 		}
 	}
 	return nil
+}
+
+// Retain the decoded filename while making each replacement a new physical file.
+func immutableResumeFilename(name string) string {
+	stem := strings.TrimSuffix(name, filepath.Ext(name))
+	for len([]byte(stem)) > 200 {
+		r := []rune(stem)
+		stem = string(r[:len(r)-1])
+	}
+	return token(16) + "-" + stem + ".pdf"
 }

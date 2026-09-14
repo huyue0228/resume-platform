@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
+import dayjs from 'dayjs'
 import { useSearchParams } from 'react-router-dom'
 import { PageContainer } from '@ant-design/pro-components'
 import {
@@ -35,9 +36,7 @@ import {
   fetchAgentDecisions,
   retryAgentDecision,
   dispatchAllocation,
-  confirmReviewAllocation,
   cancelAllocation,
-  cancelReviewAllocation,
   transferAllocationToManual,
   bulkDispatchCandidates,
   bulkTransferCandidates,
@@ -71,7 +70,7 @@ const PROCESSING_RESULT_LABELS = {
   completed: '处理完成',
   needs_attention: '需处理',
   failed: '失败',
-  review: '待复核',
+  review: '历史复核',
   dispatch: '待下发',
   archive: '归档',
   skipped: '跳过',
@@ -99,8 +98,12 @@ const REASON_CODE_OPTIONS = {
   ai_reference_invalidated: 'AI 引用已失效',
   rule_assigned: '历史规则分配成功',
   ai_dispatched: 'AI 建议下发',
-  ai_review: 'AI 待复核',
+  ai_review: '历史 AI 复核',
   ai_archived: 'AI 建议归档',
+  ai_rejected: '当前志愿 AI 不通过',
+  ai_next_volunteer: '继续评估下一志愿',
+  talent_pool: '志愿已耗尽，进入人才库',
+  awaiting_department: '保留部门处理流程',
   terminal_workflow: '已处于终态',
   no_resume_available: '无可处理志愿',
   cancelled: '任务已取消',
@@ -139,8 +142,9 @@ const SYSTEM_STATUS_OPTIONS = {
     text: '待处理',
     color: 'default',
     status: 'Default',
-    description: '没有完成过 Agent 筛选；仅提交或排队不算处理',
+    description: '首次处理，或部门不通过后等待下一轮处理剩余志愿',
   },
+  talent_pool: { text: '人才库', color: 'purple', description: '全部志愿均未通过，保留历史，等待后续筛选策略' },
   archived: {
     text: '已归档',
     color: 'default',
@@ -152,12 +156,6 @@ const SYSTEM_STATUS_OPTIONS = {
     color: 'orange',
     status: 'Warning',
     description: '岗位已匹配，但本任务 HC 容量不足，等待新任务重新分配',
-  },
-  pending_review: {
-    text: '待复核',
-    color: 'gold',
-    status: 'Warning',
-    description: '存在当前志愿的待 HR 复核尝试',
   },
   pending_dispatch: {
     text: '待下发',
@@ -186,7 +184,7 @@ const SYSTEM_STATUS_OPTIONS = {
 }
 
 const ATTEMPT_STATUS = {
-  pending_review: { color: 'warning', text: '待复核' },
+  pending_review: { color: 'default', text: '历史复核' },
   pending_dispatch: { color: 'default', text: '待下发' },
   dispatched: { color: 'processing', text: '部门处理中' },
   passed: { color: 'success', text: '已通过' },
@@ -282,11 +280,15 @@ const WORKFLOW_STATUS = {
   in_progress: { text: '进行中', color: 'processing' },
   passed: { text: '已通过', color: 'success' },
   archived: { text: '已归档', color: 'default' },
+  waiting_next: { text: '待处理（继续下一志愿）', color: 'default' },
+  talent_pool: { text: '人才库', color: 'purple' },
 }
 
 const REASON_TYPE = {
   assignment: { text: '分配理由', color: 'blue' },
   archive: { text: '归档理由', color: 'default' },
+  waiting_next: { text: '等待下一轮', color: 'default' },
+  talent_pool: { text: '人才库说明', color: 'purple' },
   block: { text: '阻塞原因', color: 'orange' },
   classification: { text: '分类理由', color: 'purple' },
   none: { text: '无', color: 'default' },
@@ -505,25 +507,11 @@ export default function ResumesPage() {
     }
   }
 
-  const handleConfirmReview = async (attempt) => {
-    setDispatchingId(attempt.id)
-    try {
-      await confirmReviewAllocation(attempt.id)
-      message.success('已确认 AI 建议，当前记录进入待下发')
-      reloadCandidates()
-    } finally {
-      setDispatchingId(null)
-    }
-  }
-
   const handleCancelAttempt = async (attempt) => {
     setDispatchingId(attempt.id)
     try {
-      const cancel = attempt.status === 'pending_review' ? cancelReviewAllocation : cancelAllocation
-      await cancel(attempt.id, {
-        reason: attempt.status === 'pending_review' ? 'hr_cancelled_review' : 'hr_cancelled_dispatch',
-      })
-      message.success(attempt.status === 'pending_review' ? '已取消 AI 复核建议' : '已取消待下发尝试')
+      await cancelAllocation(attempt.id, { reason: 'hr_cancelled_dispatch' })
+      message.success('已取消待下发尝试')
       reloadCandidates()
     } finally {
       setDispatchingId(null)
@@ -914,7 +902,6 @@ export default function ResumesPage() {
   const renderDetailActions = (record) => {
     const attempt = record.current_attempt
     const canDispatchAttempt = attempt?.can_dispatch === true && attempt?.status === 'pending_dispatch'
-    const canReview = attempt?.can_dispatch === true && attempt?.status === 'pending_review'
     const canTransferAttempt = attempt?.can_transfer === true
       && attempt?.status === 'dispatched'
       && !attempt.feedback_at
@@ -942,21 +929,13 @@ export default function ResumesPage() {
             导出
           </Button>
         )}
-        {canReview && (
-          <Popconfirm title="确认采纳 AI 建议？确认后进入待下发。" onConfirm={() => handleConfirmReview(attempt)}>
-            <Button type="link" size="small" style={{ padding: 0 }} loading={dispatchingId === attempt.id}>确认建议</Button>
-          </Popconfirm>
-        )}
-        {canReview && hasPermission('resume.manual_assign') && (
-          <Button type="link" size="small" style={{ padding: 0 }} onClick={() => openManualAssign(record.current_resume, attempt)}>转人工</Button>
-        )}
         {canDispatchAttempt && (
           <Popconfirm title="确认下发该简历到部门收件箱？" onConfirm={() => handleDispatch(attempt)}>
             <Button type="link" size="small" style={{ padding: 0 }} loading={dispatchingId === attempt.id}>下发部门</Button>
           </Popconfirm>
         )}
-        {(canReview || canDispatchAttempt) && (
-          <Popconfirm title={canReview ? '取消该 AI 复核建议？' : '取消该待下发尝试？'} onConfirm={() => handleCancelAttempt(attempt)}>
+        {canDispatchAttempt && (
+          <Popconfirm title="取消该待下发尝试？" onConfirm={() => handleCancelAttempt(attempt)}>
             <Button type="link" danger size="small" style={{ padding: 0 }}>取消</Button>
           </Popconfirm>
         )}
@@ -1584,8 +1563,31 @@ export default function ResumesPage() {
                   dataIndex: 'status',
                   width: 100,
                 },
+                {
+                  title: '志愿处理状态',
+                  dataIndex: 'lifecycle_status_label',
+                  width: 150,
+                  render: (_, resume) => <Tooltip title={resume.lifecycle_reason}><Tag>{resume.lifecycle_status_label || '未处理'}</Tag></Tooltip>,
+                },
               ]}
             />
+
+            {!isContact && <SmartDataTable
+              tableId="candidate-application-history"
+              title={() => '志愿流转历史'}
+              style={{ marginTop: 16 }}
+              rowKey="id"
+              size="small"
+              pagination={{ pageSize: 5, showSizeChanger: false, hideOnSinglePage: true }}
+              dataSource={detailRecord.application_history || []}
+              locale={{ emptyText: '暂无志愿流转记录' }}
+              columns={[
+                { title: '时间', dataIndex: 'created_at', width: 160, render: (_, event) => event.created_at ? dayjs(event.created_at).format('YYYY-MM-DD HH:mm:ss') : '-' },
+                { title: '应聘ID', dataIndex: 'apply_id', width: 110 },
+                { title: '状态', dataIndex: 'status_label', width: 140 },
+                { title: '原因', dataIndex: 'reason' },
+              ]}
+            />}
 
             <div style={{ marginTop: 16 }}>
               <Typography.Title level={5} style={{ marginTop: 0 }}>
@@ -1719,7 +1721,7 @@ export default function ResumesPage() {
 
             {!canViewAgentDecisions && detailRecord.current_attempt?.agent_decision_summary && (
               <section style={{ marginTop: 16 }}>
-                <Typography.Title level={5}>当前简历复核依据</Typography.Title>
+                <Typography.Title level={5}>当前简历判定依据</Typography.Title>
                 <Typography.Paragraph>{detailRecord.current_attempt.agent_decision_summary.summary || detailRecord.current_attempt.agent_decision_summary.reason || '未保留分析摘要'}</Typography.Paragraph>
                 {(detailRecord.current_attempt.agent_decision_summary.evidence || []).map((item, index) => (
                   <Typography.Paragraph key={index}>{typeof item === 'string' ? item : item.quote}</Typography.Paragraph>
@@ -1738,6 +1740,7 @@ export default function ResumesPage() {
                 dataSource={agentDecisions}
                 locale={{ emptyText: '暂无 AI 筛选决策' }}
                 columns={[
+                  { title: '应聘ID', dataIndex: 'apply_id', width: 110 },
                   {
                     title: '结论',
                     key: 'recommendation',
@@ -1747,7 +1750,7 @@ export default function ResumesPage() {
                         <Tag color="error">处理失败</Tag>
                       ) : (
                         <Tag color={decision.recommendation === 'dispatch' ? 'success' : decision.recommendation === 'review' ? 'warning' : 'default'}>
-                          {decision.recommendation === 'dispatch' ? '建议下发' : decision.recommendation === 'review' ? '人工复核' : decision.recommendation === 'archive' ? '建议归档' : '-'}
+                          {decision.recommendation === 'dispatch' ? '达标入池' : decision.recommendation === 'review' ? '历史复核' : decision.recommendation === 'archive' ? '当前志愿不通过' : '-'}
                         </Tag>
                       ),
                   },
@@ -1782,7 +1785,7 @@ export default function ResumesPage() {
                     render: (_, decision) => (
                       <Space>
                         <a onClick={() => setAgentDecisionDetail(decision)}>详情</a>
-                        {(decision.error_code || decision.recommendation === 'archive') && hasPermission('attempt.dispatch') && (
+                        {decision.can_retry !== false && (decision.error_code || decision.recommendation === 'archive') && hasPermission('attempt.dispatch') && (
                           <Button
                             type="link"
                             size="small"
@@ -1818,7 +1821,7 @@ export default function ResumesPage() {
         )}
       </Modal>
       <Modal
-        title={manualModal.attempt ? 'AI 复核转人工分配' : '手动强制分配当前志愿'}
+        title={manualModal.attempt ? '调整人工分配' : '手动强制分配当前志愿'}
         open={manualModal.open}
         confirmLoading={manualModal.loading}
         onOk={handleManualAssign}

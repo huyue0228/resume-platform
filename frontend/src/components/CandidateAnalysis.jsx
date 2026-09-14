@@ -16,7 +16,7 @@ const CLAIM_LABELS = {
   certificate: '证书与资质', major_direction: '专业方向', agent_experience: '智能体经历', risk: '需要核实',
 }
 const OUTCOMES = {
-  dispatch: ['可进入下发', 'success'], review: ['需要人工复核', 'warning'], archive: ['暂不进入分配', 'default'],
+  dispatch: ['达标入池', 'success'], review: ['历史复核记录', 'default'], archive: ['当前志愿不通过', 'default'],
 }
 const readableRisk = (risk) => ({ profile_incomplete: '简历信息不足，需人工核实', ocr_fallback: '扫描材料经文字识别处理' }[risk] || risk)
 const scoreText = (score) => score == null || !Number.isFinite(Number(score)) ? '—' : Math.round(Number(score) * 100)
@@ -189,7 +189,7 @@ export default function CandidateAnalysis({ decision, onRetry, retrying = false 
   const result = current.kernel_result || {}
   const hasMatches = Array.isArray(result.matches) && result.matches.length > 0
   const isApplication = result.protocol_version === 'resume-analysis/v3'
-  const poolOutcomes = { pending_review: ['入池待复核', 'warning'], pending_allocation: ['入池待分配', 'processing'], allocated: ['已分配', 'success'], needs_reanalysis: ['需要重新评估', 'warning'], closed: ['入池资格已关闭', 'default'], rejected: ['复核未通过', 'default'] }
+  const poolOutcomes = { pending_review: ['历史复核记录', 'default'], pending_allocation: ['入池待分配', 'processing'], allocated: ['已分配', 'success'], needs_reanalysis: ['需要重新评估', 'warning'], closed: ['入池资格已关闭', 'default'], rejected: ['历史复核未通过', 'default'] }
   const [outcome, color] = current.error_code ? ['分析未完成', 'error'] : poolOutcomes[current.pool_membership?.status] || OUTCOMES[current.recommendation] || ['等待处理', 'default']
   return (
     <div className="candidate-analysis">
@@ -207,7 +207,7 @@ export default function CandidateAnalysis({ decision, onRetry, retrying = false 
         ]} />
       ) : <LegacyAnalysis decision={current} />}
       <Diagnostics decision={current} />
-      {onRetry && (current.error_code || current.recommendation === 'archive') && <footer className="candidate-analysis-footer"><span>补充材料或修正岗位配置后，可重新分析。</span><Button icon={<ReloadOutlined />} loading={retrying} onClick={() => onRetry(current)}>重新分析 <ArrowRightOutlined /></Button></footer>}
+      {onRetry && current.can_retry !== false && (current.error_code || current.recommendation === 'archive') && <footer className="candidate-analysis-footer"><span>补充材料或修正岗位配置后，可重新分析。</span><Button icon={<ReloadOutlined />} loading={retrying} onClick={() => onRetry(current)}>重新分析 <ArrowRightOutlined /></Button></footer>}
     </div>
   )
 }

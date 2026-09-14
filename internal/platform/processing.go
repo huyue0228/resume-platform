@@ -28,6 +28,9 @@ func failureInfo(err error) (string, string) {
 	return "processing_error", "后台处理失败，请重试或联系管理员"
 }
 func (a *App) lockWorkflow(ctx context.Context, db DB, candidateID any) (Object, error) {
+	if err := a.lockCandidateAllocationScopes(ctx, db, candidateID); err != nil {
+		return nil, err
+	}
 	if _, err := one(ctx, db, "SELECT row_to_json(c) FROM core_candidate c WHERE id=$1 FOR UPDATE", candidateID); err != nil {
 		return nil, err
 	}
@@ -59,6 +62,9 @@ func (a *App) itemOutcome(ctx context.Context, db DB, item Object, status, code,
 }
 func revisionChanged(item, w Object) bool {
 	expected := item["workflow_revision_at_submit"]
+	if revision := obj(item["kernel_snapshot"])["continuation_revision"]; revision != nil {
+		expected = revision
+	}
 	if expected == nil {
 		return num(w["revision"]) != 0
 	}
@@ -125,38 +131,41 @@ func (a *App) prepareItem(ctx context.Context, run Object, id any, step string) 
 		return true, nil
 	}
 	force := forceReprocess(run)
-	if !force && contains([]string{"passed", "archived"}, str(w["status"])) {
-		return outcome("success", "terminal_workflow", "流程已结束，已保留现有结果")
+	if keep, code, message, err := a.retainApplicationWork(ctx, tx, run, w); err != nil {
+		return false, err
+	} else if keep {
+		return outcome("success", code, message)
 	}
 	frozen := obj(item["kernel_snapshot"])
 	d := obj(frozen["preflight"])
 	resumeID := obj(frozen["volunteer_ids"])[str(d["current_volunteer_ref"])]
 	resume, _ := a.get(ctx, tx, "core_resume", resumeID)
-	if step == "step1" {
-		for i, ref := range list(d["volunteer_order"]) {
-			rid := obj(frozen["volunteer_ids"])[str(ref)]
-			ranked, readErr := a.get(ctx, tx, "core_resume", rid)
-			if readErr != nil {
-				return false, readErr
-			}
-			if _, err = a.save(ctx, tx, "core_resume", rid, Object{"volunteer_rank": i + 1, "assigned_entity": ranked["entity"]}); err != nil {
-				return false, err
-			}
+	if step == "step1" || (step == "step2" && !contains(stageSteps(str(run["step"])), "step1")) {
+		ids := []int64{}
+		for _, ref := range list(d["volunteer_order"]) {
+			ids = append(ids, num(obj(frozen["volunteer_ids"])[str(ref)]))
 		}
-		candidate, _ := a.get(ctx, tx, "core_candidate", item["candidate_id"])
-		if _, err = a.save(ctx, tx, "core_candidate", candidate["id"], Object{"preferred_entity": preferredEntity(obj(obj(frozen["snapshot"])["candidate"]))}); err != nil {
+		if _, err = tx.Exec(ctx, `UPDATE core_resume r SET volunteer_rank=v.rank,assigned_entity=r.entity FROM unnest($1::bigint[]) WITH ORDINALITY AS v(id,rank) WHERE r.id=v.id`, ids); err != nil {
 			return false, err
 		}
-		if str(run["step"]) == "step1" {
+		if _, err = a.save(ctx, tx, "core_candidate", item["candidate_id"], Object{"preferred_entity": preferredEntity(obj(obj(frozen["snapshot"])["candidate"]))}); err != nil {
+			return false, err
+		}
+		if step == "step1" && str(run["step"]) == "step1" {
 			return outcome("success", "dedup_completed", "简历与志愿整理完成")
 		}
-		return false, tx.Commit(ctx)
+		if step == "step1" {
+			return false, tx.Commit(ctx)
+		}
 	}
 	if resume == nil {
-		if err = a.archiveWorkflow(ctx, tx, w, "all_rejected", "全部可尝试志愿均已反馈未通过"); err != nil {
+		if len(list(obj(frozen["snapshot"])["volunteers"])) == 0 {
+			return outcome("needs_attention", "no_resume_available", "候选人尚无志愿或简历材料")
+		}
+		if err = a.talentPool(ctx, tx, w); err != nil {
 			return false, err
 		}
-		return outcome("success", "no_effective_volunteer", "没有可继续处理的有效志愿")
+		return outcome("success", "talent_pool", "全部志愿已结束，进入人才库")
 	}
 	if step == "step2" {
 		if force {
@@ -224,6 +233,9 @@ func (a *App) prepareItem(ctx context.Context, run Object, id any, step string) 
 			if _, err = a.save(ctx, tx, "core_candidateworkflow", w["id"], Object{"block_reason": d["status"], "block_detail": message}); err != nil {
 				return false, err
 			}
+			if err = a.applicationState(ctx, tx, resume["id"], "blocked", message, Object{"run_id": run["id"], "error_code": d["status"]}); err != nil {
+				return false, err
+			}
 			return outcome("needs_attention", str(d["status"]), message)
 		}
 		if err = a.archiveWorkflow(ctx, tx, w, reason, message); err != nil {
@@ -280,7 +292,10 @@ func (a *App) analyzeItems(ctx context.Context, run Object) error {
 }
 func forceReprocess(run Object) bool {
 	scope := obj(run["scope"])
-	return len(list(scope["system_statuses"])) > 0 || truth(scope["force_reprocess"]) || str(scope["source"]) == "ai_retry" || str(scope["trigger"]) == "feedback_rejected"
+	if scope["source"] == "schedule" {
+		return false
+	}
+	return truth(scope["force_reprocess"]) || str(scope["source"]) == "ai_retry"
 }
 func (a *App) processItem(ctx context.Context, run Object, id any) error {
 	tx, err := a.Pool.Begin(ctx)
@@ -312,8 +327,10 @@ func (a *App) processItem(ctx context.Context, run Object, id any) error {
 		}
 		return tx.Commit(ctx)
 	}
-	if !forceReprocess(run) && contains([]string{"passed", "archived"}, str(w["status"])) {
-		if err = a.itemOutcome(ctx, tx, item, "success", "terminal_workflow", "流程已结束，已保留现有结果"); err != nil {
+	if keep, code, message, err := a.retainApplicationWork(ctx, tx, run, w); err != nil {
+		return err
+	} else if keep {
+		if err = a.itemOutcome(ctx, tx, item, "success", code, message); err != nil {
 			return err
 		}
 		return tx.Commit(ctx)
@@ -325,6 +342,9 @@ func (a *App) processItem(ctx context.Context, run Object, id any) error {
 		return tx.Commit(ctx)
 	}
 	claim := token(16)
+	if err = a.applicationState(ctx, tx, item["prepared_resume_id"], "assessing", "开始评估当前志愿", Object{"run_id": run["id"], "scope_item_id": id}); err != nil {
+		return err
+	}
 	if _, err = a.save(ctx, tx, "core_candidateworkflow", w["id"], Object{"active_processing_scope_item_id": id, "active_processing_token": claim, "active_processing_expires_at": time.Now().UTC().Add(20 * time.Second)}); err != nil {
 		return err
 	}
@@ -422,6 +442,9 @@ func (a *App) processItem(ctx context.Context, run Object, id any) error {
 		if err = a.itemOutcome(ctx, tx, item, "cancelled", "cancelled", "任务已取消"); err != nil {
 			return err
 		}
+		if err = a.applicationState(ctx, tx, item["prepared_resume_id"], "blocked", "任务已取消，可再次处理", Object{"run_id": run["id"]}); err != nil {
+			return err
+		}
 		return tx.Commit(ctx)
 	}
 	if errors.Is(workErr, context.Canceled) {
@@ -451,6 +474,9 @@ func (a *App) processItem(ctx context.Context, run Object, id any) error {
 			if err = a.saveFailure(ctx, tx, live, current, resume, workErr); err != nil {
 				return err
 			}
+			if err = a.applicationState(ctx, tx, resume["id"], "blocked", message, Object{"run_id": live["id"], "error_code": code}); err != nil {
+				return err
+			}
 		}
 		if _, err = a.save(ctx, tx, "core_candidateworkflow", current["id"], Object{"block_reason": code, "block_detail": message, "revision": num(current["revision"]) + 1}); err != nil {
 			return err
@@ -472,6 +498,12 @@ func (a *App) processItem(ctx context.Context, run Object, id any) error {
 		}
 		if _, err = a.save(ctx, tx, "core_candidateworkflow", current["id"], Object{"revision": num(current["revision"]) + 1}); err != nil {
 			return err
+		}
+		if code == "ai_rejected" {
+			if err = a.continueAfterAIRejection(ctx, tx, current, item, frozen); err != nil {
+				return err
+			}
+			return tx.Commit(ctx)
 		}
 		if err = a.itemOutcome(ctx, tx, item, "success", code, message); err != nil {
 			return err
@@ -533,23 +565,15 @@ func floatValue(v any) float64 {
 	}
 	return float64(num(v))
 }
-func recommendation(result, match, frozen Object) string {
-	score := floatValue(match["score"])
-	thresholds := obj(frozen["thresholds"])
-	r := "archive"
-	if score >= floatValue(thresholds["dispatch"]) {
-		r = "dispatch"
-	} else if score >= floatValue(thresholds["review"]) {
-		r = "review"
+
+// The historical dispatch threshold is now the single admission threshold.
+func recommendation(_ Object, match, frozen Object) string {
+	if floatValue(match["score"]) >= floatValue(obj(frozen["thresholds"])["dispatch"]) {
+		return "dispatch"
 	}
-	if r == "dispatch" && contains(stringValues(obj(result["profile"])["risks"]), "profile_incomplete") {
-		r = "review"
-	}
-	if frozen["lane"] == "review_only" {
-		r = "review"
-	}
-	return r
+	return "archive"
 }
+
 func (a *App) applyAnalysis(ctx context.Context, db DB, run, w, resume, item, frozen, result Object) (string, string, error) {
 	return a.savePoolAssessment(ctx, db, run, w, resume, item, frozen, result)
 }

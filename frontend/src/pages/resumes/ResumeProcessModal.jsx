@@ -54,6 +54,7 @@ export default function ResumeProcessModal({
         </div>
         <Typography.Text strong>1. 处理范围</Typography.Text>
         <Typography.Text type="secondary">选择勾选的候选人，或按下方状态匹配。状态范围沿用当前表格筛选条件；定时执行时重新匹配，包含之后符合条件的新简历。</Typography.Text>
+        <Typography.Text type="secondary">按当前进度继续处理：AI 达标直接入池，不通过继续下一志愿；部门不通过后回到待处理，等待下一轮。人才库和已通过候选人保留现有结果。</Typography.Text>
         <Checkbox
           checked={processCurrentSelected}
           disabled={!processCandidateCount}

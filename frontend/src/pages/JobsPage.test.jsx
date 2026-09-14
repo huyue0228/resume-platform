@@ -29,7 +29,8 @@ vi.mock('@ant-design/pro-components', () => ({
   ),
 }))
 
-vi.mock('antd', () => ({
+vi.mock('antd', async (importOriginal) => ({
+  ...(await importOriginal()),
   Button: ({ children, loading, onClick }) => (
     <button type="button" aria-busy={loading ? 'true' : 'false'} onClick={onClick}>
       {children}

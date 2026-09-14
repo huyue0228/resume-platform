@@ -181,7 +181,7 @@ describe('ProcessingTaskCenter', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '展开成功子项' }))
     const reviewButton = await screen.findByRole('button', {
-      name: '筛选本任务待复核简历 1 名',
+      name: '筛选本任务历史复核简历 1 名',
     })
     await userEvent.click(reviewButton)
 
@@ -219,7 +219,7 @@ describe('ProcessingTaskCenter', () => {
     expect(screen.getAllByRole('button', { name: '收起成功子项' })).toHaveLength(2)
     expect(screen.getAllByText(/Agent 子项合计可小于处理完成总数/)).toHaveLength(2)
     const disabledDispatch = screen.getAllByRole('button', {
-      name: '筛选本任务待下发简历 0 名',
+      name: '筛选本任务达标入池简历 0 名',
     })
     expect(disabledDispatch).toHaveLength(2)
     disabledDispatch.forEach((button) => expect(button.disabled).toBe(true))

@@ -133,6 +133,39 @@ func (a *App) validatePoolPolicy(ctx context.Context, db DB, policy Object) erro
 			}
 		}
 	}
+	for _, value := range list(policy["pools"]) {
+		pool := obj(value)
+		count := 0
+		for _, v := range list(policy["rules"]) {
+			rule := obj(v)
+			if activePolicyItem(rule) && rule["pool_code"] == pool["code"] {
+				count++
+			}
+		}
+		if count > 200 {
+			return bad("同一职位池最多启用 200 条需求")
+		}
+	}
+	for _, value := range list(policy["standards"]) {
+		standard := obj(value)
+		if !activePolicyItem(standard) {
+			continue
+		}
+		codes := stringValues(standard["tag_codes"])
+		for _, v := range list(policy["rules"]) {
+			rule := obj(v)
+			if !activePolicyItem(rule) || rule["pool_code"] != standard["pool_code"] {
+				continue
+			}
+			for _, field := range []string{"required_tags", "preferred_tags"} {
+				for _, tag := range stringValues(rule[field]) {
+					if !contains(codes, tag) {
+						return bad("投递标准 " + str(standard["code"]) + " 缺少可达需求标签：" + tag)
+					}
+				}
+			}
+		}
+	}
 	// An imported application may identify exactly one reviewed standard.
 	mappings := map[string]bool{}
 	for _, value := range list(policy["standards"]) {
@@ -232,6 +265,9 @@ func (a *App) poolConfigAPI(w http.ResponseWriter, r *http.Request, p *Principal
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if err = a.lockAllAllocationScopes(ctx, tx); err != nil {
+		return err
+	}
 	current, err := one(ctx, tx, "SELECT row_to_json(p) FROM platform_pool_policy p WHERE singleton FOR UPDATE")
 	if err != nil {
 		return err
@@ -253,6 +289,9 @@ func (a *App) poolConfigAPI(w http.ResponseWriter, r *http.Request, p *Principal
 	}
 	value, err := one(ctx, tx, "UPDATE platform_pool_policy p SET version=version+1,policy=$1::jsonb WHERE singleton RETURNING row_to_json(p)", string(canonicalJSON(policy, false)))
 	if err != nil {
+		return err
+	}
+	if err = a.syncAllocationConfig(ctx, tx); err != nil {
 		return err
 	}
 	if err = tx.Commit(ctx); err != nil {

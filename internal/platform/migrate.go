@@ -45,6 +45,9 @@ ALTER TABLE core_processingrunscopeitem ADD COLUMN IF NOT EXISTS text_extraction
 			return err
 		}
 	}
+	if err = ensureAllocationAttemptIndex(ctx, tx); err != nil {
+		return err
+	}
 	_, err = tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS platform_go_jobs (id bigserial PRIMARY KEY,run_id bigint UNIQUE REFERENCES core_processingrun(id) ON DELETE CASCADE,status text NOT NULL DEFAULT 'pending',lease_until timestamptz,worker_token text NOT NULL DEFAULT '',attempts integer NOT NULL DEFAULT 0,created_at timestamptz NOT NULL DEFAULT now()); CREATE INDEX IF NOT EXISTS platform_go_jobs_claim ON platform_go_jobs(status,lease_until); CREATE TABLE IF NOT EXISTS platform_go_maintenance(id bigserial PRIMARY KEY,task_id text UNIQUE NOT NULL,kind text NOT NULL,payload jsonb NOT NULL,status text NOT NULL DEFAULT 'pending',worker_token text NOT NULL DEFAULT '',lease_until timestamptz,attempts integer NOT NULL DEFAULT 0,error_code text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now());`)
 	if err != nil {
 		return err
@@ -56,6 +59,15 @@ ALTER TABLE core_processingrunscopeitem ADD COLUMN IF NOT EXISTS text_extraction
 		return err
 	}
 	if err = a.migratePositionPools(ctx, tx); err != nil {
+		return err
+	}
+	if err = a.migrateAllocation(ctx, tx); err != nil {
+		return err
+	}
+	if err = a.migrateApplications(ctx, tx); err != nil {
+		return err
+	}
+	if err = a.migrateRemovedReview(ctx, tx); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

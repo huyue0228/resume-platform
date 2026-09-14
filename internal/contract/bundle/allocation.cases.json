@@ -1,0 +1,2064 @@
+[
+  {
+    "id": "A02_nonpublic_receives",
+    "request": {
+      "protocol_version": "resume-allocation/v1",
+      "task_kind": "pool.candidate_allocation",
+      "execution_mode": "deterministic",
+      "task_id": "allocation-fixture",
+      "idempotency_key": "allocation-fixture-key",
+      "pin": {
+        "pin_id": "pin-1",
+        "kernel_build": "dev",
+        "protocol_version": "resume-allocation/v1",
+        "result_schema_version": "resume-allocation-plan/v1",
+        "toolset_version": "allocation-tools/v1",
+        "policy_version": "allocation-order/v1",
+        "instruction_version": "allocation-deterministic/v1"
+      },
+      "snapshot_hash": "02a0e07c1a1a7ab3cd38b7df2f847b7ca68aa5d42a2f326047fe5eebe45e91f8",
+      "snapshot": {
+        "snapshot_id": "snapshot-1",
+        "snapshot_at": "2026-09-14T00:00:00Z",
+        "scope_ref": "scope-1",
+        "entity_ref": "entity-1",
+        "pool_ref": "pool-1",
+        "scope_revision": 1,
+        "policy_revision": 1,
+        "epoch": 1,
+        "next_sequence": 100,
+        "window_seconds": 604800,
+        "members": [
+          {
+            "member_id": 1,
+            "candidate_ref": "candidate-1",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-1",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "ecd790d8af3d676e31da136e4a9ac2ce3c735564ddf8dd9afc272e6d14f8f1b0",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10,
+              20
+            ],
+            "counted_demand_ids": []
+          }
+        ],
+        "demands": [
+          {
+            "demand_id": 10,
+            "department_ref": "department-10",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 4,
+            "last_allocation_sequence": 0
+          },
+          {
+            "demand_id": 20,
+            "department_ref": "department-20",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 0
+          }
+        ]
+      },
+      "budget": {
+        "max_duration_seconds": 30,
+        "max_tool_calls": 16
+      }
+    },
+    "expected": [
+      {
+        "member_id": 1,
+        "demand_id": 20
+      }
+    ]
+  },
+  {
+    "id": "A03_hc_change_does_not_change_result",
+    "request": {
+      "protocol_version": "resume-allocation/v1",
+      "task_kind": "pool.candidate_allocation",
+      "execution_mode": "deterministic",
+      "task_id": "allocation-fixture",
+      "idempotency_key": "allocation-fixture-key",
+      "pin": {
+        "pin_id": "pin-1",
+        "kernel_build": "dev",
+        "protocol_version": "resume-allocation/v1",
+        "result_schema_version": "resume-allocation-plan/v1",
+        "toolset_version": "allocation-tools/v1",
+        "policy_version": "allocation-order/v1",
+        "instruction_version": "allocation-deterministic/v1"
+      },
+      "snapshot_hash": "02a0e07c1a1a7ab3cd38b7df2f847b7ca68aa5d42a2f326047fe5eebe45e91f8",
+      "snapshot": {
+        "snapshot_id": "snapshot-1",
+        "snapshot_at": "2026-09-14T00:00:00Z",
+        "scope_ref": "scope-1",
+        "entity_ref": "entity-1",
+        "pool_ref": "pool-1",
+        "scope_revision": 1,
+        "policy_revision": 1,
+        "epoch": 1,
+        "next_sequence": 100,
+        "window_seconds": 604800,
+        "members": [
+          {
+            "member_id": 1,
+            "candidate_ref": "candidate-1",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-1",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "ecd790d8af3d676e31da136e4a9ac2ce3c735564ddf8dd9afc272e6d14f8f1b0",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10,
+              20
+            ],
+            "counted_demand_ids": []
+          }
+        ],
+        "demands": [
+          {
+            "demand_id": 10,
+            "department_ref": "department-10",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 4,
+            "last_allocation_sequence": 0
+          },
+          {
+            "demand_id": 20,
+            "department_ref": "department-20",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 0
+          }
+        ]
+      },
+      "budget": {
+        "max_duration_seconds": 30,
+        "max_tool_calls": 16
+      }
+    },
+    "expected": [
+      {
+        "member_id": 1,
+        "demand_id": 20
+      }
+    ]
+  },
+  {
+    "id": "A04_matching_precedes_balance_and_priority",
+    "request": {
+      "protocol_version": "resume-allocation/v1",
+      "task_kind": "pool.candidate_allocation",
+      "execution_mode": "deterministic",
+      "task_id": "allocation-fixture",
+      "idempotency_key": "allocation-fixture-key",
+      "pin": {
+        "pin_id": "pin-1",
+        "kernel_build": "dev",
+        "protocol_version": "resume-allocation/v1",
+        "result_schema_version": "resume-allocation-plan/v1",
+        "toolset_version": "allocation-tools/v1",
+        "policy_version": "allocation-order/v1",
+        "instruction_version": "allocation-deterministic/v1"
+      },
+      "snapshot_hash": "9e3c6578d7a1c5498517b4cc950bf15e69db93cd4842b9e0924b927b2a9fa60f",
+      "snapshot": {
+        "snapshot_id": "snapshot-1",
+        "snapshot_at": "2026-09-14T00:00:00Z",
+        "scope_ref": "scope-1",
+        "entity_ref": "entity-1",
+        "pool_ref": "pool-1",
+        "scope_revision": 1,
+        "policy_revision": 1,
+        "epoch": 1,
+        "next_sequence": 100,
+        "window_seconds": 604800,
+        "members": [
+          {
+            "member_id": 1,
+            "candidate_ref": "candidate-1",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-1",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "ecd790d8af3d676e31da136e4a9ac2ce3c735564ddf8dd9afc272e6d14f8f1b0",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10,
+              20
+            ],
+            "counted_demand_ids": []
+          }
+        ],
+        "demands": [
+          {
+            "demand_id": 10,
+            "department_ref": "department-10",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 9,
+            "recent_supply_count": 50,
+            "last_allocation_sequence": 0
+          },
+          {
+            "demand_id": 20,
+            "department_ref": "department-20",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "simulation"
+            ],
+            "priority": 0,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 0
+          }
+        ]
+      },
+      "budget": {
+        "max_duration_seconds": 30,
+        "max_tool_calls": 16
+      }
+    },
+    "expected": [
+      {
+        "member_id": 1,
+        "demand_id": 10
+      }
+    ]
+  },
+  {
+    "id": "A05_priority_precedes_balance",
+    "request": {
+      "protocol_version": "resume-allocation/v1",
+      "task_kind": "pool.candidate_allocation",
+      "execution_mode": "deterministic",
+      "task_id": "allocation-fixture",
+      "idempotency_key": "allocation-fixture-key",
+      "pin": {
+        "pin_id": "pin-1",
+        "kernel_build": "dev",
+        "protocol_version": "resume-allocation/v1",
+        "result_schema_version": "resume-allocation-plan/v1",
+        "toolset_version": "allocation-tools/v1",
+        "policy_version": "allocation-order/v1",
+        "instruction_version": "allocation-deterministic/v1"
+      },
+      "snapshot_hash": "df5ebba59c07bf63574149d51b68f46890a164d69f32ba2bf492e1bc72a98b7c",
+      "snapshot": {
+        "snapshot_id": "snapshot-1",
+        "snapshot_at": "2026-09-14T00:00:00Z",
+        "scope_ref": "scope-1",
+        "entity_ref": "entity-1",
+        "pool_ref": "pool-1",
+        "scope_revision": 1,
+        "policy_revision": 1,
+        "epoch": 1,
+        "next_sequence": 100,
+        "window_seconds": 604800,
+        "members": [
+          {
+            "member_id": 1,
+            "candidate_ref": "candidate-1",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-1",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "ecd790d8af3d676e31da136e4a9ac2ce3c735564ddf8dd9afc272e6d14f8f1b0",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10,
+              20
+            ],
+            "counted_demand_ids": []
+          }
+        ],
+        "demands": [
+          {
+            "demand_id": 10,
+            "department_ref": "department-10",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 0,
+            "recent_supply_count": 50,
+            "last_allocation_sequence": 0
+          },
+          {
+            "demand_id": 20,
+            "department_ref": "department-20",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 0
+          }
+        ]
+      },
+      "budget": {
+        "max_duration_seconds": 30,
+        "max_tool_calls": 16
+      }
+    },
+    "expected": [
+      {
+        "member_id": 1,
+        "demand_id": 10
+      }
+    ]
+  },
+  {
+    "id": "A06_batch_provisional_supply",
+    "request": {
+      "protocol_version": "resume-allocation/v1",
+      "task_kind": "pool.candidate_allocation",
+      "execution_mode": "deterministic",
+      "task_id": "allocation-fixture",
+      "idempotency_key": "allocation-fixture-key",
+      "pin": {
+        "pin_id": "pin-1",
+        "kernel_build": "dev",
+        "protocol_version": "resume-allocation/v1",
+        "result_schema_version": "resume-allocation-plan/v1",
+        "toolset_version": "allocation-tools/v1",
+        "policy_version": "allocation-order/v1",
+        "instruction_version": "allocation-deterministic/v1"
+      },
+      "snapshot_hash": "93ccc38918cbf7bac6aa87d7056706df1d2f779a77a1f5f028b99ad25207739f",
+      "snapshot": {
+        "snapshot_id": "snapshot-1",
+        "snapshot_at": "2026-09-14T00:00:00Z",
+        "scope_ref": "scope-1",
+        "entity_ref": "entity-1",
+        "pool_ref": "pool-1",
+        "scope_revision": 1,
+        "policy_revision": 1,
+        "epoch": 1,
+        "next_sequence": 100,
+        "window_seconds": 604800,
+        "members": [
+          {
+            "member_id": 4,
+            "candidate_ref": "candidate-4",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-4",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "1cabf084af66863f17d101ed8298405467e6e8b0ca2152ace4788cefdfdfe9da",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-4-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-4-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10,
+              20
+            ],
+            "counted_demand_ids": []
+          },
+          {
+            "member_id": 2,
+            "candidate_ref": "candidate-2",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-2",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "8c643f399a0cb09bf4793325448f1f394e620cafcb8256b359e92fe2da476f4a",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-2-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-2-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10,
+              20
+            ],
+            "counted_demand_ids": []
+          },
+          {
+            "member_id": 3,
+            "candidate_ref": "candidate-3",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-3",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "45acb1e1a8192954f7eb078b5ecc9ec931561a71d57a26cf0495caf54bd972ec",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-3-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-3-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10,
+              20
+            ],
+            "counted_demand_ids": []
+          },
+          {
+            "member_id": 1,
+            "candidate_ref": "candidate-1",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-1",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "ecd790d8af3d676e31da136e4a9ac2ce3c735564ddf8dd9afc272e6d14f8f1b0",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10,
+              20
+            ],
+            "counted_demand_ids": []
+          }
+        ],
+        "demands": [
+          {
+            "demand_id": 10,
+            "department_ref": "department-10",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 0
+          },
+          {
+            "demand_id": 20,
+            "department_ref": "department-20",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 0
+          }
+        ]
+      },
+      "budget": {
+        "max_duration_seconds": 30,
+        "max_tool_calls": 16
+      }
+    },
+    "expected": [
+      {
+        "member_id": 1,
+        "demand_id": 10
+      },
+      {
+        "member_id": 2,
+        "demand_id": 20
+      },
+      {
+        "member_id": 3,
+        "demand_id": 10
+      },
+      {
+        "member_id": 4,
+        "demand_id": 20
+      }
+    ]
+  },
+  {
+    "id": "A06_cross_batch_existing_supply",
+    "request": {
+      "protocol_version": "resume-allocation/v1",
+      "task_kind": "pool.candidate_allocation",
+      "execution_mode": "deterministic",
+      "task_id": "allocation-fixture",
+      "idempotency_key": "allocation-fixture-key",
+      "pin": {
+        "pin_id": "pin-1",
+        "kernel_build": "dev",
+        "protocol_version": "resume-allocation/v1",
+        "result_schema_version": "resume-allocation-plan/v1",
+        "toolset_version": "allocation-tools/v1",
+        "policy_version": "allocation-order/v1",
+        "instruction_version": "allocation-deterministic/v1"
+      },
+      "snapshot_hash": "ec279009b0e637d5307cdf80f1da9a4c9599860668513550156cc5baa11d1441",
+      "snapshot": {
+        "snapshot_id": "snapshot-1",
+        "snapshot_at": "2026-09-14T00:00:00Z",
+        "scope_ref": "scope-1",
+        "entity_ref": "entity-1",
+        "pool_ref": "pool-1",
+        "scope_revision": 1,
+        "policy_revision": 1,
+        "epoch": 1,
+        "next_sequence": 100,
+        "window_seconds": 604800,
+        "members": [
+          {
+            "member_id": 1,
+            "candidate_ref": "candidate-1",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-1",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "ecd790d8af3d676e31da136e4a9ac2ce3c735564ddf8dd9afc272e6d14f8f1b0",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10,
+              20
+            ],
+            "counted_demand_ids": []
+          },
+          {
+            "member_id": 2,
+            "candidate_ref": "candidate-2",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-2",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "8c643f399a0cb09bf4793325448f1f394e620cafcb8256b359e92fe2da476f4a",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-2-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-2-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10,
+              20
+            ],
+            "counted_demand_ids": []
+          },
+          {
+            "member_id": 3,
+            "candidate_ref": "candidate-3",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-3",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "45acb1e1a8192954f7eb078b5ecc9ec931561a71d57a26cf0495caf54bd972ec",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-3-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-3-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10,
+              20
+            ],
+            "counted_demand_ids": []
+          }
+        ],
+        "demands": [
+          {
+            "demand_id": 10,
+            "department_ref": "department-10",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 2,
+            "last_allocation_sequence": 8
+          },
+          {
+            "demand_id": 20,
+            "department_ref": "department-20",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 3
+          }
+        ]
+      },
+      "budget": {
+        "max_duration_seconds": 30,
+        "max_tool_calls": 16
+      }
+    },
+    "expected": [
+      {
+        "member_id": 1,
+        "demand_id": 20
+      },
+      {
+        "member_id": 2,
+        "demand_id": 20
+      },
+      {
+        "member_id": 3,
+        "demand_id": 10
+      }
+    ]
+  },
+  {
+    "id": "A07_last_recommendation_before_id",
+    "request": {
+      "protocol_version": "resume-allocation/v1",
+      "task_kind": "pool.candidate_allocation",
+      "execution_mode": "deterministic",
+      "task_id": "allocation-fixture",
+      "idempotency_key": "allocation-fixture-key",
+      "pin": {
+        "pin_id": "pin-1",
+        "kernel_build": "dev",
+        "protocol_version": "resume-allocation/v1",
+        "result_schema_version": "resume-allocation-plan/v1",
+        "toolset_version": "allocation-tools/v1",
+        "policy_version": "allocation-order/v1",
+        "instruction_version": "allocation-deterministic/v1"
+      },
+      "snapshot_hash": "2efbb19412c67905a228b01d4de35f9dc6098a55d1e6603a7904cdece537de28",
+      "snapshot": {
+        "snapshot_id": "snapshot-1",
+        "snapshot_at": "2026-09-14T00:00:00Z",
+        "scope_ref": "scope-1",
+        "entity_ref": "entity-1",
+        "pool_ref": "pool-1",
+        "scope_revision": 1,
+        "policy_revision": 1,
+        "epoch": 1,
+        "next_sequence": 100,
+        "window_seconds": 604800,
+        "members": [
+          {
+            "member_id": 1,
+            "candidate_ref": "candidate-1",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-1",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "ecd790d8af3d676e31da136e4a9ac2ce3c735564ddf8dd9afc272e6d14f8f1b0",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10,
+              20
+            ],
+            "counted_demand_ids": []
+          }
+        ],
+        "demands": [
+          {
+            "demand_id": 10,
+            "department_ref": "department-10",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 7
+          },
+          {
+            "demand_id": 20,
+            "department_ref": "department-20",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 2
+          }
+        ]
+      },
+      "budget": {
+        "max_duration_seconds": 30,
+        "max_tool_calls": 16
+      }
+    },
+    "expected": [
+      {
+        "member_id": 1,
+        "demand_id": 20
+      }
+    ]
+  },
+  {
+    "id": "A07_stable_id_tiebreak",
+    "request": {
+      "protocol_version": "resume-allocation/v1",
+      "task_kind": "pool.candidate_allocation",
+      "execution_mode": "deterministic",
+      "task_id": "allocation-fixture",
+      "idempotency_key": "allocation-fixture-key",
+      "pin": {
+        "pin_id": "pin-1",
+        "kernel_build": "dev",
+        "protocol_version": "resume-allocation/v1",
+        "result_schema_version": "resume-allocation-plan/v1",
+        "toolset_version": "allocation-tools/v1",
+        "policy_version": "allocation-order/v1",
+        "instruction_version": "allocation-deterministic/v1"
+      },
+      "snapshot_hash": "d60e154bcc513f62bd6d44bc7a9bb8c9abe6303d859c4a121f14d9be15b12714",
+      "snapshot": {
+        "snapshot_id": "snapshot-1",
+        "snapshot_at": "2026-09-14T00:00:00Z",
+        "scope_ref": "scope-1",
+        "entity_ref": "entity-1",
+        "pool_ref": "pool-1",
+        "scope_revision": 1,
+        "policy_revision": 1,
+        "epoch": 1,
+        "next_sequence": 100,
+        "window_seconds": 604800,
+        "members": [
+          {
+            "member_id": 1,
+            "candidate_ref": "candidate-1",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-1",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "ecd790d8af3d676e31da136e4a9ac2ce3c735564ddf8dd9afc272e6d14f8f1b0",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10,
+              20
+            ],
+            "counted_demand_ids": []
+          }
+        ],
+        "demands": [
+          {
+            "demand_id": 20,
+            "department_ref": "department-20",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 0
+          },
+          {
+            "demand_id": 10,
+            "department_ref": "department-10",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 0
+          }
+        ]
+      },
+      "budget": {
+        "max_duration_seconds": 30,
+        "max_tool_calls": 16
+      }
+    },
+    "expected": [
+      {
+        "member_id": 1,
+        "demand_id": 10
+      }
+    ]
+  },
+  {
+    "id": "A08_low_confidence_required_tag",
+    "request": {
+      "protocol_version": "resume-allocation/v1",
+      "task_kind": "pool.candidate_allocation",
+      "execution_mode": "deterministic",
+      "task_id": "allocation-fixture",
+      "idempotency_key": "allocation-fixture-key",
+      "pin": {
+        "pin_id": "pin-1",
+        "kernel_build": "dev",
+        "protocol_version": "resume-allocation/v1",
+        "result_schema_version": "resume-allocation-plan/v1",
+        "toolset_version": "allocation-tools/v1",
+        "policy_version": "allocation-order/v1",
+        "instruction_version": "allocation-deterministic/v1"
+      },
+      "snapshot_hash": "2351dac30ebc724c94f6282c1a636b71ade0f740be8d462db119d538234c7fb2",
+      "snapshot": {
+        "snapshot_id": "snapshot-1",
+        "snapshot_at": "2026-09-14T00:00:00Z",
+        "scope_ref": "scope-1",
+        "entity_ref": "entity-1",
+        "pool_ref": "pool-1",
+        "scope_revision": 1,
+        "policy_revision": 1,
+        "epoch": 1,
+        "next_sequence": 100,
+        "window_seconds": 604800,
+        "members": [
+          {
+            "member_id": 1,
+            "candidate_ref": "candidate-1",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-1",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "80e2ee512c4a6399c89afa9e38e3aecf40118c09196a2ac41ac364bd6c29eb14",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 7900,
+                "source": "model",
+                "assertion_ref": "assertion-1-cad",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10
+            ],
+            "counted_demand_ids": []
+          }
+        ],
+        "demands": [
+          {
+            "demand_id": 10,
+            "department_ref": "department-10",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 0
+          }
+        ]
+      },
+      "budget": {
+        "max_duration_seconds": 30,
+        "max_tool_calls": 16
+      }
+    },
+    "expected": [
+      {
+        "member_id": 1,
+        "wait": "required_tags_unavailable"
+      }
+    ]
+  },
+  {
+    "id": "A08_unverified_tag_is_not_supported",
+    "request": {
+      "protocol_version": "resume-allocation/v1",
+      "task_kind": "pool.candidate_allocation",
+      "execution_mode": "deterministic",
+      "task_id": "allocation-fixture",
+      "idempotency_key": "allocation-fixture-key",
+      "pin": {
+        "pin_id": "pin-1",
+        "kernel_build": "dev",
+        "protocol_version": "resume-allocation/v1",
+        "result_schema_version": "resume-allocation-plan/v1",
+        "toolset_version": "allocation-tools/v1",
+        "policy_version": "allocation-order/v1",
+        "instruction_version": "allocation-deterministic/v1"
+      },
+      "snapshot_hash": "8410c8b891823b30963814834573aea2f07265478765f73c1877ced5c3bb83a1",
+      "snapshot": {
+        "snapshot_id": "snapshot-1",
+        "snapshot_at": "2026-09-14T00:00:00Z",
+        "scope_ref": "scope-1",
+        "entity_ref": "entity-1",
+        "pool_ref": "pool-1",
+        "scope_revision": 1,
+        "policy_revision": 1,
+        "epoch": 1,
+        "next_sequence": 100,
+        "window_seconds": 604800,
+        "members": [
+          {
+            "member_id": 1,
+            "candidate_ref": "candidate-1",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-1",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "7cf76f0b18d8bec615fd5dc5b8602bcd934ba9f9f873be80a075ac8aaece8765",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "needs_verification",
+                "confidence_bps": 9900,
+                "source": "model",
+                "assertion_ref": "assertion-1-cad",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10
+            ],
+            "counted_demand_ids": []
+          }
+        ],
+        "demands": [
+          {
+            "demand_id": 10,
+            "department_ref": "department-10",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 0
+          }
+        ]
+      },
+      "budget": {
+        "max_duration_seconds": 30,
+        "max_tool_calls": 16
+      }
+    },
+    "expected": [
+      {
+        "member_id": 1,
+        "wait": "required_tags_unavailable"
+      }
+    ]
+  },
+  {
+    "id": "A08_manual_assertion_with_verified_provenance",
+    "request": {
+      "protocol_version": "resume-allocation/v1",
+      "task_kind": "pool.candidate_allocation",
+      "execution_mode": "deterministic",
+      "task_id": "allocation-fixture",
+      "idempotency_key": "allocation-fixture-key",
+      "pin": {
+        "pin_id": "pin-1",
+        "kernel_build": "dev",
+        "protocol_version": "resume-allocation/v1",
+        "result_schema_version": "resume-allocation-plan/v1",
+        "toolset_version": "allocation-tools/v1",
+        "policy_version": "allocation-order/v1",
+        "instruction_version": "allocation-deterministic/v1"
+      },
+      "snapshot_hash": "9d3e98275aafd1e6f7866e3f823129f326ea4f50b8e67be96301f762164cc40d",
+      "snapshot": {
+        "snapshot_id": "snapshot-1",
+        "snapshot_at": "2026-09-14T00:00:00Z",
+        "scope_ref": "scope-1",
+        "entity_ref": "entity-1",
+        "pool_ref": "pool-1",
+        "scope_revision": 1,
+        "policy_revision": 1,
+        "epoch": 1,
+        "next_sequence": 100,
+        "window_seconds": 604800,
+        "members": [
+          {
+            "member_id": 1,
+            "candidate_ref": "candidate-1",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-1",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "cf8d0f835a8fdd5101cd3fc2e9a58eb50940277ca75c144bc7127700c6b1ede4",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 0,
+                "source": "manual",
+                "assertion_ref": "assertion-1-cad",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10
+            ],
+            "counted_demand_ids": []
+          }
+        ],
+        "demands": [
+          {
+            "demand_id": 10,
+            "department_ref": "department-10",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 0
+          }
+        ]
+      },
+      "budget": {
+        "max_duration_seconds": 30,
+        "max_tool_calls": 16
+      }
+    },
+    "expected": [
+      {
+        "member_id": 1,
+        "demand_id": 10
+      }
+    ]
+  },
+  {
+    "id": "A08_no_preferred_hit_without_required",
+    "request": {
+      "protocol_version": "resume-allocation/v1",
+      "task_kind": "pool.candidate_allocation",
+      "execution_mode": "deterministic",
+      "task_id": "allocation-fixture",
+      "idempotency_key": "allocation-fixture-key",
+      "pin": {
+        "pin_id": "pin-1",
+        "kernel_build": "dev",
+        "protocol_version": "resume-allocation/v1",
+        "result_schema_version": "resume-allocation-plan/v1",
+        "toolset_version": "allocation-tools/v1",
+        "policy_version": "allocation-order/v1",
+        "instruction_version": "allocation-deterministic/v1"
+      },
+      "snapshot_hash": "0418459950ebcd963e841692b4be5fe312225b02e6e99dafd2ec0c80e6ad16d9",
+      "snapshot": {
+        "snapshot_id": "snapshot-1",
+        "snapshot_at": "2026-09-14T00:00:00Z",
+        "scope_ref": "scope-1",
+        "entity_ref": "entity-1",
+        "pool_ref": "pool-1",
+        "scope_revision": 1,
+        "policy_revision": 1,
+        "epoch": 1,
+        "next_sequence": 100,
+        "window_seconds": 604800,
+        "members": [
+          {
+            "member_id": 1,
+            "candidate_ref": "candidate-1",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-1",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "ecd790d8af3d676e31da136e4a9ac2ce3c735564ddf8dd9afc272e6d14f8f1b0",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10
+            ],
+            "counted_demand_ids": []
+          }
+        ],
+        "demands": [
+          {
+            "demand_id": 10,
+            "department_ref": "department-10",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [],
+            "preferred_tags": [
+              "simulation"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 0
+          }
+        ]
+      },
+      "budget": {
+        "max_duration_seconds": 30,
+        "max_tool_calls": 16
+      }
+    },
+    "expected": [
+      {
+        "member_id": 1,
+        "wait": "required_tags_unavailable"
+      }
+    ]
+  },
+  {
+    "id": "A09_paused_demand_excluded",
+    "request": {
+      "protocol_version": "resume-allocation/v1",
+      "task_kind": "pool.candidate_allocation",
+      "execution_mode": "deterministic",
+      "task_id": "allocation-fixture",
+      "idempotency_key": "allocation-fixture-key",
+      "pin": {
+        "pin_id": "pin-1",
+        "kernel_build": "dev",
+        "protocol_version": "resume-allocation/v1",
+        "result_schema_version": "resume-allocation-plan/v1",
+        "toolset_version": "allocation-tools/v1",
+        "policy_version": "allocation-order/v1",
+        "instruction_version": "allocation-deterministic/v1"
+      },
+      "snapshot_hash": "0e6351d775881bd2970d2620d97b70b15eeab74066d137b1f7e09dd23c95f985",
+      "snapshot": {
+        "snapshot_id": "snapshot-1",
+        "snapshot_at": "2026-09-14T00:00:00Z",
+        "scope_ref": "scope-1",
+        "entity_ref": "entity-1",
+        "pool_ref": "pool-1",
+        "scope_revision": 1,
+        "policy_revision": 1,
+        "epoch": 1,
+        "next_sequence": 100,
+        "window_seconds": 604800,
+        "members": [
+          {
+            "member_id": 1,
+            "candidate_ref": "candidate-1",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-1",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "ecd790d8af3d676e31da136e4a9ac2ce3c735564ddf8dd9afc272e6d14f8f1b0",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10,
+              20
+            ],
+            "counted_demand_ids": []
+          }
+        ],
+        "demands": [
+          {
+            "demand_id": 10,
+            "department_ref": "department-10",
+            "revision": 1,
+            "reception_state": "paused",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 0,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 0
+          },
+          {
+            "demand_id": 20,
+            "department_ref": "department-20",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 99,
+            "last_allocation_sequence": 0
+          }
+        ]
+      },
+      "budget": {
+        "max_duration_seconds": 30,
+        "max_tool_calls": 16
+      }
+    },
+    "expected": [
+      {
+        "member_id": 1,
+        "demand_id": 20
+      }
+    ]
+  },
+  {
+    "id": "A09_all_demands_closed",
+    "request": {
+      "protocol_version": "resume-allocation/v1",
+      "task_kind": "pool.candidate_allocation",
+      "execution_mode": "deterministic",
+      "task_id": "allocation-fixture",
+      "idempotency_key": "allocation-fixture-key",
+      "pin": {
+        "pin_id": "pin-1",
+        "kernel_build": "dev",
+        "protocol_version": "resume-allocation/v1",
+        "result_schema_version": "resume-allocation-plan/v1",
+        "toolset_version": "allocation-tools/v1",
+        "policy_version": "allocation-order/v1",
+        "instruction_version": "allocation-deterministic/v1"
+      },
+      "snapshot_hash": "0ffab579eba35d30829cb0a6904ddeceb9f20f1c4ffcfbc28174479a0359cb63",
+      "snapshot": {
+        "snapshot_id": "snapshot-1",
+        "snapshot_at": "2026-09-14T00:00:00Z",
+        "scope_ref": "scope-1",
+        "entity_ref": "entity-1",
+        "pool_ref": "pool-1",
+        "scope_revision": 1,
+        "policy_revision": 1,
+        "epoch": 1,
+        "next_sequence": 100,
+        "window_seconds": 604800,
+        "members": [
+          {
+            "member_id": 1,
+            "candidate_ref": "candidate-1",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-1",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "ecd790d8af3d676e31da136e4a9ac2ce3c735564ddf8dd9afc272e6d14f8f1b0",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              10,
+              20
+            ],
+            "counted_demand_ids": []
+          }
+        ],
+        "demands": [
+          {
+            "demand_id": 10,
+            "department_ref": "department-10",
+            "revision": 1,
+            "reception_state": "paused",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 0
+          },
+          {
+            "demand_id": 20,
+            "department_ref": "department-20",
+            "revision": 1,
+            "reception_state": "closed",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 0
+          }
+        ]
+      },
+      "budget": {
+        "max_duration_seconds": 30,
+        "max_tool_calls": 16
+      }
+    },
+    "expected": [
+      {
+        "member_id": 1,
+        "wait": "no_receiving_demand"
+      }
+    ]
+  },
+  {
+    "id": "A09_mapping_cannot_expand_by_balance",
+    "request": {
+      "protocol_version": "resume-allocation/v1",
+      "task_kind": "pool.candidate_allocation",
+      "execution_mode": "deterministic",
+      "task_id": "allocation-fixture",
+      "idempotency_key": "allocation-fixture-key",
+      "pin": {
+        "pin_id": "pin-1",
+        "kernel_build": "dev",
+        "protocol_version": "resume-allocation/v1",
+        "result_schema_version": "resume-allocation-plan/v1",
+        "toolset_version": "allocation-tools/v1",
+        "policy_version": "allocation-order/v1",
+        "instruction_version": "allocation-deterministic/v1"
+      },
+      "snapshot_hash": "d4d64bcab1b4388211ab3e42729767816fd9dd90c52f9d1e1229dce3b4e7ed63",
+      "snapshot": {
+        "snapshot_id": "snapshot-1",
+        "snapshot_at": "2026-09-14T00:00:00Z",
+        "scope_ref": "scope-1",
+        "entity_ref": "entity-1",
+        "pool_ref": "pool-1",
+        "scope_revision": 1,
+        "policy_revision": 1,
+        "epoch": 1,
+        "next_sequence": 100,
+        "window_seconds": 604800,
+        "members": [
+          {
+            "member_id": 1,
+            "candidate_ref": "candidate-1",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-1",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "ecd790d8af3d676e31da136e4a9ac2ce3c735564ddf8dd9afc272e6d14f8f1b0",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              20
+            ],
+            "counted_demand_ids": []
+          }
+        ],
+        "demands": [
+          {
+            "demand_id": 10,
+            "department_ref": "department-10",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 0
+          },
+          {
+            "demand_id": 20,
+            "department_ref": "department-20",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 99,
+            "last_allocation_sequence": 0
+          }
+        ]
+      },
+      "budget": {
+        "max_duration_seconds": 30,
+        "max_tool_calls": 16
+      }
+    },
+    "expected": [
+      {
+        "member_id": 1,
+        "demand_id": 20
+      }
+    ]
+  },
+  {
+    "id": "A09_no_allowed_mapping",
+    "request": {
+      "protocol_version": "resume-allocation/v1",
+      "task_kind": "pool.candidate_allocation",
+      "execution_mode": "deterministic",
+      "task_id": "allocation-fixture",
+      "idempotency_key": "allocation-fixture-key",
+      "pin": {
+        "pin_id": "pin-1",
+        "kernel_build": "dev",
+        "protocol_version": "resume-allocation/v1",
+        "result_schema_version": "resume-allocation-plan/v1",
+        "toolset_version": "allocation-tools/v1",
+        "policy_version": "allocation-order/v1",
+        "instruction_version": "allocation-deterministic/v1"
+      },
+      "snapshot_hash": "e76839201b2ad726862633da66c46ea9d2de57cb547bd215b436cb32f5fd537d",
+      "snapshot": {
+        "snapshot_id": "snapshot-1",
+        "snapshot_at": "2026-09-14T00:00:00Z",
+        "scope_ref": "scope-1",
+        "entity_ref": "entity-1",
+        "pool_ref": "pool-1",
+        "scope_revision": 1,
+        "policy_revision": 1,
+        "epoch": 1,
+        "next_sequence": 100,
+        "window_seconds": 604800,
+        "members": [
+          {
+            "member_id": 1,
+            "candidate_ref": "candidate-1",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-1",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "ecd790d8af3d676e31da136e4a9ac2ce3c735564ddf8dd9afc272e6d14f8f1b0",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "cad",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-cad",
+                "verified": true
+              },
+              {
+                "code": "design",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1-design",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [],
+            "counted_demand_ids": []
+          }
+        ],
+        "demands": [
+          {
+            "demand_id": 10,
+            "department_ref": "department-10",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "cad"
+            ],
+            "preferred_tags": [
+              "design"
+            ],
+            "priority": 1,
+            "recent_supply_count": 0,
+            "last_allocation_sequence": 0
+          }
+        ]
+      },
+      "budget": {
+        "max_duration_seconds": 30,
+        "max_tool_calls": 16
+      }
+    },
+    "expected": [
+      {
+        "member_id": 1,
+        "wait": "no_active_mapping"
+      }
+    ]
+  },
+  {
+    "id": "A16-repeat-candidate-demand-deduplicated-in-batch",
+    "request": {
+      "protocol_version": "resume-allocation/v1",
+      "task_kind": "pool.candidate_allocation",
+      "execution_mode": "deterministic",
+      "task_id": "allocation-fixture",
+      "idempotency_key": "allocation-fixture-key",
+      "pin": {
+        "pin_id": "pin-1",
+        "kernel_build": "dev",
+        "protocol_version": "resume-allocation/v1",
+        "result_schema_version": "resume-allocation-plan/v1",
+        "toolset_version": "allocation-tools/v1",
+        "policy_version": "allocation-order/v1",
+        "instruction_version": "allocation-deterministic/v1"
+      },
+      "snapshot_hash": "aa52c2612ae9b4b5ed18646a68f52afe74108b28093caf29d19c7a628174f14d",
+      "snapshot": {
+        "snapshot_id": "snapshot-1",
+        "snapshot_at": "2026-09-14T00:00:00Z",
+        "scope_ref": "scope-1",
+        "entity_ref": "entity-1",
+        "pool_ref": "pool-1",
+        "scope_revision": 1,
+        "policy_revision": 1,
+        "epoch": 1,
+        "next_sequence": 100,
+        "window_seconds": 604800,
+        "members": [
+          {
+            "member_id": 1,
+            "candidate_ref": "candidate-1",
+            "application_ref": "application-1",
+            "qualification_ref": "qualification-1",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "409bdc5208542cc9cdff2974c36bfe11ad128bf2d3c1c7532ed663844a312bc0",
+            "admitted": true,
+            "created_at": "2026-09-13T00:00:00Z",
+            "tags": [
+              {
+                "code": "backend",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              1
+            ],
+            "counted_demand_ids": [
+              1
+            ]
+          },
+          {
+            "member_id": 2,
+            "candidate_ref": "candidate-2",
+            "application_ref": "application-2",
+            "qualification_ref": "qualification-2",
+            "qualification_revision": 1,
+            "member_revision": 1,
+            "workflow_revision": 1,
+            "source_revision": 1,
+            "standard_ref": "standard-1",
+            "standard_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tags_hash": "409bdc5208542cc9cdff2974c36bfe11ad128bf2d3c1c7532ed663844a312bc0",
+            "admitted": true,
+            "created_at": "2026-09-13T01:00:00Z",
+            "tags": [
+              {
+                "code": "backend",
+                "status": "supported",
+                "confidence_bps": 9000,
+                "source": "model",
+                "assertion_ref": "assertion-1",
+                "verified": true
+              }
+            ],
+            "allowed_demand_ids": [
+              1,
+              2
+            ],
+            "counted_demand_ids": []
+          }
+        ],
+        "demands": [
+          {
+            "demand_id": 1,
+            "department_ref": "department-1",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "backend"
+            ],
+            "preferred_tags": [],
+            "priority": 1,
+            "recent_supply_count": 1,
+            "last_allocation_sequence": 0
+          },
+          {
+            "demand_id": 2,
+            "department_ref": "department-2",
+            "revision": 1,
+            "reception_state": "receiving",
+            "required_tags": [
+              "backend"
+            ],
+            "preferred_tags": [],
+            "priority": 1,
+            "recent_supply_count": 2,
+            "last_allocation_sequence": 0
+          }
+        ]
+      },
+      "budget": {
+        "max_duration_seconds": 30,
+        "max_tool_calls": 16
+      }
+    },
+    "expected": [
+      {
+        "member_id": 1,
+        "demand_id": 1
+      },
+      {
+        "member_id": 2,
+        "demand_id": 1
+      }
+    ]
+  }
+]

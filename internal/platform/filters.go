@@ -49,12 +49,24 @@ func validateCandidateFilters(r *http.Request, p *Principal) error {
 		}
 	}
 	for _, key := range []string{"system_status", "system_statuses"} {
+		values := []string{}
 		for _, s := range queryValues(r, key) {
+			if s == "pending_review" {
+				values = append(values, "raw", "pending_allocation")
+			} else {
+				values = append(values, s)
+			}
+		}
+		if len(values) > 0 {
+			q.Set(key, strings.Join(values, ","))
+		}
+		for _, s := range values {
 			if _, ok := systemLabels[s]; !ok {
 				return bad("不支持的简历状态：" + s)
 			}
 		}
 	}
+	r.URL.RawQuery = q.Encode()
 	for _, key := range []string{"current_department_id", "current_primary_department_id"} {
 		for _, v := range queryValues(r, key) {
 			if n, e := strconv.ParseInt(v, 10, 64); e != nil || n <= 0 {

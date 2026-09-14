@@ -1,0 +1,54 @@
+{
+  "decisions": [
+    {
+      "action": "assign",
+      "assertion_refs": [
+        "assertion-1"
+      ],
+      "demand_id": 1,
+      "department_ref": "department-1",
+      "matched_tags": [
+        "backend"
+      ],
+      "member_id": 1,
+      "order": [
+        0,
+        1,
+        0,
+        0,
+        1
+      ],
+      "qualification_ref": "qualification-1",
+      "reason_code": "allocated",
+      "sequence": 1
+    }
+  ],
+  "idempotency_key": "allocation-fixture-key",
+  "pin": {
+    "instruction_version": "allocation-deterministic/v1",
+    "kernel_build": "dev",
+    "pin_id": "pin-1",
+    "policy_version": "allocation-order/v1",
+    "protocol_version": "resume-allocation/v1",
+    "result_schema_version": "resume-allocation-plan/v1",
+    "toolset_version": "allocation-tools/v1"
+  },
+  "protocol_version": "resume-allocation/v1",
+  "result_schema_version": "resume-allocation-plan/v1",
+  "safe_trace": {
+    "duration_ms": 0,
+    "reused": false,
+    "tool_call_count": 6,
+    "tool_names": [
+      "allocation.read_snapshot",
+      "allocation.filter_eligible",
+      "allocation.rank_demands",
+      "allocation.simulate_plan",
+      "allocation.validate_plan",
+      "allocation.submit_plan"
+    ]
+  },
+  "snapshot_hash": "ff9d2bdd50fb853348a3c434472494be58d1197c49d98a42172b6ed71850f2a2",
+  "task_id": "allocation-fixture",
+  "terminal_state": "DONE"
+}

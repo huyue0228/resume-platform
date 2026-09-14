@@ -1,5 +1,14 @@
 {
   "files": {
+    "allocation.capabilities.example.json": "de24021f17f3da57279369ec1933005204924ef43713372c9d9eb37142ea6a80",
+    "allocation.capabilities.schema.json": "ec14afa0d16d94291b70d791301c106c0002e6b3215e821df1a21363ea13e402",
+    "allocation.cases.json": "5adad4e8fa17982f4781835a921dd864b5d083ee5a5d77565a9ddcf650e15668",
+    "allocation.hash-vectors.json": "26c5f48e62e3564de8e9cadf71574d8212bb527c4c96333902fc9d6f9147d1a3",
+    "allocation.request.example.json": "a9f337f0588609fd09d5106f700d28abba7404b0c4d269b2a1bcae7e2d47f641",
+    "allocation.request.schema.json": "5b77efc03a31115de61479ab3a51f1023a17ebde11ceeaae3b0882a37404c2a6",
+    "allocation.response.example.json": "9355076d5c453c960f06732cc1d8d5f98979c84f9ed4b8326c4b67450cee20e1",
+    "allocation.response.schema.json": "ff6b4ec08e785bad828ab4b629f24847079558e4f5242bdfb86dde4febc47c12",
+    "allocation_types.go.txt": "82275e36912654ffdde8fa7876fad88d93546a18aabf383f7c2b028192f4a550",
     "capabilities.example.json": "c6ec6eb77288a44f925fe2a4cacdc538bc52fb7df0b220fe2c773ca94b0a7419",
     "capabilities.schema.json": "f16f84cb4c27d5a697485b1a498f057e707f1e4ec121eae24659c357cd07ace0",
     "request.example.json": "590ace62b51b641c9fac87b61be0743f86bc45c08fad8cfad7a2dde6a8c9ba67",
@@ -8,11 +17,12 @@
     "response.schema.json": "0ca678fed4a14bd14887efad09177a84eef6b18706e42cc40cfa8cd6bb1fbf2a"
   },
   "python": {
-    "__init__.py": "a310e0ad85fb17b4eb93097f0092df8760588cf1ca97547554ee6361f70b28b8",
+    "__init__.py": "0541d99c9c5c98f6cc909f21d1af5f142418ce512bb669456d304a59943a0b14",
+    "allocation.py": "2417f4d23813b358e745fbfb51a3e53665578704713ab0c10b01c04f38cd0e16",
     "fixtures.py": "cd15767872ba229cd473cc24d657ae2467c592150a7b8d2fe9cfef4c533fbd46",
-    "mock_server.py": "08ed323d205e94d9b825eb1d592004b4efb91ba41ae86df5fef2ff307d0abe4a",
-    "models.py": "ef3b4f8e9226107e425415219a0a10d278dd7488f36cc4b2991738945f9bb7c9",
-    "verify.py": "1c4553b7faeddfa579dc3dcb13e50b316911c7e576cad8cbd2033e03ea7111b7"
+    "mock_server.py": "da572328c12b674ecf113eeda5d8eab62079bfcdc67a392a733127fdf35b0820",
+    "models.py": "997aca308a5e4b49250c15f8851a9b497bb1b009cea44c87ca129abaf0144ebd",
+    "verify.py": "495ce809430bb15a373b746eeab303f36f7599318b49d2c2025772f2210046a0"
   },
-  "version": "3.0.0"
+  "version": "3.1.0"
 }

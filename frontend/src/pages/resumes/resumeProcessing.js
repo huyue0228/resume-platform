@@ -7,7 +7,6 @@ export function buildResumeProcessingScope({
   if (processCurrentSelected) {
     return {
       candidate_ids: processCandidateSnapshot,
-      force_reprocess: true,
     }
   }
 

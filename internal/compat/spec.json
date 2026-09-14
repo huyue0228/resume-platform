@@ -2114,6 +2114,14 @@
             [
               "archived",
               "已归档"
+            ],
+            [
+              "waiting_next",
+              "待处理（继续下一志愿）"
+            ],
+            [
+              "talent_pool",
+              "人才库"
             ]
           ],
           "default": "pending"
@@ -8774,20 +8782,11 @@
   },
   "ai_configs": {
     "ai_dispatch_threshold": {
-      "label": "AI 自动下发阈值",
-      "description": "置信度大于等于该值时，AI 建议可进入待下发。",
+      "label": "AI 入池阈值",
+      "description": "当前投递契合度达到该值后直接入池，之后按标签和部门名额分配。",
       "section": "runtime",
       "value_type": "number",
       "default": 0.75,
-      "min": 0,
-      "max": 1
-    },
-    "ai_review_threshold": {
-      "label": "AI 人工复核阈值",
-      "description": "置信度大于等于该值且低于自动下发阈值时，进入 HR 复核。",
-      "section": "runtime",
-      "value_type": "number",
-      "default": 0.5,
       "min": 0,
       "max": 1
     },

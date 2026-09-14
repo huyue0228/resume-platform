@@ -19,7 +19,7 @@ func TestBundleChecksumsAndExamples(t *testing.T) {
 	if err = json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if manifest.Version != "3.0.0" {
+	if manifest.Version != "3.1.0" {
 		t.Fatal("unexpected protocol bundle version")
 	}
 	for name, want := range manifest.Files {

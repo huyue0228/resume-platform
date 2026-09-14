@@ -206,6 +206,9 @@ func (a *App) configSettings(w http.ResponseWriter, r *http.Request, path string
 		if key == "job_hc_coefficient" && !p.has("settings.manage_config") {
 			return &apiError{403, "无分配参数维护权限"}
 		}
+		if key == "job_hc_coefficient" {
+			return &apiError{410, "HC coefficient is historical and read-only"}
+		}
 		body, err := readBody(w, r)
 		if err != nil {
 			return err

@@ -1,0 +1,79 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "execution_modes": {
+      "items": {
+        "const": "deterministic",
+        "type": "string"
+      },
+      "title": "Execution Modes",
+      "type": "array"
+    },
+    "instruction_version": {
+      "const": "allocation-deterministic/v1",
+      "default": "allocation-deterministic/v1",
+      "title": "Instruction Version",
+      "type": "string"
+    },
+    "kernel_build": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+      "title": "Kernel Build",
+      "type": "string"
+    },
+    "mock": {
+      "default": false,
+      "title": "Mock",
+      "type": "boolean"
+    },
+    "policy_version": {
+      "const": "allocation-order/v1",
+      "default": "allocation-order/v1",
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "protocol_version": {
+      "const": "resume-allocation/v1",
+      "default": "resume-allocation/v1",
+      "title": "Protocol Version",
+      "type": "string"
+    },
+    "result_schema_version": {
+      "const": "resume-allocation-plan/v1",
+      "default": "resume-allocation-plan/v1",
+      "title": "Result Schema Version",
+      "type": "string"
+    },
+    "task_kinds": {
+      "items": {
+        "const": "pool.candidate_allocation",
+        "type": "string"
+      },
+      "title": "Task Kinds",
+      "type": "array"
+    },
+    "tool_names": {
+      "items": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+        "type": "string"
+      },
+      "maxItems": 6,
+      "minItems": 6,
+      "title": "Tool Names",
+      "type": "array"
+    },
+    "toolset_version": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+      "title": "Toolset Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_kinds",
+    "execution_modes",
+    "kernel_build",
+    "toolset_version",
+    "tool_names"
+  ],
+  "title": "AllocationCapabilities",
+  "type": "object"
+}

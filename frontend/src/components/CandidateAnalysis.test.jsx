@@ -20,6 +20,12 @@ const decision = {
 }
 
 describe('CandidateAnalysis', () => {
+  it('keeps a closed application readable without offering to overwrite it', () => {
+    render(<CandidateAnalysis decision={{ ...decision, recommendation: 'archive', can_retry: false }} onRetry={vi.fn()} />)
+    expect(screen.getByText('当前志愿不通过')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /重新分析/ })).toBeNull()
+  })
+
   it('shows only the current application assessment and separates admission from allocation', () => {
     const current = { ...decision, pool_membership: { status: 'pending_allocation', assessment: { pool: { name: '机械工程师池' }, tag_catalog: [{ code: 'cad', name: '三维设计' }] } }, kernel_result: { ...decision.kernel_result, protocol_version: 'resume-analysis/v3', matches: [{ ...decision.kernel_result.matches[0], job_title: '机械工程师投递标准' }], profile: { tags: [{ code: 'cad', status: 'supported', evidence: evidence('完成三维机构设计与验证') }] } } }
     render(<CandidateAnalysis decision={current} />)
@@ -53,7 +59,7 @@ describe('CandidateAnalysis', () => {
 
   it('retains a readable history view without inventing a multi-job ranking', () => {
     render(<CandidateAnalysis decision={{ recommendation: 'review', evaluated_job_name: '历史岗位', reason: '需要核实经历', evidence: ['原有简历证据'], score_breakdown: dimensions }} />)
-    expect(screen.getByText('需要人工复核')).toBeTruthy()
+    expect(screen.getByText('历史复核记录')).toBeTruthy()
     expect(screen.getByText('历史单岗位分析 · 未记录完整岗位排名')).toBeTruthy()
     expect(screen.getByText('原有简历证据')).toBeTruthy()
     expect(screen.queryByRole('complementary', { name: '合规岗位排名' })).toBeNull()

@@ -1,0 +1,477 @@
+{
+  "$defs": {
+    "AllocationBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "max_duration_seconds": {
+          "default": 30,
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Max Duration Seconds",
+          "type": "integer"
+        },
+        "max_tool_calls": {
+          "default": 16,
+          "maximum": 16,
+          "minimum": 1,
+          "title": "Max Tool Calls",
+          "type": "integer"
+        }
+      },
+      "title": "AllocationBudget",
+      "type": "object"
+    },
+    "AllocationDemand": {
+      "additionalProperties": false,
+      "properties": {
+        "demand_id": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Demand Id",
+          "type": "integer"
+        },
+        "department_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Department Ref",
+          "type": "string"
+        },
+        "last_allocation_sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Last Allocation Sequence",
+          "type": "integer"
+        },
+        "preferred_tags": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Preferred Tags",
+          "type": "array"
+        },
+        "priority": {
+          "maximum": 999,
+          "minimum": 0,
+          "title": "Priority",
+          "type": "integer"
+        },
+        "recent_supply_count": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Recent Supply Count",
+          "type": "integer"
+        },
+        "reception_state": {
+          "enum": [
+            "receiving",
+            "paused",
+            "closed"
+          ],
+          "title": "Reception State",
+          "type": "string"
+        },
+        "required_tags": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Required Tags",
+          "type": "array"
+        },
+        "revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "demand_id",
+        "department_ref",
+        "revision",
+        "reception_state",
+        "required_tags",
+        "preferred_tags",
+        "priority",
+        "recent_supply_count",
+        "last_allocation_sequence"
+      ],
+      "title": "AllocationDemand",
+      "type": "object"
+    },
+    "AllocationMember": {
+      "additionalProperties": false,
+      "properties": {
+        "admitted": {
+          "const": true,
+          "title": "Admitted",
+          "type": "boolean"
+        },
+        "allowed_demand_ids": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 200,
+          "title": "Allowed Demand Ids",
+          "type": "array"
+        },
+        "application_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Application Ref",
+          "type": "string"
+        },
+        "candidate_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Candidate Ref",
+          "type": "string"
+        },
+        "counted_demand_ids": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 200,
+          "title": "Counted Demand Ids",
+          "type": "array"
+        },
+        "created_at": {
+          "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d{1,6})?Z$",
+          "title": "Created At",
+          "type": "string"
+        },
+        "member_id": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Member Id",
+          "type": "integer"
+        },
+        "member_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Member Revision",
+          "type": "integer"
+        },
+        "qualification_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Qualification Ref",
+          "type": "string"
+        },
+        "qualification_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Qualification Revision",
+          "type": "integer"
+        },
+        "source_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Source Revision",
+          "type": "integer"
+        },
+        "standard_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Standard Hash",
+          "type": "string"
+        },
+        "standard_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Standard Ref",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "$ref": "#/$defs/AllocationTag"
+          },
+          "maxItems": 200,
+          "title": "Tags",
+          "type": "array"
+        },
+        "tags_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Tags Hash",
+          "type": "string"
+        },
+        "workflow_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Workflow Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "member_id",
+        "candidate_ref",
+        "application_ref",
+        "qualification_ref",
+        "qualification_revision",
+        "member_revision",
+        "workflow_revision",
+        "source_revision",
+        "standard_ref",
+        "standard_hash",
+        "tags_hash",
+        "admitted",
+        "created_at",
+        "tags",
+        "allowed_demand_ids",
+        "counted_demand_ids"
+      ],
+      "title": "AllocationMember",
+      "type": "object"
+    },
+    "AllocationPin": {
+      "additionalProperties": false,
+      "properties": {
+        "instruction_version": {
+          "const": "allocation-deterministic/v1",
+          "default": "allocation-deterministic/v1",
+          "title": "Instruction Version",
+          "type": "string"
+        },
+        "kernel_build": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Kernel Build",
+          "type": "string"
+        },
+        "pin_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Pin Id",
+          "type": "string"
+        },
+        "policy_version": {
+          "const": "allocation-order/v1",
+          "default": "allocation-order/v1",
+          "title": "Policy Version",
+          "type": "string"
+        },
+        "protocol_version": {
+          "const": "resume-allocation/v1",
+          "default": "resume-allocation/v1",
+          "title": "Protocol Version",
+          "type": "string"
+        },
+        "result_schema_version": {
+          "const": "resume-allocation-plan/v1",
+          "default": "resume-allocation-plan/v1",
+          "title": "Result Schema Version",
+          "type": "string"
+        },
+        "toolset_version": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Toolset Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pin_id",
+        "kernel_build",
+        "toolset_version"
+      ],
+      "title": "AllocationPin",
+      "type": "object"
+    },
+    "AllocationSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "demands": {
+          "items": {
+            "$ref": "#/$defs/AllocationDemand"
+          },
+          "maxItems": 200,
+          "title": "Demands",
+          "type": "array"
+        },
+        "entity_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Entity Ref",
+          "type": "string"
+        },
+        "epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Epoch",
+          "type": "integer"
+        },
+        "members": {
+          "items": {
+            "$ref": "#/$defs/AllocationMember"
+          },
+          "maxItems": 100,
+          "minItems": 1,
+          "title": "Members",
+          "type": "array"
+        },
+        "next_sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Next Sequence",
+          "type": "integer"
+        },
+        "policy_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Policy Revision",
+          "type": "integer"
+        },
+        "pool_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Pool Ref",
+          "type": "string"
+        },
+        "scope_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Scope Ref",
+          "type": "string"
+        },
+        "scope_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Scope Revision",
+          "type": "integer"
+        },
+        "snapshot_at": {
+          "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d{1,6})?Z$",
+          "title": "Snapshot At",
+          "type": "string"
+        },
+        "snapshot_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Snapshot Id",
+          "type": "string"
+        },
+        "window_seconds": {
+          "const": 604800,
+          "default": 604800,
+          "title": "Window Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "snapshot_id",
+        "snapshot_at",
+        "scope_ref",
+        "entity_ref",
+        "pool_ref",
+        "scope_revision",
+        "policy_revision",
+        "epoch",
+        "next_sequence",
+        "members",
+        "demands"
+      ],
+      "title": "AllocationSnapshot",
+      "type": "object"
+    },
+    "AllocationTag": {
+      "additionalProperties": false,
+      "properties": {
+        "assertion_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+          "title": "Assertion Ref",
+          "type": "string"
+        },
+        "code": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Code",
+          "type": "string"
+        },
+        "confidence_bps": {
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Confidence Bps",
+          "type": "integer"
+        },
+        "source": {
+          "enum": [
+            "model",
+            "manual"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "supported",
+            "needs_verification"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "verified": {
+          "const": true,
+          "title": "Verified",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "status",
+        "confidence_bps",
+        "source",
+        "assertion_ref",
+        "verified"
+      ],
+      "title": "AllocationTag",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "budget": {
+      "$ref": "#/$defs/AllocationBudget"
+    },
+    "execution_mode": {
+      "const": "deterministic",
+      "default": "deterministic",
+      "title": "Execution Mode",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "pin": {
+      "$ref": "#/$defs/AllocationPin"
+    },
+    "protocol_version": {
+      "const": "resume-allocation/v1",
+      "default": "resume-allocation/v1",
+      "title": "Protocol Version",
+      "type": "string"
+    },
+    "snapshot": {
+      "$ref": "#/$defs/AllocationSnapshot"
+    },
+    "snapshot_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Snapshot Hash",
+      "type": "string"
+    },
+    "task_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "task_kind": {
+      "const": "pool.candidate_allocation",
+      "default": "pool.candidate_allocation",
+      "title": "Task Kind",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id",
+    "idempotency_key",
+    "pin",
+    "snapshot_hash",
+    "snapshot"
+  ],
+  "title": "AllocationRequest",
+  "type": "object"
+}

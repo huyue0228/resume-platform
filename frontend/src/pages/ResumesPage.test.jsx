@@ -228,6 +228,8 @@ vi.mock('../components/SmartDataTable', () => ({
                 {columns.find((column) => column.dataIndex === 'entity')?.render?.(record.entity, record)}
               </span>
             )}
+            {tableId === 'candidate-resumes' && <span data-testid={`lifecycle-${record.id}`}>{columns.find((column) => column.dataIndex === 'lifecycle_status_label')?.render?.(<span>预渲染状态</span>, record)}</span>}
+            {tableId === 'candidate-application-history' && <span data-testid={`history-${record.id}`}>{columns.find((column) => column.dataIndex === 'created_at')?.render?.(<span>预渲染时间</span>, record)} · {record.status_label} · {record.reason}</span>}
             {tableId === 'candidate-ai-decisions' && (
               <span data-testid={`confidence-${record.id}`}>
                 {columns.find((column) => column.dataIndex === 'confidence_score')
@@ -299,6 +301,8 @@ describe('ResumesPage detail', () => {
   beforeEach(() => {
     candidate.current_attempt = null
     candidate.attempts = []
+    candidate.application_history = []
+    candidate.resumes.forEach((resume) => { delete resume.lifecycle_status_label; delete resume.lifecycle_reason })
     roleState.permissions = new Set(['attempt.view_all'])
     roleState.user = { id: 1, username: 'tester' }
     roleState.contact = null
@@ -428,6 +432,19 @@ describe('ResumesPage detail', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'A002' }))
     expect(screen.getByTestId('resume-preview').textContent).toBe('missing:A002')
+  })
+
+  it('shows each application history independently from the candidate group', async () => {
+    candidate.resumes[0].lifecycle_status_label = '部门不通过'
+    candidate.resumes[0].lifecycle_reason = '岗位经验不符合'
+    candidate.resumes[1].lifecycle_status_label = '未处理'
+    candidate.application_history = [{ id: 90, apply_id: 'A001', status_label: '部门不通过', reason: '岗位经验不符合', created_at: '2026-09-11T10:20:30+08:00' }]
+    render(<MemoryRouter><ResumesPage /></MemoryRouter>)
+    await userEvent.click(screen.getByRole('button', { name: '打开候选人' }))
+    expect(screen.getByTestId('lifecycle-11').textContent).toBe('部门不通过')
+    expect(screen.getByTestId('lifecycle-12').textContent).toBe('未处理')
+    expect(screen.getByTestId('history-90').textContent).toContain('岗位经验不符合')
+    expect(screen.getByTestId('history-90').textContent).not.toContain('Invalid Date')
   })
 
   it('shows feedback to a contact in the current receiving department', async () => {
@@ -734,7 +751,7 @@ describe('ResumesPage detail', () => {
     await userEvent.click(screen.getByRole('button', { name: '创建定时任务' }))
     expect(await screen.findByText('触发时间必须是带时区的未来时间')).toBeTruthy()
     expect(screen.getByLabelText('任务名称').value).toBe('固定候选人')
-    expect(createProcessingSchedule).toHaveBeenCalledWith(expect.objectContaining({ scope: { candidate_ids: [1, 2], force_reprocess: true } }))
+    expect(createProcessingSchedule).toHaveBeenCalledWith(expect.objectContaining({ scope: { candidate_ids: [1, 2] } }))
     expect(runProcess).not.toHaveBeenCalled()
   })
 
@@ -747,6 +764,8 @@ describe('ResumesPage detail', () => {
     const currentSelected = screen.getByRole('checkbox', { name: '当前选中（0）' })
     expect(currentSelected.disabled).toBe(true)
     expect(screen.getAllByRole('checkbox')).toHaveLength(10)
+    expect(screen.queryByRole('checkbox', { name: '待复核' })).toBeNull()
+    expect(screen.getByRole('checkbox', { name: '人才库' })).toBeTruthy()
     expect(screen.getByRole('checkbox', { name: '入池待分配' })).toBeTruthy()
     for (const checkbox of screen.getAllByRole('checkbox')) {
       expect(checkbox.checked).toBe(false)
@@ -784,7 +803,6 @@ describe('ResumesPage detail', () => {
       {
         scope: {
           candidate_ids: [1, 2],
-          force_reprocess: true,
         },
       },
     ))
@@ -806,7 +824,7 @@ describe('ResumesPage detail', () => {
 
     await waitFor(() => expect(runProcess).toHaveBeenCalledOnce())
     expect(runProcess.mock.calls[0][2]).toEqual({
-      scope: { candidate_ids: [1, 2], force_reprocess: true },
+      scope: { candidate_ids: [1, 2] },
     })
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })

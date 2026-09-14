@@ -8,7 +8,9 @@ import {
   ProFormText,
   ProFormTextArea,
 } from '@ant-design/pro-components'
-import { Button, Popconfirm, Space, Tag, message } from 'antd'
+import { Button, Input, Modal, Popconfirm, Select, Space, Tag, message } from 'antd'
+import { updateDemandReception } from '../api/pools'
+import { RECEPTION } from '../components/AllocationWorkspace'
 import {
   createJob,
   deleteJob,
@@ -33,6 +35,8 @@ export default function JobsPage() {
   const [jobModal, setJobModal] = useState({ open: false, record: null })
   const [departments, setDepartments] = useState([])
   const [exporting, setExporting] = useState(false)
+  const [reception, setReception] = useState(null)
+  const [savingReception, setSavingReception] = useState(false)
 
   useEffect(() => {
     fetchDepartments({ page_size: 500 })
@@ -152,9 +156,9 @@ export default function JobsPage() {
       render: (_, record) => record.majors?.join('、') || '-',
     },
     {
-      title: 'HC',
+      title: 'HC（计划人数）',
       dataIndex: 'headcount',
-      width: 70,
+      width: 140,
       filter: { type: 'text', param: 'headcount', placeholder: '筛选HC' },
     },
     {
@@ -168,6 +172,7 @@ export default function JobsPage() {
       render: (_, r) =>
         r.is_public ? <Tag color="green">是</Tag> : <Tag>否</Tag>,
     },
+    { title: '接收状态', dataIndex: 'reception_state', width: 130, render: (v) => <Tag>{RECEPTION[v] || '暂停接收'}</Tag> },
     canManageJobs && {
       title: '操作',
       valueType: 'option',
@@ -176,6 +181,7 @@ export default function JobsPage() {
       render: (_, record) => (
         <Space>
           <a onClick={() => setJobModal({ open: true, record })}>编辑</a>
+          <a onClick={() => setReception({ record, value: record.reception_state || 'paused', reason: '' })}>接收设置</a>
           <Popconfirm
             title="删除岗位"
             description="删除后岗位将停用，历史投递和分配记录仍可追溯。"
@@ -196,6 +202,14 @@ export default function JobsPage() {
   ].filter(Boolean)
   return (
     <PageContainer title="岗位需求" content="校招岗位分类及专业要求，可导入维护。">
+      <Modal title="调整需求接收状态" open={!!reception} onCancel={() => setReception(null)} confirmLoading={savingReception} okButtonProps={{ disabled: !reception?.reason?.trim() }} onOk={async () => {
+        setSavingReception(true)
+        try { await updateDemandReception(reception.record.id, { reception_state: reception.value, expected_revision: reception.record.reception_revision || 1, reason: reception.reason }); setReception(null); actionRef.current?.reload() } finally { setSavingReception(false) }
+      }}>
+        <p>接收状态决定是否参与新分配，HC 计划人数不限制候选人数量。</p>
+        <Select aria-label="接收状态" style={{ width: '100%' }} value={reception?.value} options={Object.entries(RECEPTION).map(([value, label]) => ({ value, label }))} onChange={(value) => setReception({ ...reception, value })} />
+        <Input.TextArea aria-label="调整原因" value={reception?.reason} onChange={(e) => setReception({ ...reception, reason: e.target.value })} style={{ marginTop: 12 }} />
+      </Modal>
       <SmartDataTable
         tableId="jobs"
         stickyPagination
@@ -319,7 +333,7 @@ export default function JobsPage() {
           label="需求专业"
           placeholder="多个专业可用顿号、逗号、分号或换行分隔"
         />
-        <ProFormDigit name="headcount" label="HC" min={0} fieldProps={{ precision: 0 }} />
+        <ProFormDigit name="headcount" label="HC（计划人数）" min={0} fieldProps={{ precision: 0 }} />
         <ProFormSwitch name="is_public" label="对外发布" />
       </ModalForm>
     </PageContainer>

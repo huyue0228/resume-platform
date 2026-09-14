@@ -157,7 +157,7 @@ func (a *App) resolveRunCandidates(r *http.Request, p *Principal, scope Object) 
 				return nil, bad("system_statuses 必须是非空数组")
 			}
 			for _, s := range statuses {
-				if _, ok := systemLabels[str(s)]; !ok {
+				if _, ok := systemLabels[str(s)]; !ok && str(s) != "pending_review" {
 					return nil, bad("未知系统状态")
 				}
 			}
@@ -183,6 +183,28 @@ func (a *App) resolveRunCandidates(r *http.Request, p *Principal, scope Object) 
 	return ids, nil
 }
 func (a *App) createRun(ctx context.Context, db DB, step string, scope Object, ids []int64, p *Principal) (Object, error) {
+	if scope["source"] == "ai_retry" {
+		if len(ids) != 1 {
+			return nil, bad("AI 重试必须指定一个候选人")
+		}
+		workflow, err := a.lockWorkflow(ctx, db, ids[0])
+		if err != nil {
+			return nil, err
+		}
+		if contains([]string{"passed", "talent_pool"}, str(workflow["status"])) || num(workflow["current_resume_id"]) != num(scope["retry_resume_id"]) {
+			return nil, &apiError{409, "该决策已不属于当前可处理志愿，历史结果已保留"}
+		}
+		if err = a.requireOpenApplication(ctx, db, scope["retry_resume_id"]); err != nil {
+			return nil, err
+		}
+		var active bool
+		if err = db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM core_assignmentattempt WHERE workflow_id=$1 AND status IN ('pending_review','pending_dispatch','dispatched','passed'))`, workflow["id"]).Scan(&active); err != nil {
+			return nil, err
+		}
+		if active {
+			return nil, &apiError{409, "候选人已进入分配或部门处理，不能重新评估"}
+		}
+	}
 	scope = clone(scope)
 	delete(scope, "candidate_ids")
 	summary := Object{"candidate_count": len(ids)}
@@ -262,7 +284,10 @@ func (a *App) wakeQueue(ctx context.Context) {
 }
 func (a *App) Workers(ctx context.Context) {
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(5)
+	go func() { defer wg.Done(); a.allocationIntegrityWorker(ctx) }()
+	go func() { defer wg.Done(); a.allocationWorker(ctx) }()
+	go func() { defer wg.Done(); a.allocationWorker(ctx) }()
 	go func() { defer wg.Done(); a.maintenance(ctx) }()
 	go func() { defer wg.Done(); a.scheduler(ctx) }()
 	for i := 0; i < 2; i++ {
@@ -446,6 +471,13 @@ func (a *App) executeRun(ctx context.Context, id any) error {
 			return err
 		}
 		for _, job := range jobs {
+			var enabled bool
+			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM platform_allocation_scopes s JOIN platform_pool_policy p ON true,jsonb_array_elements(p.policy->'rules') r WHERE r->>'pool_code'=s.pool_code AND (r->>'job_id')::bigint=$1 AND s.allocation_mode='execute_v1')`, job["id"]).Scan(&enabled); err != nil {
+				return err
+			}
+			if enabled {
+				continue
+			}
 			if _, err = a.save(ctx, tx, "core_processingrunjobcapacity", nil, Object{"run_id": id, "job_id": job["id"], "headcount_snapshot": job["headcount"], "coefficient_snapshot": coefficient, "capacity": num(job["headcount"]) * coefficient}); err != nil {
 				return err
 			}
@@ -534,6 +566,15 @@ func (a *App) stopRun(ctx context.Context, run Object, cause error) error {
 	}
 	if _, err = tx.Exec(ctx, "UPDATE core_processingrunscopeitem SET status=$2::text,result_type=$2::text,processing_node=$2::text,error_code=$3::text,error_message=$4::text,result_message=$4::text,reason_code=$3::text,finished_at=now() WHERE run_id=$1 AND status IN ('pending','processing','waiting_conflict')", run["id"], status, code, message); err != nil {
 		return err
+	}
+	claimed, err := rows(ctx, tx, `SELECT json_build_object('resume_id',i.prepared_resume_id) FROM core_candidateworkflow w JOIN core_processingrunscopeitem i ON i.id=w.active_processing_scope_item_id JOIN platform_applications a ON a.resume_id=i.prepared_resume_id WHERE i.run_id=$1 AND a.status='assessing' ORDER BY w.id FOR UPDATE OF w`, run["id"])
+	if err != nil {
+		return err
+	}
+	for _, application := range claimed {
+		if err = a.applicationState(ctx, tx, application["resume_id"], "blocked", message, Object{"run_id": run["id"], "error_code": code}); err != nil {
+			return err
+		}
 	}
 	if _, err = tx.Exec(ctx, "UPDATE core_candidateworkflow SET active_processing_scope_item_id=NULL,active_processing_token=NULL,active_processing_expires_at=NULL WHERE active_processing_scope_item_id IN (SELECT id FROM core_processingrunscopeitem WHERE run_id=$1)", run["id"]); err != nil {
 		return err

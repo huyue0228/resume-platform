@@ -73,7 +73,6 @@ func TestPoolTagsAreAuditedAndStandardChangesRequireReassessment(t *testing.T) {
 	ctx := context.Background()
 	f.resultHook = func(result Object) { obj(result["profile"])["tags"] = []any{} }
 	f.executeJob(t, f.submit(t), ctx)
-	approvePoolForTest(t, f)
 	m := poolMemberForTest(t, f)
 	if m["status"] != "pending_allocation" {
 		t.Fatal("missing tags consumed assignment")
@@ -94,8 +93,11 @@ func TestPoolTagsAreAuditedAndStandardChangesRequireReassessment(t *testing.T) {
 		t.Fatal("manual tag audit lost previous values or actor")
 	}
 	editTestStandard(t, f)
-	response := responseObject(t, apiRequest(t, f.a, f.p, "POST", path+"allocate/", Object{"revision": detail["revision"]}), 200)
-	if response["code"] != "assessment_changed" || f.analyses.Load() != 1 {
+	response := responseObject(t, apiRequest(t, f.a, f.p, "POST", path+"allocate/", Object{"revision": detail["revision"]}), 202)
+	if _, _, err := runAllocation(t, f); err != nil {
+		t.Fatal(err)
+	}
+	if response["code"] != "allocation_queued" || poolMemberForTest(t, f)["status"] != "needs_reanalysis" || f.analyses.Load() != 1 {
 		t.Fatal("changed standard silently reused admission")
 	}
 	m = poolMemberForTest(t, f)
@@ -127,7 +129,7 @@ func TestPoolMembershipClosesWhenVolunteerChanges(t *testing.T) {
 	if m["status"] != "closed" {
 		t.Fatal("old volunteer retained active qualification")
 	}
-	responseObject(t, apiRequest(t, f.a, f.p, "POST", "/api/position-pools/members/"+str(m["id"])+"/review/", Object{"revision": m["revision"], "decision": "approve", "note": "历史记录"}), 400)
+	responseObject(t, apiRequest(t, f.a, f.p, "POST", "/api/position-pools/members/"+str(m["id"])+"/review/", Object{"revision": m["revision"], "decision": "approve", "note": "历史记录"}), 410)
 }
 
 func TestPoolConfigurationRejectsAmbiguousMappingAndConflictingVersions(t *testing.T) {
@@ -167,6 +169,9 @@ func installTestPoolPolicy(t *testing.T, a *App, job Object) {
 	if _, err = a.Pool.Exec(context.Background(), "UPDATE platform_pool_policy SET policy=$1::jsonb,version=version+1 WHERE singleton", string(canonicalJSON(value, false))); err != nil {
 		t.Fatal(err)
 	}
+	if err = a.syncAllocationConfig(context.Background(), a.Pool); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func poolMemberForTest(t *testing.T, f *pipelineFixture) Object {
@@ -176,12 +181,6 @@ func poolMemberForTest(t *testing.T, f *pipelineFixture) Object {
 		t.Fatal(err)
 	}
 	return m
-}
-
-func approvePoolForTest(t *testing.T, f *pipelineFixture) {
-	t.Helper()
-	m := poolMemberForTest(t, f)
-	responseObject(t, apiRequest(t, f.a, f.p, "POST", "/api/position-pools/members/"+str(m["id"])+"/review/", Object{"revision": m["revision"], "decision": "approve", "note": "测试复核依据"}), 200)
 }
 
 func editTestStandard(t *testing.T, f *pipelineFixture) {
@@ -205,8 +204,11 @@ func TestPoolWaitsForHCAndAllocatesWithoutModel(t *testing.T) {
 	run := f.submit(t)
 	f.executeJob(t, run, ctx)
 	m := poolMemberForTest(t, f)
-	response := responseObject(t, apiRequest(t, f.a, f.p, "POST", "/api/position-pools/members/"+str(m["id"])+"/review/", Object{"revision": m["revision"], "decision": "approve", "note": "复核通过"}), 200)
-	if response["code"] != "job_hc_exhausted" {
+	response := responseObject(t, apiRequest(t, f.a, f.p, "POST", "/api/position-pools/members/"+str(m["id"])+"/allocate/", Object{"revision": m["revision"]}), 202)
+	if _, _, err := runAllocation(t, f); err != nil {
+		t.Fatal(err)
+	}
+	if response["code"] != "allocation_queued" {
 		t.Fatalf("expected retained eligibility: %v", response)
 	}
 	m = poolMemberForTest(t, f)
@@ -217,8 +219,11 @@ func TestPoolWaitsForHCAndAllocatesWithoutModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "/api/position-pools/members/" + str(m["id"]) + "/allocate/"
-	response = responseObject(t, apiRequest(t, f.a, f.p, "POST", path, Object{"revision": m["revision"]}), 200)
-	if response["code"] != "pool_allocated" {
+	response = responseObject(t, apiRequest(t, f.a, f.p, "POST", path, Object{"revision": m["revision"]}), 202)
+	if _, _, err := runAllocation(t, f); err != nil {
+		t.Fatal(err)
+	}
+	if response["code"] != "allocation_queued" || poolMemberForTest(t, f)["status"] != "allocated" {
 		t.Fatalf("allocation failed: %v", response)
 	}
 	responseObject(t, apiRequest(t, f.a, f.p, "POST", path, Object{"revision": m["revision"]}), 409)

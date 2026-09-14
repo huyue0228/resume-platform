@@ -125,7 +125,7 @@ func TestDockerTextPipelineWithTLS(t *testing.T) {
 	}
 	detail := call("GET", "/api/candidates/"+str(candidate["id"])+"/", nil, 200)
 	member := obj(detail["pool_membership"])
-	if member["status"] != "pending_review" || detail["current_attempt"] != nil {
+	if member["status"] != "allocated" || obj(detail["current_attempt"])["status"] != "pending_dispatch" {
 		t.Fatalf("unexpected business result: %v", member["status"])
 	}
 	decision := call("GET", "/api/agent-decisions/"+str(member["decision_id"])+"/", nil, 200)

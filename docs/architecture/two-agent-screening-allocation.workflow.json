@@ -1,0 +1,242 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "简历筛选与内部岗位分配 · 目标设计",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "backend": {
+          "label": "Agent / 平台逻辑"
+        },
+        "messagebus": {
+          "label": "待处理状态"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "两阶段处理"
+    },
+    {
+      "id": "waiting",
+      "label": "状态与恢复",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "assessment",
+      "label": "筛选与资格",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "allocation",
+      "label": "分配与归属",
+      "fromCol": 2,
+      "toCol": 4,
+      "variant": "emphasis"
+    }
+  ],
+  "mainPath": [
+    "screen",
+    "qualification",
+    "snapshot",
+    "allocator",
+    "commit"
+  ],
+  "semanticChecks": {
+    "allowedRoots": [
+      "screen"
+    ],
+    "allowedTerminals": [
+      "commit",
+      "screen_hold",
+      "allocation_hold"
+    ],
+    "requiredPaths": [
+      {
+        "from": "screen",
+        "to": "qualification"
+      },
+      {
+        "from": "qualification",
+        "to": "commit"
+      },
+      {
+        "from": "stale",
+        "to": "allocator"
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "id": "screen",
+      "lane": "main",
+      "col": 0,
+      "type": "backend",
+      "label": "筛选 Agent",
+      "sublabel": "当前标准与完整文本",
+      "width": 150
+    },
+    {
+      "id": "qualification",
+      "lane": "main",
+      "col": 1,
+      "type": "database",
+      "label": "平台判定入池",
+      "sublabel": "保存资格与证据版本",
+      "width": 150
+    },
+    {
+      "id": "snapshot",
+      "lane": "main",
+      "col": 2,
+      "type": "backend",
+      "label": "平台分配快照",
+      "sublabel": "标签、规则、接收状态",
+      "width": 150
+    },
+    {
+      "id": "allocator",
+      "lane": "main",
+      "col": 3,
+      "type": "backend",
+      "label": "分配 Agent",
+      "sublabel": "工具执行优先级与均衡",
+      "width": 150
+    },
+    {
+      "id": "commit",
+      "lane": "main",
+      "col": 4,
+      "type": "security",
+      "label": "平台校验执行",
+      "sublabel": "归属部门与 HC 需求",
+      "width": 150
+    },
+    {
+      "id": "screen_hold",
+      "lane": "waiting",
+      "col": 1,
+      "type": "messagebus",
+      "label": "不入池或待处理",
+      "sublabel": "未达标与运行失败分开",
+      "width": 150,
+      "yOffset": 25
+    },
+    {
+      "id": "allocation_hold",
+      "lane": "waiting",
+      "col": 3,
+      "type": "messagebus",
+      "label": "保留资格待分配",
+      "sublabel": "无接收需求或标签不足",
+      "width": 150,
+      "yOffset": 25
+    },
+    {
+      "id": "stale",
+      "lane": "waiting",
+      "col": 4,
+      "type": "messagebus",
+      "label": "重新生成快照",
+      "sublabel": "状态变化，方案不落库",
+      "width": 150,
+      "yOffset": 25
+    }
+  ],
+  "edges": [
+    {
+      "id": "screen-pool",
+      "from": "screen",
+      "to": "qualification",
+      "label": "评估结果",
+      "role": "main"
+    },
+    {
+      "id": "pool-snapshot",
+      "from": "qualification",
+      "to": "snapshot",
+      "label": "达标后异步",
+      "role": "main"
+    },
+    {
+      "id": "snapshot-allocator",
+      "from": "snapshot",
+      "to": "allocator",
+      "label": "无原始简历",
+      "role": "main"
+    },
+    {
+      "id": "allocator-commit",
+      "from": "allocator",
+      "to": "commit",
+      "label": "结构化方案",
+      "role": "main"
+    },
+    {
+      "id": "screen-not-admitted",
+      "from": "qualification",
+      "to": "screen_hold",
+      "label": "不满足入池条件",
+      "role": "branch",
+      "variant": "security"
+    },
+    {
+      "id": "allocator-wait",
+      "from": "allocator",
+      "to": "allocation_hold",
+      "label": "暂不可分配",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "id": "commit-stale",
+      "from": "commit",
+      "to": "stale",
+      "label": "快照已过期",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "id": "stale-snapshot",
+      "from": "stale",
+      "to": "snapshot",
+      "label": "重新规划",
+      "role": "return",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "筛选边界",
+      "items": [
+        "每次只评估一个当前投递标准",
+        "筛选结论、标签与原文证据共同留存"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "分配边界",
+      "items": [
+        "按既定优先级选择，均衡只打破同级并列",
+        "只消费已验证标签，不读取原文或改筛选结论"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "HC 业务含义",
+      "items": [
+        "关联内部用人需求，不扣减招聘名额",
+        "公开与非公开岗位由接收状态统一参与"
+      ]
+    }
+  ]
+}

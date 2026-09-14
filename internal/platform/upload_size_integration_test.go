@@ -141,10 +141,10 @@ func TestUploadBeyondFormerFileAndArchiveLimits(t *testing.T) {
 		t.Fatal("large PDF was not submitted for processing")
 	}
 	stored, err := a.get(ctx, a.Pool, "core_resume", resume["id"])
-	if err != nil || stored["resume_file"] != filename {
+	if err != nil || !strings.HasSuffix(str(stored["resume_file"]), "-"+filename) {
 		t.Fatalf("large upload was not committed: %v", err)
 	}
-	checksum, savedSize, err := fileDigest(ctx, filepath.Join(a.Config.MediaRoot, "resumes", filename))
+	checksum, savedSize, err := fileDigest(ctx, filepath.Join(a.Config.MediaRoot, "resumes", str(stored["resume_file"])))
 	if err != nil || savedSize != size || checksum != hex.EncodeToString(digest.Sum(nil)) {
 		t.Fatalf("large PDF was rejected, truncated or changed: size=%d err=%v", savedSize, err)
 	}

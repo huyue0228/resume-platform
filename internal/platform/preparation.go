@@ -19,7 +19,7 @@ type preparationData struct {
 }
 
 func (a *App) loadPreparationData(ctx context.Context) (*preparationData, error) {
-	lane := env("AGENT_KERNEL_ROLLOUT", "review_only")
+	lane := env("AGENT_KERNEL_ROLLOUT", "enforced")
 	if !contains([]string{"review_only", "enforced"}, lane) {
 		return nil, taskError("agent_snapshot_unavailable", "运行策略不支持，请配置 review_only 或 enforced")
 	}
@@ -144,7 +144,7 @@ func (a *App) loadPreparationData(ctx context.Context) (*preparationData, error)
 		return nil, err
 	}
 	d.policy = obj(policy["policy"])
-	d.thresholds = Object{"dispatch": a.configValue(ctx, "ai_dispatch_threshold", .75), "review": a.configValue(ctx, "ai_review_threshold", .5)}
+	d.thresholds = Object{"dispatch": a.configValue(ctx, "ai_dispatch_threshold", .75)}
 	return d, nil
 }
 
@@ -174,7 +174,7 @@ func (a *App) freezeCase(ctx context.Context, run, candidate, pin Object, data *
 	}
 	rejected := map[int64]bool{}
 	if workflow != nil {
-		attempts, err := rows(ctx, a.Pool, "SELECT row_to_json(a) FROM core_assignmentattempt a WHERE workflow_id=$1 AND feedback_result='rejected'", workflow["id"])
+		attempts, err := rows(ctx, a.Pool, "SELECT row_to_json(a) FROM platform_applications a WHERE candidate_id=$1 AND status IN ('ai_rejected','department_rejected','review_rejected','passed')", candidate["id"])
 		if err != nil {
 			return nil, err
 		}
@@ -195,21 +195,28 @@ func (a *App) freezeCase(ctx context.Context, run, candidate, pin Object, data *
 	snapshot := Object{"candidate": c, "workflow": wf, "volunteers": volunteers, "jobs": data.jobs, "admission_rules": data.rules, "taxonomy": data.taxonomy, "pool_policy": data.policy}
 	frozen := Object{"snapshot": snapshot, "volunteer_ids": volunteerIDs, "job_ids": data.jobIDs, "rule_ids": data.ruleIDs, "tag_ids": data.tagIDs, "task_id": token(16), "pin": pin, "lane": data.lane, "thresholds": data.thresholds}
 	frozen["preflight"] = prepareSnapshot(snapshot)
+	configureAssessmentSnapshot(frozen)
+	return frozen, nil
+}
+
+func configureAssessmentSnapshot(frozen Object) {
+	snapshot := obj(frozen["snapshot"])
+	policy := obj(snapshot["pool_policy"])
 	d := obj(frozen["preflight"])
 	snapshot["jobs"] = []any{}
+	snapshot["tag_catalog"] = []any{}
 	frozen["job_ids"] = Object{}
 	if d["status"] == "ready" {
-		standard := policyItem(data.policy, "standards", str(d["standard_code"]))
-		snapshot["jobs"] = []any{standardJob(data.policy, standard)}
+		standard := policyItem(policy, "standards", str(d["standard_code"]))
+		snapshot["jobs"] = []any{standardJob(policy, standard)}
 		tags := []any{}
 		for _, code := range stringValues(standard["tag_codes"]) {
-			if tag := policyItem(data.policy, "tags", code); activePolicyItem(tag) {
+			if tag := policyItem(policy, "tags", code); activePolicyItem(tag) {
 				tags = append(tags, brief(tag, "code", "name", "category", "description"))
 			}
 		}
 		snapshot["tag_catalog"] = tags
 	}
-	return frozen, nil
 }
 
 func (a *App) preparationProgress(ctx context.Context, run Object, processed, total int) error {

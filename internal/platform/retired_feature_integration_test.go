@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestRetiredSpecialRoutingCannotOverrideJobOrReview(t *testing.T) {
+func TestRetiredSpecialRoutingCannotOverridePoolAllocation(t *testing.T) {
 	f := newPipelineFixture(t)
 	a, ctx := f.a, context.Background()
 	t.Setenv("AGENT_KERNEL_ROLLOUT", "enforced")
@@ -31,7 +31,7 @@ func TestRetiredSpecialRoutingCannotOverrideJobOrReview(t *testing.T) {
 		claim := clone(obj(list(profile["claims"])[0]))
 		claim["kind"], claim["confidence"] = "agent_experience", .99
 		profile["claims"] = append(list(profile["claims"]), claim)
-		// 已验证的风险要求普通人工复核，不能再被旧专项配置越过。
+		// 风险继续保留，旧专项配置不能改变按标签和名额分配。
 		profile["risks"] = []any{"profile_incomplete"}
 	}
 	listing := apiRequest(t, a, f.p, "GET", "/api/ai-connection/settings/", nil)
@@ -53,16 +53,15 @@ func TestRetiredSpecialRoutingCannotOverrideJobOrReview(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := poolMemberForTest(t, f)
-	if decision["recommendation"] != "review" || m["status"] != "pending_review" {
-		t.Fatal("old routing bypassed pool review")
+	if decision["recommendation"] != "dispatch" || m["status"] != "allocated" {
+		t.Fatal("old routing changed pool admission")
 	}
-	approvePoolForTest(t, f)
 	attempt, err := one(ctx, a.Pool, "SELECT row_to_json(a) FROM core_assignmentattempt a WHERE agent_decision_id=$1", decision["id"])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if attempt["status"] != "pending_dispatch" {
-		t.Fatal("old routing bypassed ordinary review")
+		t.Fatal("old routing bypassed department dispatch")
 	}
 	if num(attempt["current_department_id"]) != num(f.job["department_id"]) || truth(decision["special_route_applied"]) || str(attempt["route_code"]) != "" {
 		t.Fatal("old routing changed the matched job's department")

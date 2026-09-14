@@ -254,8 +254,8 @@ func TestGoPipelineTextToSavedDecision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decision["recommendation"] != "review" || decision["recommended_job_id"] != nil {
-		t.Fatal("review-only decision or job changed")
+	if decision["recommendation"] != "dispatch" || num(decision["recommended_job_id"]) != num(job["id"]) {
+		t.Fatal("direct admission targeted wrong job")
 	}
 	profile, err := one(ctx, a.Pool, "SELECT row_to_json(p) FROM core_resumeprofile p WHERE resume_id=$1", resume["id"])
 	if err != nil {
@@ -268,12 +268,8 @@ func TestGoPipelineTextToSavedDecision(t *testing.T) {
 	var attempts, reservations int
 	a.Pool.QueryRow(ctx, "SELECT count(*) FROM core_assignmentattempt WHERE workflow_id=$1", member["workflow_id"]).Scan(&attempts)
 	a.Pool.QueryRow(ctx, "SELECT COALESCE(sum(used_count),0) FROM core_processingrunjobcapacity WHERE run_id=$1", run["id"]).Scan(&reservations)
-	if member["status"] != "pending_review" || attempts != 0 || reservations != 0 {
-		t.Fatalf("review reserved allocation: member=%v attempts=%d HC=%d", member["status"], attempts, reservations)
-	}
-	confirmed := responseObject(t, apiRequest(t, a, p, "POST", "/api/position-pools/members/"+str(member["id"])+"/review/", Object{"revision": member["revision"], "decision": "approve", "note": "确认原文符合投递标准"}), 200)
-	if confirmed["code"] != "pool_allocated" {
-		t.Fatalf("review confirmation failed: %v", confirmed)
+	if member["status"] != "allocated" || attempts != 1 || reservations != 1 {
+		t.Fatalf("direct admission did not allocate exactly once: member=%v attempts=%d HC=%d", member["status"], attempts, reservations)
 	}
 	at, err := one(ctx, a.Pool, "SELECT row_to_json(a) FROM core_assignmentattempt a WHERE agent_decision_id=$1", decision["id"])
 	if err != nil || at["status"] != "pending_dispatch" || at["capacity_reservation_id"] == nil {
@@ -362,6 +358,8 @@ func TestCancelExtractionStopsWorkAndWrites(t *testing.T) {
 }
 func TestExtractionFailureIsolatedAndRetryReusesText(t *testing.T) {
 	f := newPipelineFixture(t)
+	// Keep this cache test before department assignment; assigned work must not be rerun.
+	f.resultHook = func(result Object) { obj(result["profile"])["tags"] = []any{} }
 	ctx := context.Background()
 	f.analyzeHook = func(context.Context, Object) error { return errors.New("fixture model unavailable") }
 	run := f.submit(t)

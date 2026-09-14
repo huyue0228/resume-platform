@@ -110,6 +110,12 @@ func (a *App) Handler(static http.Handler) http.Handler {
 	})
 }
 func (a *App) api(w http.ResponseWriter, r *http.Request, path string, p *Principal) error {
+	if isAllocationPath(path) {
+		return a.allocationAPI(w, r, path, p)
+	}
+	if strings.HasPrefix(path, "jobs/") && strings.HasSuffix(path, "/reception") {
+		return a.demandReceptionAPI(w, r, path, p)
+	}
 	if path == "pipeline/schedules" || strings.HasPrefix(path, "pipeline/schedules/") {
 		return a.schedulesAPI(w, r, path, p)
 	}

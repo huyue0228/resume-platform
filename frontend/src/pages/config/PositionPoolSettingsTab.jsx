@@ -46,7 +46,7 @@ export default function PositionPoolSettingsTab() {
     } catch { /* API client displays the validation error; keep edits for correction. */ } finally { setBusy(false) }
   }
   return <Form form={form} layout="vertical" onFinish={save} initialValues={{ tags: [], pools: [], standards: [], rules: [] }}>
-    <Alert type={error ? 'error' : 'info'} showIcon message={error ? '配置加载失败，请刷新页面' : '配置顺序：能力标签 → 内部职位池 → 投递评估标准 → 部门分配规则'} description="投递标准用于判断是否入池；部门规则只在入池后按标签与名额分配。已保存的标识保留历史，可停用。" style={{ marginBottom: 16 }} />
+    <Alert type={error ? 'error' : 'info'} showIcon message={error ? '配置加载失败，请刷新页面' : '配置顺序：能力标签 → 内部职位池 → 投递评估标准 → 部门分配规则'} description="投递标准用于判断是否入池；部门规则在入池后按标签、优先级和需求供给分配。已保存的标识保留历史，可停用。" style={{ marginBottom: 16 }} />
     <Tabs items={[
       { key: 'tags', label: '能力标签', forceRender: true, children: list('tags', '能力标签', (n) => <>{field(n, 'name', '标签名称', <Input />, true)}{field(n, 'category', '类别', <Select options={categories} />, true)}{field(n, 'description', '证据判定说明', <Input.TextArea placeholder="例如：简历明确描述使用 SolidWorks 完成三维建模；仅提到软件名称不足以确认" />, true)}</>) },
       { key: 'pools', label: '内部职位池', forceRender: true, children: list('pools', '内部职位池', (n) => <>{field(n, 'name', '内部职位名称', <Input />, true)}{field(n, 'entity', '招聘主体', <Input />, true)}</>) },

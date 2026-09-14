@@ -115,7 +115,7 @@ func validateSchedule(body Object, now time.Time) (Object, time.Time, error) {
 			return nil, time.Time{}, bad("请选择至少一种简历状态")
 		}
 		for _, value := range values {
-			if _, ok := systemLabels[str(value)]; !ok {
+			if _, ok := systemLabels[str(value)]; !ok && str(value) != "pending_review" {
 				return nil, time.Time{}, bad("未知系统状态")
 			}
 		}

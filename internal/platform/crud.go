@@ -73,6 +73,11 @@ func (a *App) writeResource(w http.ResponseWriter, r *http.Request, resource str
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if contains([]string{"candidates", "resumes", "jobs", "departments"}, resource) {
+		if err = a.lockAllAllocationScopes(ctx, tx); err != nil {
+			return err
+		}
+	}
 	if resource == "contacts" || resource == "users" {
 		if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(72460910)"); err != nil {
 			return err
@@ -451,6 +456,11 @@ func (a *App) deleteResource(w http.ResponseWriter, r *http.Request, resource st
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if contains([]string{"candidates", "resumes", "jobs", "departments"}, resource) {
+		if err = a.lockAllAllocationScopes(ctx, tx); err != nil {
+			return err
+		}
+	}
 	if resource == "contacts" || resource == "users" {
 		if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(72460910)"); err != nil {
 			return err

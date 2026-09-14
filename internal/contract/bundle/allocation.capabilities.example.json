@@ -1,0 +1,23 @@
+{
+  "execution_modes": [
+    "deterministic"
+  ],
+  "instruction_version": "allocation-deterministic/v1",
+  "kernel_build": "dev",
+  "mock": false,
+  "policy_version": "allocation-order/v1",
+  "protocol_version": "resume-allocation/v1",
+  "result_schema_version": "resume-allocation-plan/v1",
+  "task_kinds": [
+    "pool.candidate_allocation"
+  ],
+  "tool_names": [
+    "allocation.read_snapshot",
+    "allocation.filter_eligible",
+    "allocation.rank_demands",
+    "allocation.simulate_plan",
+    "allocation.validate_plan",
+    "allocation.submit_plan"
+  ],
+  "toolset_version": "allocation-tools/v1"
+}

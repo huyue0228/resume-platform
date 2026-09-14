@@ -63,7 +63,7 @@ func brief(row Object, keys ...string) Object {
 	return result
 }
 func resumeBrief(row Object) Object {
-	return brief(row, "id", "apply_id", "entity", "org", "position_name", "status", "apply_date", "volunteer_rank", "assigned_entity", "job_category", "category_mode", "category_reason", "resume_file")
+	return brief(row, "id", "apply_id", "entity", "org", "position_name", "status", "apply_date", "volunteer_rank", "assigned_entity", "job_category", "category_mode", "category_reason", "resume_file", "lifecycle_status", "lifecycle_status_label", "lifecycle_reason", "lifecycle_completed_at")
 }
 func (a *App) serialize(ctx context.Context, resource string, row Object, p *Principal, detail bool) (Object, error) {
 	if row == nil {
@@ -140,6 +140,14 @@ func (a *App) serialize(ctx context.Context, resource string, row Object, p *Pri
 	case "departments", "jobs":
 		department := row
 		if resource == "jobs" {
+			setting, e := one(ctx, a.Pool, `SELECT row_to_json(s) FROM platform_demand_settings s WHERE demand_id=$1`, row["id"])
+			if e == nil {
+				result["reception_state"] = setting["reception_state"]
+				result["reception_revision"] = setting["revision"]
+			} else {
+				result["reception_state"] = "paused"
+				result["reception_revision"] = int64(1)
+			}
 			department, _ = a.get(ctx, a.Pool, "core_department", row["department_id"])
 		}
 		primary, secondary, _ := a.hierarchy(ctx, department)
@@ -256,6 +264,10 @@ func (a *App) serialize(ctx context.Context, resource string, row Object, p *Pri
 		}
 
 	case "agent-decisions":
+		var open bool
+		if err := a.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM core_candidateworkflow w LEFT JOIN platform_applications a ON a.resume_id=$2 WHERE w.id=$1 AND w.current_resume_id=$2 AND w.status NOT IN ('passed','talent_pool') AND COALESCE(a.status,'pending') NOT IN ('ai_rejected','department_rejected','review_rejected','passed') AND NOT EXISTS(SELECT 1 FROM core_assignmentattempt at WHERE at.workflow_id=w.id AND at.status IN ('pending_review','pending_dispatch','dispatched','passed')))`, row["workflow_id"], row["resume_id"]).Scan(&open); err != nil {
+			return nil, err
+		}
 		member, err := one(ctx, a.Pool, "SELECT row_to_json(m) FROM platform_pool_memberships m WHERE decision_id=$1 ORDER BY id DESC LIMIT 1", row["id"])
 		if err != nil && !noPoolRecord(err) {
 			return nil, err
@@ -264,6 +276,7 @@ func (a *App) serialize(ctx context.Context, resource string, row Object, p *Pri
 			result["pool_membership"] = member
 			delete(member, "file_checksum")
 		}
+		result["can_retry"] = open && (str(row["error_code"]) != "" || row["recommendation"] == "archive" || (row["confidence_score"] != nil && floatValue(row["confidence_score"]) < floatValue(a.configValue(ctx, "ai_dispatch_threshold", .75))) || member["status"] == "needs_reanalysis")
 
 		for _, key := range []string{"evaluated_job", "recommended_job"} {
 			job, _ := a.get(ctx, a.Pool, "core_job", row[key+"_id"])
@@ -346,11 +359,11 @@ func (a *App) candidateTags(ctx context.Context, c Object) ([]Object, error) {
 	return tags, nil
 }
 
-var systemLabels = map[string]string{"raw": "待处理", "pending_allocation": "入池待分配", "archived": "已归档", "pending_reallocation": "待重新分配", "pending_review": "待复核", "pending_dispatch": "待下发", "pending_screening": "待业务反馈", "screening_passed": "通过", "screening_rejected": "不通过"}
+var systemLabels = map[string]string{"raw": "待处理", "talent_pool": "人才库", "pending_allocation": "入池待分配", "archived": "已归档", "pending_reallocation": "待重新分配", "pending_dispatch": "待下发", "pending_screening": "待业务反馈", "screening_passed": "通过", "screening_rejected": "不通过"}
 
 func (a *App) candidateJSON(ctx context.Context, c, result Object, p *Principal, detail bool) (Object, error) {
 	workflow, _ := one(ctx, a.Pool, "SELECT row_to_json(w) FROM core_candidateworkflow w WHERE candidate_id=$1", c["id"])
-	resumes, err := rows(ctx, a.Pool, "SELECT row_to_json(r) FROM core_resume r WHERE candidate_id=$1 ORDER BY volunteer_rank NULLS LAST,apply_date NULLS FIRST,id", c["id"])
+	resumes, err := rows(ctx, a.Pool, `SELECT row_to_json(v) FROM (SELECT r.*,COALESCE(a.status,'pending') lifecycle_status,COALESCE(a.reason,'') lifecycle_reason,a.completed_at lifecycle_completed_at FROM core_resume r LEFT JOIN platform_applications a ON a.resume_id=r.id WHERE r.candidate_id=$1 ORDER BY volunteer_rank NULLS LAST,apply_date NULLS LAST,r.id) v`, c["id"])
 	if err != nil {
 		return nil, err
 	}
@@ -359,8 +372,17 @@ func (a *App) candidateJSON(ctx context.Context, c, result Object, p *Principal,
 		current = resumes[0]
 	}
 	for _, r := range resumes {
+		r["lifecycle_status_label"] = applicationLabels[str(r["lifecycle_status"])]
 		if num(r["id"]) == num(workflow["current_resume_id"]) {
 			current = r
+		}
+	}
+	if workflow["status"] == "waiting_next" {
+		for _, r := range resumes {
+			if !closedApplication(str(r["lifecycle_status"])) {
+				current = r
+				break
+			}
 		}
 	}
 	attempts := []Object{}
@@ -383,7 +405,12 @@ func (a *App) candidateJSON(ctx context.Context, c, result Object, p *Principal,
 		if attempt == nil {
 			return nil, &apiError{404, "未找到记录"}
 		}
-		current, _ = a.get(ctx, a.Pool, "core_resume", attempt["resume_id"])
+		for _, resume := range resumes {
+			if num(resume["id"]) == num(attempt["resume_id"]) {
+				current = resume
+				break
+			}
+		}
 		resumes = []Object{current}
 		result["phone"] = ""
 	} else {
@@ -427,7 +454,7 @@ func (a *App) candidateJSON(ctx context.Context, c, result Object, p *Principal,
 	case "dispatched":
 		status = "pending_screening"
 	case "pending_review":
-		status = "pending_review"
+		status = "raw"
 	case "pending_dispatch":
 		status = "pending_dispatch"
 	default:
@@ -446,12 +473,20 @@ func (a *App) candidateJSON(ctx context.Context, c, result Object, p *Principal,
 			result["pool_membership"] = member
 			delete(member, "file_checksum")
 			if attempt == nil {
-				if member["status"] == "pending_review" {
-					status = "pending_review"
-				} else if member["status"] == "pending_allocation" || member["status"] == "needs_reanalysis" {
+				if member["status"] == "pending_allocation" || member["status"] == "needs_reanalysis" {
 					status = "pending_allocation"
 				}
 			}
+		}
+	}
+	if p.has("resume.view") {
+		switch str(workflow["status"]) {
+		case "waiting_next":
+			status = "raw"
+		case "talent_pool":
+			status = "talent_pool"
+		case "passed":
+			status = "screening_passed"
 		}
 	}
 	result["system_status"] = status
@@ -486,8 +521,13 @@ func (a *App) candidateJSON(ctx context.Context, c, result Object, p *Principal,
 	result["current_primary_department_id"] = primary["id"]
 	result["current_primary_department_name"] = str(primary["name"])
 	reasonType, reason := "", ""
-	if p.has("resume.view") && str(workflow["status"]) == "archived" {
+	if p.has("resume.view") && workflow["status"] == "waiting_next" {
+		reasonType, reason = "waiting_next", "当前志愿已结束，等待下一轮定时任务处理剩余志愿"
+	} else if p.has("resume.view") && contains([]string{"archived", "talent_pool"}, str(workflow["status"])) {
 		reasonType = "archive"
+		if workflow["status"] == "talent_pool" {
+			reasonType = "talent_pool"
+		}
 		reason = str(workflow["archive_detail"])
 		if reason == "" {
 			reason = str(workflow["archive_reason"])
@@ -530,6 +570,16 @@ func (a *App) candidateJSON(ctx context.Context, c, result Object, p *Principal,
 	result["resumes"] = []any{}
 	result["attempts"] = []any{}
 	result["current_attempt"] = nil
+	if detail && p.has("resume.view") {
+		history, err := rows(ctx, a.Pool, `SELECT row_to_json(v) FROM (SELECT e.*,r.apply_id,r.volunteer_rank,r.position_name FROM platform_application_events e JOIN core_resume r ON r.id=e.resume_id WHERE r.candidate_id=$1 ORDER BY e.id) v`, c["id"])
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range history {
+			e["status_label"] = applicationLabels[str(e["to_status"])]
+		}
+		result["application_history"] = history
+	}
 	{
 		rv := []any{}
 		for _, r := range resumes {

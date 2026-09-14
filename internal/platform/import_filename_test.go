@@ -122,7 +122,7 @@ func TestResumePackageFilenameSQLAndDiskEncoding(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer files.close()
-			if db.savedName != tc.want || !affected[2] || len(files.items) != 1 {
+			if !strings.HasSuffix(db.savedName, "-"+tc.want) || len(db.savedName) != 33+len(tc.want) || !affected[2] || len(files.items) != 1 {
 				t.Fatalf("filename/ID mismatch: saved=%q want=%q affected=%v", db.savedName, tc.want, affected)
 			}
 			if err = files.install(); err != nil {

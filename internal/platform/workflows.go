@@ -2,7 +2,6 @@ package platform
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 )
@@ -51,6 +50,9 @@ func (a *App) cancelOpenAttempts(ctx context.Context, db DB, w Object, reason st
 			return err
 		}
 		if _, err = a.save(ctx, db, "core_assignmentattempt", at["id"], Object{"status": "cancelled", "cancel_reason": reason, "cancelled_at": time.Now().UTC()}); err != nil {
+			return err
+		}
+		if err = a.applicationState(ctx, db, at["resume_id"], "cancelled", reason, Object{"attempt_id": at["id"]}); err != nil {
 			return err
 		}
 		if err = a.event(ctx, db, at, "cancelled", at["current_department_id"], nil, reason, nil, nil, Object{"cancel_reason": reason}); err != nil {
@@ -103,6 +105,9 @@ func (a *App) notificationMetadata(ctx context.Context, db DB, departmentID any)
 	return Object{"welink": Object{"enabled": enabled, "recipient_count": len(ids), "recipient_ids": ids, "recipient_employee_nos": employees, "delivery_status": status, "skipped_reason": reason, "error": ""}}
 }
 func (a *App) createAttempt(ctx context.Context, db DB, w, resume, target, values Object, p *Principal) (Object, error) {
+	if err := a.requireOpenApplication(ctx, db, resume["id"]); err != nil {
+		return nil, err
+	}
 	receiver, err := a.receivingDepartment(ctx, db, target)
 	if err != nil {
 		return nil, err
@@ -129,6 +134,11 @@ func (a *App) createAttempt(ctx context.Context, db DB, w, resume, target, value
 	if err != nil {
 		return nil, err
 	}
+	if at["source"] == "manual" {
+		if _, err = db.Exec(ctx, `INSERT INTO platform_assignment_targets(attempt_id,department_id,target_kind,department_name) VALUES($1,$2,'department_only',$3) ON CONFLICT DO NOTHING`, at["id"], target["id"], target["name"]); err != nil {
+			return nil, err
+		}
+	}
 	if err = a.event(ctx, db, at, "attempt_created", nil, nil, str(values["match_reason"]), p, nil, Object{"source": at["source"], "initial_department_id": receiver["id"]}, at["source"] != "manual"); err != nil {
 		return nil, err
 	}
@@ -136,6 +146,9 @@ func (a *App) createAttempt(ctx context.Context, db DB, w, resume, target, value
 		return nil, err
 	}
 	if _, err = a.save(ctx, db, "core_candidateworkflow", w["id"], Object{"dispatch_strategy": at["match_mode"]}); err != nil {
+		return nil, err
+	}
+	if err = a.applicationState(ctx, db, resume["id"], str(at["status"]), str(at["match_reason"]), Object{"attempt_id": at["id"], "source": at["source"]}); err != nil {
 		return nil, err
 	}
 	return at, nil
@@ -311,56 +324,13 @@ func (a *App) mutateAttempt(ctx context.Context, id any, action string, body Obj
 		from = at["current_department_id"]
 		to = target["id"]
 		metadata = a.notificationMetadata(ctx, tx, to)
-	case "confirm_review":
+	case "confirm_review", "cancel_review":
+		return nil, &apiError{410, "待复核阶段已取消，请按当前入池状态继续处理"}
+	case "cancel_attempt":
 		if !a.canManageAttempt(ctx, tx, p, at, "attempt.dispatch") {
-			return nil, &apiError{403, "无当前部门复核权限"}
-		}
-		if at["status"] != "pending_review" {
-			return stateError("仅待 HR 复核尝试可以确认")
-		}
-		decision, _ := a.get(ctx, tx, "core_agentdispatchdecision", at["agent_decision_id"])
-		if len(obj(decision["kernel_result"])) > 0 {
-			item, err := one(ctx, tx, "SELECT row_to_json(i) FROM core_processingrunscopeitem i WHERE run_id=$1 AND candidate_id=$2", decision["processing_run_id"], w["candidate_id"])
-			if err != nil {
-				return nil, err
-			}
-			if err = a.validateLiveJobs(ctx, tx, obj(item["kernel_snapshot"])); err != nil {
-				return stateError("岗位要求已变化，请重新分析或人工分配")
-			}
-			if at["capacity_reservation_id"] == nil {
-				job, err := a.get(ctx, tx, "core_job", decision["recommended_job_id"])
-				if err != nil {
-					return nil, err
-				}
-				run, err := a.get(ctx, tx, "core_processingrun", decision["processing_run_id"])
-				if err != nil {
-					return nil, err
-				}
-				capacity, err := one(ctx, tx, "SELECT row_to_json(c) FROM core_processingrunjobcapacity c WHERE run_id=$1 AND job_id=$2 FOR UPDATE", run["id"], job["id"])
-				if err != nil {
-					return nil, err
-				}
-				limit := num(job["headcount"]) * num(run["job_hc_coefficient_snapshot"])
-				if num(capacity["used_count"]) >= limit {
-					return stateError("岗位 HC 已用尽，请选择其他岗位")
-				}
-				if _, err = a.save(ctx, tx, "core_processingrunjobcapacity", capacity["id"], Object{"capacity": limit, "used_count": num(capacity["used_count"]) + 1}); err != nil {
-					return nil, err
-				}
-				values["capacity_reservation_id"] = capacity["id"]
-			}
-		}
-		values["status"] = "pending_dispatch"
-		values["review_required"] = false
-		eventType = "review_confirmed"
-	case "cancel_attempt", "cancel_review":
-		if !a.canManageAttempt(ctx, tx, p, at, "attempt.dispatch") {
-			return nil, &apiError{403, "无当前部门复核或下发权限"}
+			return nil, &apiError{403, "无当前部门下发权限"}
 		}
 		required := "pending_dispatch"
-		if action == "cancel_review" {
-			required = "pending_review"
-		}
 		if at["status"] != required {
 			return stateError("当前尝试状态不可取消")
 		}
@@ -428,6 +398,13 @@ func (a *App) mutateAttempt(ctx context.Context, id any, action string, body Obj
 		return nil, err
 	}
 	if action == "feedback" {
+		state := "department_rejected"
+		if at["status"] == "passed" {
+			state = "passed"
+		}
+		if err = a.applicationState(ctx, tx, at["resume_id"], state, strings.TrimSpace(str(at["feedback_reason_label_snapshot"])+" "+str(at["feedback_note"])), Object{"attempt_id": id, "reason_code": at["feedback_reason_code"], "note": at["feedback_note"], "actor_id": p.User["id"]}); err != nil {
+			return nil, err
+		}
 		if at["status"] == "passed" {
 			if _, err = a.save(ctx, tx, "core_candidateworkflow", w["id"], Object{"status": "passed", "passed_attempt_id": id, "block_reason": "", "block_detail": "", "completed_at": time.Now().UTC()}); err != nil {
 				return nil, err
@@ -436,27 +413,23 @@ func (a *App) mutateAttempt(ctx context.Context, id any, action string, body Obj
 				return nil, err
 			}
 		} else {
-			resume, findErr := one(ctx, tx, "SELECT row_to_json(r) FROM core_resume r WHERE candidate_id=$1 AND NOT EXISTS(SELECT 1 FROM core_assignmentattempt a WHERE a.workflow_id=$2 AND a.resume_id=r.id AND a.feedback_result='rejected') ORDER BY volunteer_rank NULLS LAST,apply_date NULLS LAST,id LIMIT 1", w["candidate_id"], w["id"])
-			if findErr != nil {
-				var missing *apiError
-				if !errors.As(findErr, &missing) || missing.Status != 404 {
-					return nil, findErr
-				}
-				if err = a.archiveWorkflow(ctx, tx, w, "all_rejected", "全部可尝试志愿均已反馈未通过"); err != nil {
-					return nil, err
-				}
-			} else {
-				if err = a.touchWorkflow(ctx, tx, w, resume); err != nil {
-					return nil, err
-				}
-				scope := Object{"trigger": "feedback_rejected", "retry_resume_id": resume["id"], "expected_workflow_revision": w["revision"]}
-				if _, err = a.createRun(ctx, tx, "step2", scope, []int64{num(w["candidate_id"])}, p); err != nil {
-					return nil, err
-				}
+			if err = a.releaseCapacity(ctx, tx, at); err != nil {
+				return nil, err
+			}
+			if err = a.waitAfterDepartmentRejection(ctx, tx, w); err != nil {
+				return nil, err
 			}
 		}
+	} else if str(at["status"]) == "dispatched" || str(at["status"]) == "pending_dispatch" || str(at["status"]) == "cancelled" {
+		state := str(at["status"])
+		if state == "dispatched" {
+			state = "department_review"
+		}
+		if err = a.applicationState(ctx, tx, at["resume_id"], state, note, Object{"attempt_id": id, "action": action, "actor_id": p.User["id"]}); err != nil {
+			return nil, err
+		}
 	}
-	if action == "cancel_attempt" || action == "cancel_review" {
+	if action == "cancel_attempt" {
 		var open bool
 		if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM core_assignmentattempt WHERE workflow_id=$1 AND status IN ('pending_review','pending_dispatch','dispatched'))", w["id"]).Scan(&open); err != nil {
 			return nil, err
@@ -473,9 +446,6 @@ func (a *App) mutateAttempt(ctx context.Context, id any, action string, body Obj
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
-	}
-	if action == "feedback" {
-		a.wakeQueue(ctx)
 	}
 	return at, nil
 }

@@ -19,7 +19,7 @@ var initError error
 func Validate(name string, raw []byte) error {
 	once.Do(func() {
 		schemas = map[string]*jsonschema.Resolved{}
-		for _, n := range []string{"request", "response", "capabilities"} {
+		for _, n := range []string{"request", "response", "capabilities", "allocation.request", "allocation.response", "allocation.capabilities"} {
 			data, err := Bundle.ReadFile("bundle/" + n + ".schema.json")
 			if err != nil {
 				initError = err
