@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ModalForm,
+  DrawerForm,
   PageContainer,
   ProFormSelect,
   ProFormSwitch,
@@ -18,6 +18,7 @@ import {
   updateUser,
 } from '../api/services'
 import SmartDataTable from '../components/SmartDataTable'
+import { userBulkEdit, roleBulkEdit } from '../components/tableEditConfigs'
 import { useRole } from '../contexts/roleState'
 
 const ROLE_VALUE_ENUM = {
@@ -214,7 +215,7 @@ export default function UsersPage() {
       })
       setActiveRole(data)
       roleActionRef.current?.reload()
-      await Promise.all([loadOptions(), refreshMe()])
+      await Promise.all([loadOptions(), refreshMe({ background: true })])
       message.success('角色权限已保存')
       setPermissionModalOpen(false)
     } finally {
@@ -237,6 +238,8 @@ export default function UsersPage() {
                 rowKey="id"
                 columns={userBaseColumns}
                 request={fetchUsers}
+                recordEditor={{ column: 'username', open: (record) => setUserModal({ open: true, record }), disabled: (record) => record.is_protected }}
+                bulkEdit={userBulkEdit(roleOptions, async () => { await loadOptions(); await refreshMe({ background: true }) })}
                 toolBarRender={() => [
                   <Button
                     key="create"
@@ -260,6 +263,7 @@ export default function UsersPage() {
                 rowKey="id"
                 columns={roleBaseColumns}
                 request={fetchRoles}
+                bulkEdit={roleBulkEdit(permissionTree, async () => { await loadOptions(); await refreshMe({ background: true }) })}
                 toolBarRender={() => [
                   <Button
                     key="create"
@@ -307,10 +311,11 @@ export default function UsersPage() {
         />
       </Modal>
 
-      <ModalForm
+      <DrawerForm
+        submitter={{ searchConfig: { submitText: '保存', resetText: '取消' } }}
         title={userModal.record ? '编辑用户' : '新增用户'}
         open={userModal.open}
-        modalProps={{ destroyOnHidden: true, onCancel: () => setUserModal({ open: false, record: null }) }}
+        drawerProps={{ destroyOnHidden: true, onClose: () => setUserModal({ open: false, record: null }) }}
         initialValues={
           userModal.record
             ? {
@@ -358,12 +363,13 @@ export default function UsersPage() {
         />
         <p>一级部门HR可管理全局招聘业务；二级部门HR、接口人和简历筛选人还需在“部门人员授权”中配置部门。</p>
         <ProFormSwitch name="is_active" label="启用" />
-      </ModalForm>
+      </DrawerForm>
 
-      <ModalForm
+      <DrawerForm
+        submitter={{ searchConfig: { submitText: '保存', resetText: '取消' } }}
         title={roleModal.record ? '编辑角色' : '新增角色'}
         open={roleModal.open}
-        modalProps={{ destroyOnHidden: true, onCancel: () => setRoleModal({ open: false, record: null }) }}
+        drawerProps={{ destroyOnHidden: true, onClose: () => setRoleModal({ open: false, record: null }) }}
         initialValues={roleModal.record || {}}
         onFinish={async (values) => {
           if (roleModal.record) {
@@ -379,7 +385,7 @@ export default function UsersPage() {
         }}
       >
         <ProFormText name="name" label="角色名称" rules={[{ required: true }]} />
-      </ModalForm>
+      </DrawerForm>
     </PageContainer>
   )
 }

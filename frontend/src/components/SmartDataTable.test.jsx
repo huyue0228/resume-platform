@@ -344,9 +344,57 @@ describe('SmartDataTable', () => {
       />,
     )
 
-    await userEvent.click(screen.getByRole('button', { name: '编辑' }))
+    expect(screen.queryByRole('button', { name: '编辑' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: '更多操作' }))
+    await userEvent.click(await screen.findByRole('button', { name: '编辑' }))
     expect(onRowClick).not.toHaveBeenCalled()
     fireEvent.click(screen.getByText('张三'))
     expect(onRowClick).toHaveBeenCalledWith(rows[0], 0, expect.anything())
+  })
+})
+
+
+describe('SmartDataTable bulk maintenance', () => {
+  it('preserves cross-page selection, freezes the submitted rows, and clears on filter change', async () => {
+    const user = userEvent.setup()
+    const update = vi.fn().mockResolvedValue({})
+    const request = vi.fn(({ page }) => Promise.resolve({ data: { results: [{ id: page, name: `记录${page}` }], count: 2 } }))
+    const { container } = render(<SmartDataTable tableId="bulk-pages" rowKey="id"
+      columns={[{ title: '名称', dataIndex: 'name', filter: { type: 'text', param: 'name' } }]}
+      request={request} pagination={{ defaultPageSize: 1 }}
+      bulkEdit={{ fields: [{ name: 'note', label: '备注' }], update }} />)
+    await screen.findByText('记录1')
+    await user.click(screen.getAllByRole('checkbox')[1])
+    await user.click(container.querySelector('.ant-pagination-next button'))
+    await screen.findByText('记录2')
+    await user.click(screen.getAllByRole('checkbox')[1])
+    expect(await screen.findByText('已选 2 项')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: '批量编辑' }))
+    await user.type(screen.getByRole('textbox', { name: '备注' }), '共同备注')
+    await user.click(screen.getByRole('button', { name: '预览修改' }))
+    await user.click(screen.getByRole('button', { name: '确认保存 2 项' }))
+    expect(await screen.findByText('修改完成：成功 2 项，未成功 0 项')).toBeTruthy()
+    expect(update.mock.calls.map(([record]) => record.id)).toEqual([1, 2])
+    expect(update.mock.calls.map(([, changes]) => changes)).toEqual([{ note: '共同备注' }, { note: '共同备注' }])
+    await user.click(screen.getByRole('button', { name: /^关\s*闭$/ }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await user.click(screen.getAllByRole('checkbox')[1])
+    expect(screen.getByText('已选 1 项')).toBeTruthy()
+    await user.click(container.querySelector('.ant-table-filter-trigger'))
+    await user.type(screen.getByPlaceholderText('请输入筛选内容'), '新条件')
+    await user.click(screen.getByRole('button', { name: /确认/ }))
+    await waitFor(() => expect(screen.queryByText('已选 1 项')).toBeNull())
+  })
+
+  it('keeps protected rows out of selection and supports name-based record editing', async () => {
+    const open = vi.fn()
+    render(<SmartDataTable tableId="bulk-protected" rowKey="id" columns={[{ title: '名称', dataIndex: 'name' }]}
+      dataSource={[{ id: 1, name: '内置账号', protected: true }, { id: 2, name: '普通账号' }]}
+      recordEditor={{ column: 'name', open, disabled: (record) => record.protected }}
+      bulkEdit={{ fields: [], update: vi.fn(), disabled: (record) => record.protected }} />)
+    expect(screen.getAllByRole('checkbox')[1].disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: '内置账号' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: '普通账号' }))
+    expect(open).toHaveBeenCalledWith({ id: 2, name: '普通账号' })
   })
 })

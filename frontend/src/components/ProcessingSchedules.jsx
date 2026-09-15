@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Alert, Button, Popconfirm, Space, Table, Tag, Typography, message } from 'antd'
 import useTaskRecords from './useTaskRecords'
+import TableRowActions from './TableRowActions'
 import { cancelProcessingSchedule, fetchProcessingSchedules, pauseProcessingSchedule, resumeProcessingSchedule } from '../api/services'
 
 const statusLabels = { active: '已启用', paused: '已暂停', completed: '已触发', cancelled: '已取消', failed: '触发失败' }
@@ -43,12 +44,12 @@ export default function ProcessingSchedules({ onOpenRun, onHistory, query = {}, 
         { title: '触发安排', width: 200, render: (_, record) => <><div>{({ once: '仅一次', daily: '每天', weekly: '每周' })[record.repeat]} · 首次 {formatTime(record.run_at)}</div><div>{record.status === 'paused' ? '已暂停触发' : `下次：${formatTime(record.next_run_at)}`}</div></> },
         { title: '状态', dataIndex: 'status', width: 100, render: (value) => <Tag color={value === 'failed' ? 'error' : value === 'active' ? 'processing' : 'default'}>{statusLabels[value] || value}</Tag> },
         { title: '最近触发', width: 250, render: (_, record) => <><div>{formatTime(record.last_triggered_at)}</div><div>{record.last_message || '尚未触发'}</div>{record.last_run_id && <Button type="link" size="small" onClick={() => onOpenRun(record.last_run_id)}>处理任务 #{record.last_run_id} · {runLabels[record.last_run_status] || '查看结果'}</Button>}</> },
-        { title: '操作', width: 190, fixed: 'right', render: (_, record) => <Space size={4} wrap>
+        { title: '', width: 64, fixed: 'right', render: (_, record) => <TableRowActions><Space size={4} wrap>
           <Button type="link" size="small" onClick={() => onHistory?.(record)}>执行历史</Button>
           {record.can_pause && <Button size="small" loading={cancelling === record.id} onClick={() => toggle(record, 'pause')}>暂停</Button>}
           {record.can_resume && <Button size="small" loading={cancelling === record.id} onClick={() => toggle(record, 'resume')}>恢复</Button>}
           {record.can_cancel && <Popconfirm title="取消后续定时触发？" description="取消后保留历史记录；已生成的处理任务需单独取消。" onConfirm={() => cancel(record)} okText="确认取消" cancelText="返回"><Button danger size="small" loading={cancelling === record.id}>取消定时</Button></Popconfirm>}
-        </Space> },
+        </Space></TableRowActions> },
       ]}
     />
   </section>

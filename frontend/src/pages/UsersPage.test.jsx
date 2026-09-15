@@ -41,7 +41,7 @@ vi.mock('../contexts/roleState', () => ({
 
 vi.mock('@ant-design/pro-components', () => ({
   PageContainer: ({ children }) => <div>{children}</div>,
-  ModalForm: ({ open, title, children }) => open ? (
+  DrawerForm: ({ open, title, children }) => open ? (
     <div role="dialog" aria-label={title}>{children}</div>
   ) : null,
   ProFormSelect: () => null,

@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@ant-design/pro-components', () => ({
   PageContainer: ({ children }) => <div>{children}</div>,
-  ModalForm: ({ children, onFinish, open }) => (
+  DrawerForm: ({ children, onFinish, open }) => (
     <div>
       {children}
       {open && (

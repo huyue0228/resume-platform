@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  ModalForm,
+  DrawerForm,
   PageContainer,
   ProFormSelect,
   ProFormSwitch,
@@ -17,6 +17,7 @@ import {
 } from '../api/services'
 import ImportButton from '../components/ImportButton'
 import SmartDataTable from '../components/SmartDataTable'
+import { contactBulkEdit } from '../components/tableEditConfigs'
 import { useRole } from '../contexts/roleState'
 
 const IMPORT_FIELDS = [
@@ -188,6 +189,8 @@ export default function DepartmentsPage() {
         rowKey="id"
         columns={baseColumns}
         request={fetchContacts}
+        recordEditor={canManageContacts ? { column: 'name', open: (record) => setContactModal({ open: true, record }) } : undefined}
+        bulkEdit={canManageContacts ? contactBulkEdit(departmentOptions) : undefined}
         filterOptionsRequest={fetchContactFilterOptions}
         toolBarRender={() => [
           canManageContacts && (
@@ -216,12 +219,13 @@ export default function DepartmentsPage() {
         ].filter(Boolean)}
       />
       {canManageContacts && (
-        <ModalForm
+        <DrawerForm
+        submitter={{ searchConfig: { submitText: '保存', resetText: '取消' } }}
           title={contactModal.record ? '编辑部门授权' : '新增部门授权'}
           open={contactModal.open}
-          modalProps={{
+          drawerProps={{
             destroyOnHidden: true,
-            onCancel: () => setContactModal({ open: false, record: null }),
+            onClose: () => setContactModal({ open: false, record: null }),
           }}
           initialValues={
             contactModal.record || { contact_level: 'secondary', can_delegate: true, is_active: true }
@@ -268,7 +272,7 @@ export default function DepartmentsPage() {
           />
           <ProFormSwitch name="can_delegate" label="允许转派" />
           <ProFormSwitch name="is_active" label="启用" />
-        </ModalForm>
+        </DrawerForm>
       )}
     </PageContainer>
   )

@@ -6,12 +6,14 @@ import {
 } from '../../api/services'
 import SmartDataTable from '../../components/SmartDataTable'
 
-function SettingEditor({ record, value, onChange }) {
+function SettingEditor({ record, value, onChange, disabled }) {
   if (record.value_type === 'boolean') {
-    return <Switch checked={Boolean(value)} onChange={onChange} />
+    return <Switch aria-label={record.label} disabled={disabled} checked={Boolean(value)} onChange={onChange} />
   }
   return (
     <InputNumber
+      aria-label={record.label}
+      disabled={disabled}
       min={record.min ?? 0}
       max={record.max}
       step={record.value_type === 'number' ? 0.01 : 1}
@@ -27,6 +29,8 @@ export default function AISettingsTab() {
   const [drafts, setDrafts] = useState({})
   const [loading, setLoading] = useState(false)
   const [savingKey, setSavingKey] = useState('')
+  const [saveErrors, setSaveErrors] = useState([])
+  const changed = settings.filter((record) => drafts[record.key] !== record.value)
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -43,13 +47,22 @@ export default function AISettingsTab() {
     load()
   }, [load])
 
-  const save = async (record) => {
-    setSavingKey(record.key)
+  const saveChanges = async () => {
+    const failures = []
+    let savedCount = 0
+    setSaveErrors([])
     try {
-      const { data } = await updateAIConnectionSetting(record.key, drafts[record.key])
-      setSettings((items) => items.map((item) => (item.key === record.key ? data : item)))
-      setDrafts((values) => ({ ...values, [record.key]: data.value }))
-      message.success('AI 配置已保存')
+      for (const record of changed) {
+        setSavingKey(record.key)
+        try {
+          const { data } = await updateAIConnectionSetting(record.key, drafts[record.key])
+          setSettings((items) => items.map((item) => (item.key === record.key ? data : item)))
+          setDrafts((values) => ({ ...values, [record.key]: data.value }))
+          savedCount += 1
+        } catch { failures.push(record.label) }
+      }
+      if (savedCount) message.success(`已保存 ${savedCount} 项运行参数`)
+      setSaveErrors(failures)
     } finally {
       setSavingKey('')
     }
@@ -81,24 +94,10 @@ export default function AISettingsTab() {
       render: (_, record) => (
         <SettingEditor
           record={record}
+          disabled={Boolean(savingKey)}
           value={drafts[record.key]}
           onChange={(value) => setDrafts((values) => ({ ...values, [record.key]: value }))}
         />
-      ),
-    },
-    {
-      title: '操作',
-      key: 'action',
-      width: 100,
-      render: (_, record) => (
-        <Button
-          type="primary"
-          size="small"
-          loading={savingKey === record.key}
-          onClick={() => save(record)}
-        >
-          保存
-        </Button>
       ),
     },
   ]
@@ -118,8 +117,12 @@ export default function AISettingsTab() {
         columns={columns}
         dataSource={settings}
         pagination={false}
-        toolBarRender={() => [<Button key="reload" onClick={load}>刷新</Button>]}
+        toolBarRender={() => [
+          <Button key="reload" disabled={Boolean(savingKey)} onClick={load}>刷新</Button>,
+          changed.length > 0 && <Button key="save" type="primary" aria-label={`保存 ${changed.length} 项修改`} aria-busy={Boolean(savingKey)} loading={Boolean(savingKey)} onClick={saveChanges}>保存 {changed.length} 项修改</Button>,
+        ].filter(Boolean)}
       />
+      {saveErrors.length > 0 && <Alert type="error" showIcon message={`未保存：${saveErrors.join('、')}`} description="已保留未成功项的修改内容，请修正后保存。" />}
     </Space>
   )
 }

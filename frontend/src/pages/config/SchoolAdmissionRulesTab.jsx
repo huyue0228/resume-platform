@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ModalForm,
+  DrawerForm,
   ProFormDigit,
   ProFormSelect,
   ProFormSwitch,
@@ -17,6 +17,7 @@ import {
 import { useModalRecord } from './useModalRecord'
 import SchoolTagBadge from '../../components/SchoolTagBadge'
 import SmartDataTable from '../../components/SmartDataTable'
+import { admissionBulkEdit } from '../../components/tableEditConfigs'
 
 function tagIds(tags) {
   return (tags || []).map((tag) => tag.id).filter(Boolean)
@@ -173,20 +174,23 @@ export default function SchoolAdmissionRulesTab() {
         rowKey="id"
         columns={baseColumns}
         request={fetchSchoolTagRules}
+        recordEditor={{ column: 'name', open: modal.open }}
+        bulkEdit={admissionBulkEdit(schoolTagOptions, EDUCATION_OPTIONS)}
         toolBarRender={() => [
           <Button key="create" type="primary" onClick={() => modal.open()}>
             新增规则
           </Button>,
         ]}
       />
-      <ModalForm
+      <DrawerForm
+        submitter={{ searchConfig: { submitText: '保存', resetText: '取消' } }}
         key={modal.record?.id || 'create-rule'}
         title={modal.record ? '编辑院校准入规则' : '新增院校准入规则'}
         open={modal.visible}
         width={560}
-        modalProps={{
+        drawerProps={{
           destroyOnHidden: true,
-          onCancel: modal.close,
+          onClose: modal.close,
         }}
         initialValues={initialValues}
         onFinish={saveRule}
@@ -221,7 +225,7 @@ export default function SchoolAdmissionRulesTab() {
           options={EDUCATION_OPTIONS}
           placeholder="不选择表示不限最高学历"
         />
-      </ModalForm>
+      </DrawerForm>
     </>
   )
 }

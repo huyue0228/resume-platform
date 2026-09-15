@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ModalForm,
+  DrawerForm,
   PageContainer,
   ProFormDigit,
   ProFormSelect,
@@ -9,6 +9,7 @@ import {
   ProFormTextArea,
 } from '@ant-design/pro-components'
 import { Button, Input, Modal, Popconfirm, Select, Space, Tag, message } from 'antd'
+import { jobBulkEdit } from '../components/tableEditConfigs'
 import { updateDemandReception } from '../api/pools'
 import { RECEPTION } from '../components/AllocationWorkspace'
 import {
@@ -217,6 +218,8 @@ export default function JobsPage() {
         rowKey="id"
         columns={baseColumns}
         request={fetchJobs}
+        recordEditor={canManageJobs ? { column: 'position_name', open: (record) => setJobModal({ open: true, record }) } : undefined}
+        bulkEdit={canManageJobs ? jobBulkEdit(departmentOptions, Object.entries(RECEPTION).map(([value, label]) => ({ value, label }))) : undefined}
         filterOptionsRequest={fetchJobFilterOptions}
         toolBarRender={() =>
           [
@@ -265,12 +268,13 @@ export default function JobsPage() {
           ].filter(Boolean)
         }
       />
-      <ModalForm
+      <DrawerForm
+        submitter={{ searchConfig: { submitText: '保存', resetText: '取消' } }}
         title={jobModal.record ? '编辑岗位' : '新增岗位'}
         open={jobModal.open}
-        modalProps={{
+        drawerProps={{
           destroyOnHidden: true,
-          onCancel: () => setJobModal({ open: false, record: null }),
+          onClose: () => setJobModal({ open: false, record: null }),
         }}
         initialValues={
           jobModal.record
@@ -335,7 +339,7 @@ export default function JobsPage() {
         />
         <ProFormDigit name="headcount" label="HC（计划人数）" min={0} fieldProps={{ precision: 0 }} />
         <ProFormSwitch name="is_public" label="对外发布" />
-      </ModalForm>
+      </DrawerForm>
     </PageContainer>
   )
 }

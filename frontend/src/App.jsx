@@ -4,7 +4,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { RoleProvider } from './contexts/RoleContext'
 import { useRole } from './contexts/roleState'
 import { canAccessRoute, getDefaultAuthenticatedPath } from './routePermissions'
-import LoginPage from './pages/LoginPage'
+import AuthenticationPage from './pages/AuthenticationPage'
 
 const BasicLayout = lazy(() => import('./layouts/BasicLayout'))
 const ResumesPage = lazy(() => import('./pages/ResumesPage'))
@@ -40,13 +40,14 @@ function AppRoutes() {
   if (!isAuthenticated) {
     return (
       <Routes>
-        <Route path="/login" element={<LoginPage />} />
+        <Route path="/login" element={<AuthenticationPage />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     )
   }
 
   const defaultPath = getDefaultAuthenticatedPath(hasPermission)
+  if (!canAccessRoute(defaultPath, hasPermission)) return <Result status="403" title="尚未获得工作空间权限" subTitle="请联系管理员为当前账号配置访问权限。" />
 
   const guarded = (path, element) => {
     return canAccessRoute(path, hasPermission) ? (

@@ -32,7 +32,7 @@ client.interceptors.response.use(
       error?.response?.data?.message ||
       error?.message ||
       '请求失败'
-    message.error(String(detail))
+    if (!error.config?.silentError) message.error(String(detail))
     return Promise.reject(error)
   },
 )

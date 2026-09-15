@@ -35,6 +35,7 @@ describe('allocation workflow', () => {
   it('requires a reason and the current demand revision', async () => {
     api.updateDemandReception.mockResolvedValue({ data: {} })
     render(<AllocationWorkspace />)
+    await userEvent.click(await screen.findByRole('button', { name: '更多操作' }))
     await userEvent.click(await screen.findByRole('button', { name: '调整接收状态' }))
     expect((await screen.findByRole('button', { name: /保\s*存/ })).disabled).toBe(true)
     await userEvent.type(screen.getByRole('textbox', { name: '调整原因' }), '部门本周暂停接收')

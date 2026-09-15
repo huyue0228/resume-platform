@@ -1,3 +1,4 @@
+import TableRowActions from './TableRowActions'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Alert, Button, Card, Empty, Drawer, Input, Pagination, Popconfirm, Progress, Segmented, Select, Space, Spin, Table, Tabs, Tag, Typography, message } from 'antd'
@@ -383,12 +384,12 @@ function TaskTable({ runs, cancellingId, onCancel, onOpenCandidates, onOpenRun, 
       render: formatTime,
     },
     {
-      title: '操作',
+      title: '',
       key: 'action',
       fixed: 'right',
-      width: 110,
+      width: 64,
       render: (_, run) => (
-        <TaskCancelAction run={run} cancellingId={cancellingId} onCancel={onCancel} />
+        <TableRowActions>{ACTIVE_STATUSES.has(run.status) && <TaskCancelAction run={run} cancellingId={cancellingId} onCancel={onCancel} />}</TableRowActions>
       ),
     },
   ]
@@ -511,7 +512,7 @@ function TaskCard({ run, cancellingId, onCancel, onOpenCandidates }) {
             取消请求 {formatTime(run.cancel_requested_at)} · {run.cancelled_at ? `已取消 ${formatTime(run.cancelled_at)}` : '等待安全停止'} · 操作人 {run.cancelled_by_username_snapshot || '系统'}
           </Typography.Text>
         ) : null}
-        <TaskCancelAction run={run} cancellingId={cancellingId} onCancel={onCancel} />
+        <TableRowActions>{ACTIVE_STATUSES.has(run.status) && <TaskCancelAction run={run} cancellingId={cancellingId} onCancel={onCancel} />}</TableRowActions>
       </Space>
     </Card>
   )

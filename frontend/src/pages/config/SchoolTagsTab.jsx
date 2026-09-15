@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { ModalForm, ProFormSwitch, ProFormText } from '@ant-design/pro-components'
+import { DrawerForm, ProFormSwitch, ProFormText } from '@ant-design/pro-components'
 import { Button, Popconfirm, Space, Tag, message } from 'antd'
 import {
   createSchoolTag,
@@ -10,6 +10,7 @@ import {
 import { useModalRecord } from './useModalRecord'
 import SchoolTagBadge from '../../components/SchoolTagBadge'
 import SmartDataTable from '../../components/SmartDataTable'
+import { schoolTagBulkEdit } from '../../components/tableEditConfigs'
 
 export default function SchoolTagsTab() {
   const actionRef = useRef()
@@ -101,20 +102,23 @@ export default function SchoolTagsTab() {
         rowKey="id"
         columns={baseColumns}
         request={fetchSchoolTags}
+        recordEditor={{ column: 'name', open: modal.open }}
+        bulkEdit={schoolTagBulkEdit()}
         toolBarRender={() => [
           <Button key="create" type="primary" onClick={() => modal.open()}>
             新增标签
           </Button>,
         ]}
       />
-      <ModalForm
+      <DrawerForm
+        submitter={{ searchConfig: { submitText: '保存', resetText: '取消' } }}
         key={modal.record?.id || 'create-tag'}
         title={modal.record ? '编辑院校标签' : '新增院校标签'}
         open={modal.visible}
         width={520}
-        modalProps={{
+        drawerProps={{
           destroyOnHidden: true,
-          onCancel: modal.close,
+          onClose: modal.close,
         }}
         initialValues={
           modal.record || {
@@ -131,7 +135,7 @@ export default function SchoolTagsTab() {
         />
         <ProFormSwitch name="is_default" label="是否默认标签" />
         <ProFormSwitch name="is_active" label="是否启用" />
-      </ModalForm>
+      </DrawerForm>
     </>
   )
 }

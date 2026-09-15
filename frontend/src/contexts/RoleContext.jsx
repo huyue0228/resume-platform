@@ -12,13 +12,13 @@ export function RoleProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(Boolean(token))
 
-  const refreshMe = async () => {
+  const refreshMe = async ({ background = false } = {}) => {
     if (!localStorage.getItem('srf_token')) {
       setUser(null)
       setLoading(false)
       return null
     }
-    setLoading(true)
+    if (!background) setLoading(true)
     try {
       const { data } = await fetchMe()
       setUser(data)

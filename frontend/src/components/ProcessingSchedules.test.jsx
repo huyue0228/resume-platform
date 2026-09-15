@@ -24,6 +24,7 @@ it('shows scope and linked results, and persists cancellation through the API', 
   expect(await screen.findByText('触发时匹配：待处理')).toBeTruthy()
   await userEvent.click(screen.getByRole('button', { name: '处理任务 #42 · 已完成' }))
   expect(openRun).toHaveBeenCalledWith(42)
+  await userEvent.click(await screen.findByRole('button', { name: '更多操作' }))
   await userEvent.click(screen.getByRole('button', { name: '取消定时' }))
   fetchProcessingSchedules.mockResolvedValue({ data: { count: 1, results: [{ ...record, status: 'cancelled', can_cancel: false }] } })
   await userEvent.click(screen.getByRole('button', { name: '确认取消' }))

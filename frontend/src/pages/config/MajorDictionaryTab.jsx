@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PlusOutlined } from '@ant-design/icons'
 import {
-  ModalForm,
+  DrawerForm,
   ProFormDigit,
   ProFormSelect,
   ProFormSwitch,
@@ -21,6 +21,7 @@ import {
 } from '../../api/services'
 import { useModalRecord } from './useModalRecord'
 import SmartDataTable from '../../components/SmartDataTable'
+import { majorCategoryBulkEdit, majorAliasBulkEdit } from '../../components/tableEditConfigs'
 
 const matchTypeOptions = [
   { label: '包含匹配', value: 'contains' },
@@ -280,6 +281,8 @@ export default function MajorDictionaryTab() {
         rowKey="id"
         columns={categoryBaseColumns}
         request={fetchMajorCategories}
+        recordEditor={{ column: 'name', open: categoryModal.open }}
+        bulkEdit={majorCategoryBulkEdit(loadCategoryOptions)}
         rowClassName={(record) =>
           selectedCategory?.id === record.id ? 'ant-table-row-selected' : ''
         }
@@ -297,11 +300,15 @@ export default function MajorDictionaryTab() {
       />
 
       <SmartDataTable
+        key={selectedCategory?.id || "all-aliases"}
         tableId="major-aliases"
         actionRef={aliasActionRef}
         rowKey="id"
         columns={aliasBaseColumns}
         request={requestAliases}
+        params={{ category: selectedCategory?.id }}
+        recordEditor={{ column: 'name', open: aliasModal.open }}
+        bulkEdit={majorAliasBulkEdit(categoryOptions, () => categoryActionRef.current?.reload())}
         headerTitle={
           selectedCategory ? (
             <Space>
@@ -325,14 +332,15 @@ export default function MajorDictionaryTab() {
         ]}
       />
 
-      <ModalForm
+      <DrawerForm
+        submitter={{ searchConfig: { submitText: '保存', resetText: '取消' } }}
         key={categoryModal.record?.id || 'create-major-category'}
         title={categoryModal.record ? '编辑专业大类' : '新增专业大类'}
         open={categoryModal.visible}
         width={560}
-        modalProps={{
+        drawerProps={{
           destroyOnHidden: true,
-          onCancel: categoryModal.close,
+          onClose: categoryModal.close,
         }}
         initialValues={categoryInitialValues}
         onFinish={saveCategory}
@@ -345,16 +353,17 @@ export default function MajorDictionaryTab() {
         <ProFormTextArea name="description" label="说明" fieldProps={{ rows: 3 }} />
         <ProFormDigit name="sort_order" label="排序" fieldProps={{ precision: 0 }} />
         <ProFormSwitch name="is_active" label="是否启用" />
-      </ModalForm>
+      </DrawerForm>
 
-      <ModalForm
+      <DrawerForm
+        submitter={{ searchConfig: { submitText: '保存', resetText: '取消' } }}
         key={aliasModal.record?.id || 'create-major-alias'}
         title={aliasModal.record ? '编辑专业别名' : '新增专业别名'}
         open={aliasModal.visible}
         width={560}
-        modalProps={{
+        drawerProps={{
           destroyOnHidden: true,
-          onCancel: aliasModal.close,
+          onClose: aliasModal.close,
         }}
         initialValues={aliasInitialValues}
         onFinish={saveAlias}
@@ -384,7 +393,7 @@ export default function MajorDictionaryTab() {
         />
         <ProFormTextArea name="note" label="备注" fieldProps={{ rows: 3 }} />
         <ProFormSwitch name="is_active" label="是否启用" />
-      </ModalForm>
+      </DrawerForm>
     </Space>
   )
 }

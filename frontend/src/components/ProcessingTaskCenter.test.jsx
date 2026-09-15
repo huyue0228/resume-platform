@@ -74,6 +74,7 @@ describe('ProcessingTaskCenter', () => {
     querySchedules.mockResolvedValueOnce({ data: { count: 1, results: [{ id: 9, name: '每日计划', scope_label: '待处理', repeat: 'daily', status: 'active' }] } })
     fetchPipelineRuns.mockResolvedValue({ data: { results: [taskWithNodes()], count: 1 } })
     render(<MemoryRouter initialEntries={['/processing-tasks?tab=schedules']}><ProcessingTaskCenter /><CurrentLocation /></MemoryRouter>)
+    await userEvent.click(await screen.findByRole('button', { name: '更多操作' }))
     await userEvent.click(await screen.findByRole('button', { name: '执行历史' }))
     await waitFor(() => expect(fetchPipelineRuns).toHaveBeenCalledWith(expect.objectContaining({ schedule_id: '9' }), expect.anything()))
     expect(screen.getByText('计划「每日计划」的执行历史')).toBeTruthy()

@@ -12,6 +12,8 @@ import { ProTable } from '@ant-design/pro-components'
 import { Alert, Button, Input, Select, Space } from 'antd'
 import { useRole } from '../contexts/roleState'
 import ResizableHeaderCell from './ResizableHeaderCell'
+import BulkEditDrawer from './BulkEditDrawer'
+import TableRowActions from './TableRowActions'
 import {
   filterLocalData,
   serializeTableFilters,
@@ -222,6 +224,8 @@ const SmartDataTable = forwardRef(function SmartDataTable(
     actionRef,
     defaultColumnsState = EMPTY_COLUMN_STATE,
     batchActions,
+    bulkEdit,
+    recordEditor,
     rowSelection,
     onRowClick,
     onRow,
@@ -254,6 +258,7 @@ const SmartDataTable = forwardRef(function SmartDataTable(
   const [columnsState, setColumnsState] = useState(columnsStateRef.current)
   const [selectedRowKeys, setSelectedRowKeys] = useState([])
   const [selectedRows, setSelectedRows] = useState([])
+  const [bulkSession, setBulkSession] = useState(null)
   const tableRootRef = useRef()
   const stickyPaginationFrameRef = useRef()
   const stickyPaginationResizeTimerRef = useRef()
@@ -439,14 +444,21 @@ const SmartDataTable = forwardRef(function SmartDataTable(
     else delete next[key]
     filtersRef.current = next
     setFilters(next)
+    // A new filter defines a new working scope; page changes keep the selection.
+    if (bulkEdit) {
+      setSelectedRowKeys([])
+      setSelectedRows([])
+      rowSelection?.onChange?.([], [])
+    }
     confirm?.({ closeDropdown: true })
     if (dataRequest) queueMicrotask(() => proActionRef.current?.reload(true))
-  }, [dataRequest])
+  }, [dataRequest, bulkEdit, rowSelection])
 
   const columns = useMemo(
     () => baseColumns.map((column, index) => {
       const key = tableColumnKey(column, index)
-      const width = widths[key] || column.width || DEFAULT_COLUMN_WIDTH
+      const isAction = (column.valueType === 'option' || key === 'action' || column.title === '操作') && column.render
+      const width = isAction ? 64 : widths[key] || column.width || DEFAULT_COLUMN_WIDTH
       const filter = column.filter
       const next = {
         ...column,
@@ -464,6 +476,15 @@ const SmartDataTable = forwardRef(function SmartDataTable(
             })
           },
         }),
+      }
+      if (isAction) {
+        return { ...next, title: '', fixed: 'right', render: (...args) => <TableRowActions>{column.render(...args)}</TableRowActions> }
+      }
+      if (recordEditor?.column === key) {
+        next.render = (value, record, ...args) => {
+          const content = column.render ? column.render(value, record, ...args) : record[column.dataIndex] || '-'
+          return recordEditor.disabled?.(record) ? content : <Button type="link" className="srf-record-link" onClick={() => recordEditor.open(record)}>{content}</Button>
+        }
       }
       if (!filter) return next
       const selectedKeys = filters[key] || []
@@ -505,7 +526,7 @@ const SmartDataTable = forwardRef(function SmartDataTable(
         filterDropdown,
       }
     }),
-    [baseColumns, widths, filters, filterOptions, storageKey, updateFilter],
+    [baseColumns, widths, filters, filterOptions, storageKey, updateFilter, recordEditor],
   )
 
   const totalWidth = columns.reduce(
@@ -549,13 +570,15 @@ const SmartDataTable = forwardRef(function SmartDataTable(
   useImperativeHandle(forwardedRef, () => publicActions, [publicActions])
 
   const effectiveSelectedRowKeys = rowSelection?.selectedRowKeys ?? selectedRowKeys
-  const mergedRowSelection = rowSelection ? {
+  const mergedRowSelection = rowSelection || bulkEdit ? {
+    preserveSelectedRowKeys: Boolean(bulkEdit),
     ...rowSelection,
+    ...(bulkEdit?.disabled ? { getCheckboxProps: (record) => ({ disabled: bulkEdit.disabled(record) }) } : {}),
     selectedRowKeys: effectiveSelectedRowKeys,
     onChange: (keys, rows, info) => {
       setSelectedRowKeys(keys)
       setSelectedRows(rows)
-      rowSelection.onChange?.(keys, rows, info)
+      rowSelection?.onChange?.(keys, rows, info)
     },
   } : undefined
 
@@ -571,13 +594,25 @@ const SmartDataTable = forwardRef(function SmartDataTable(
     }
   }
 
-  const batchContent = effectiveSelectedRowKeys.length && batchActions
-    ? batchActions({
+  const openBulk = (config) => {
+    const records = selectedRows.filter((record) => record && effectiveSelectedRowKeys.includes(record[tableProps.rowKey || 'id']))
+    if (records.length !== effectiveSelectedRowKeys.length) return
+    setBulkSession({ config, records })
+  }
+  const batchContent = effectiveSelectedRowKeys.length && (batchActions || bulkEdit)
+    ? <>
+      {bulkEdit && <>
+        <Button type="primary" onClick={() => openBulk(bulkEdit)}>批量编辑</Button>
+        {(bulkEdit.actions || []).map((action) => <Button key={action.title} onClick={() => openBulk({ getLabel: bulkEdit.getLabel, ...action })}>{action.title}</Button>)}
+        <Button type="text" onClick={clearSelection}>取消选择</Button>
+      </>}
+      {batchActions?.({
         selectedRowKeys: effectiveSelectedRowKeys,
         selectedRows,
         clearSelection,
         filters: serializeTableFilters(baseColumns, filtersRef.current),
-      })
+      })}
+    </>
     : null
 
   const tableRootClassName = appendClassName(
@@ -698,6 +733,7 @@ const SmartDataTable = forwardRef(function SmartDataTable(
           }
         } : undefined}
         rowSelection={mergedRowSelection}
+        tableAlertRender={bulkEdit ? false : tableProps.tableAlertRender}
         scroll={{
           ...scroll,
           x: Math.max(Number(scroll?.x || 0), totalWidth),
@@ -705,6 +741,21 @@ const SmartDataTable = forwardRef(function SmartDataTable(
         }}
         search={false}
       />
+      {bulkSession && <BulkEditDrawer
+        config={bulkSession.config}
+        records={bulkSession.records}
+        onClose={() => setBulkSession(null)}
+        onComplete={async (results) => {
+          const remaining = results.filter((item) => !item.success).map((item) => item.record)
+          const keys = remaining.map((record) => record[tableProps.rowKey || 'id'])
+          setSelectedRowKeys(keys)
+          setSelectedRows(remaining)
+          rowSelection?.onChange?.(keys, remaining)
+          proActionRef.current?.reload?.()
+          loadOptions()
+          try { await bulkSession.config.onComplete?.(results) } catch { /* Saves already completed; keep their results visible. */ }
+        }}
+      />}
     </Space>
   )
 })

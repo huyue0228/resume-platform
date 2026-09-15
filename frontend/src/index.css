@@ -35,104 +35,10 @@ body {
   'Microsoft YaHei', sans-serif;
 }
 
-.login-shell {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(380px, 0.9fr);
-  min-height: 100vh;
-  box-sizing: border-box;
-  background: #fcfdfc;
-}
-.login-redirect-card {
-  display: flex;
-  box-sizing: border-box;
-  width: min(440px, calc(100% - 48px));
-  align-self: center;
-  justify-self: center;
-  align-items: flex-start;
-  justify-content: center;
-  flex-direction: column;
-  gap: 24px;
-  padding: 32px;
-  text-align: start;
-}
-.login-story {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 64px;
-  padding: 56px clamp(32px, 6vw, 96px);
-  color: #eff7ef;
-  background: #183d32;
-  overflow: hidden;
-}
-.login-wordmark {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  font-size: 19px;
-  font-weight: 650;
-}
-.login-story-copy h1 {
-  margin: 24px 0;
-  font-size: clamp(32px, 3.4vw, 52px);
-  line-height: 1.4;
-  font-weight: 550;
-  letter-spacing: -1px;
-}
-.login-story-copy p {
-  max-width: 360px;
-  color: #b6ccbf;
-  line-height: 1.9;
-  font-size: 15px;
-}
-.login-eyebrow {
-  color: #a7c7b4;
-  letter-spacing: 3px;
-  font-size: 11px;
-}
-.login-story-foot {
-  padding-top: 24px;
-  border-top: 1px solid #456357;
-  color: #b6ccbf;
-  font-size: 12px;
-}
-.login-principles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 40px;
-}
-.login-principles span {
-  padding: 7px 12px;
-  border: 1px solid #456357;
-  border-radius: 6px;
-  color: #d0e2d6;
-  font-size: 12px;
-}
-.login-card-heading {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.login-card-heading .ant-typography {
-  font-size: 28px;
-  letter-spacing: -0.6px;
-}
-.login-card-heading p {
-  margin: 0;
-  color: var(--srf-muted);
-  line-height: 1.7;
-}
-
-.login-redirect-card .ant-alert,
-.login-redirect-card .ant-btn {
-  width: 100%;
-}
-
-.login-redirect-card .ant-typography {
-  margin: 0;
-}
+.authentication-shell { min-height: 100dvh; display: grid; grid-template-rows: auto 1fr; background: var(--srf-bg); }
+.authentication-brand { display: flex; align-items: center; gap: 10px; padding: 28px 32px; font-size: 18px; font-weight: 600; }
+.authentication-message, .authentication-pending { align-self: center; justify-self: center; max-width: 560px; padding: 24px; margin-bottom: 12vh; text-align: center; }
+.authentication-pending { color: var(--srf-muted); }
 
 .srf-app-layout,
 .srf-app-layout .ant-layout,
@@ -520,22 +426,25 @@ body {
   .workspace-search kbd {
     display: none;
   }
-  .login-shell {
-    grid-template-columns: 1fr;
-  }
-  .login-story {
-    min-height: 220px;
-    padding: 28px;
-    gap: 28px;
-  }
-  .login-story-copy h1 {
-    font-size: 28px;
-    margin: 12px 0;
-  }
-  .login-story-copy p, .login-story-foot, .login-principles {
-    display: none;
-  }
-  .login-redirect-card {
-    padding: 32px 8px;
-  }
+
+}
+/* Quiet row controls, with full keyboard and touch access. */
+.srf-row-actions-trigger { color: var(--srf-text-secondary, #667085); }
+@media (hover: hover) and (pointer: fine) {
+  .ant-table-row .srf-row-actions-trigger { opacity: 0; }
+  .ant-table-row:hover .srf-row-actions-trigger,
+  .ant-table-row:focus-within .srf-row-actions-trigger,
+  .srf-row-actions-trigger[aria-expanded='true'] { opacity: 1; }
+}
+.srf-row-actions-menu { min-width: 148px; padding: 4px; }
+.srf-row-actions-menu > .ant-space { display: flex; flex-direction: column; align-items: stretch; gap: 4px !important; }
+.srf-row-actions-menu a { display: block; padding: 8px 12px; border-radius: 6px; }
+.srf-row-actions-menu a:hover { background: var(--srf-bg-layout, #f5f7fa); }
+.srf-record-link.ant-btn { padding: 0; height: auto; max-width: 100%; text-align: left; white-space: normal; }
+
+.workspace-destinations a.is-keyboard-active { background: var(--srf-primary-soft); color: var(--srf-primary); }
+.srf-row-actions-menu a:focus-visible, .srf-row-actions-trigger:focus-visible, .srf-record-link:focus-visible { outline: 2px solid var(--srf-primary); outline-offset: 3px; }
+.ant-drawer-content-wrapper { max-width: 100vw; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

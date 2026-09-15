@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
-  ModalForm,
+  DrawerForm,
   PageContainer,
   ProFormSelect,
   ProFormText,
@@ -15,6 +15,7 @@ import {
 import ImportButton from '../components/ImportButton'
 import SchoolTagBadge from '../components/SchoolTagBadge'
 import SmartDataTable from '../components/SmartDataTable'
+import { schoolBulkEdit } from '../components/tableEditConfigs'
 import { useRole } from '../contexts/roleState'
 
 const IMPORT_FIELDS = [
@@ -27,6 +28,10 @@ export default function SchoolsPage() {
   const [schoolModal, setSchoolModal] = useState({ open: false, record: null })
   const canManageSchools = hasPermission('school.manage')
   const canImportSchools = hasPermission('resume.import')
+  const [tagOptions, setTagOptions] = useState([])
+  useEffect(() => {
+    if (canManageSchools) fetchSchoolFilterOptions().then(({ data }) => setTagOptions(data?.school_tag || [])).catch(() => setTagOptions([]))
+  }, [canManageSchools])
 
   const baseColumns = [
     {
@@ -71,6 +76,8 @@ export default function SchoolsPage() {
         rowKey="id"
         columns={baseColumns}
         request={fetchSchools}
+        recordEditor={canManageSchools ? { column: 'name', open: (record) => setSchoolModal({ open: true, record }) } : undefined}
+        bulkEdit={canManageSchools ? schoolBulkEdit(tagOptions) : undefined}
         filterOptionsRequest={fetchSchoolFilterOptions}
         toolBarRender={() => [
           canManageSchools && (
@@ -99,12 +106,13 @@ export default function SchoolsPage() {
         ].filter(Boolean)}
       />
       {canManageSchools && (
-        <ModalForm
+        <DrawerForm
+        submitter={{ searchConfig: { submitText: '保存', resetText: '取消' } }}
           title={schoolModal.record ? '编辑院校' : '新增院校'}
           open={schoolModal.open}
-          modalProps={{
+          drawerProps={{
             destroyOnHidden: true,
-            onCancel: () => setSchoolModal({ open: false, record: null }),
+            onClose: () => setSchoolModal({ open: false, record: null }),
           }}
           initialValues={schoolModal.record || {}}
           onFinish={async (values) => {
@@ -139,7 +147,7 @@ export default function SchoolsPage() {
               return data?.school_tag || []
             }}
           />
-        </ModalForm>
+        </DrawerForm>
       )}
     </PageContainer>
   )

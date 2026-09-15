@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Card, Form, Input, InputNumber, Select, Space, Switch, Tabs, message } from 'antd'
+import { Alert, Button, Collapse, Form, Input, InputNumber, Select, Space, Switch, Tabs, message } from 'antd'
 import { fetchPoolPolicy, savePoolPolicy } from '../../api/pools'
+import TableRowActions from '../../components/TableRowActions'
 
 const required = [{ required: true, message: '请填写此项' }]
 const categories = [{ value: 'direction', label: '专业方向' }, { value: 'skill', label: '技术技能' }, { value: 'experience', label: '实践经历' }]
@@ -30,10 +31,13 @@ export default function PositionPoolSettingsTab() {
   }, [form]) // eslint-disable-line react-hooks/exhaustive-deps
   const field = (index, name, label, control = <Input />, mandatory = false) => <Form.Item key={name} name={[index, name]} label={label} rules={mandatory ? required : []} valuePropName={name === "active" ? "checked" : "value"}>{control}</Form.Item>
   const list = (kind, label, children) => <Form.List name={kind}>{(fields, { add, remove }) => <Space direction="vertical" style={{ width: '100%' }}>
-    {fields.map(({ key, name }) => <Card key={key} size="small" title={`${label} ${name + 1}`} extra={<Space>{field(name, 'active', '启用', <Switch />)}{!saved.has(values[kind]?.[name]?.code) && <Button danger onClick={() => remove(name)}>移除</Button>}</Space>}>
-      <Form.Item name={[name, 'code']} hidden><Input /></Form.Item>
-      {children(name)}
-    </Card>)}
+    {fields.map(({ key, name }) => <Collapse key={key} style={{ width: '100%' }} items={[{
+      key: String(key),
+      label: <Space><strong>{values[kind]?.[name]?.name || (kind === 'rules' ? jobs.find((job) => job.id === values[kind]?.[name]?.job_id)?.position_name : '') || `${label} ${name + 1}`}</strong><span style={{ color: 'var(--srf-muted)' }}>{values[kind]?.[name]?.active === false ? '已停用' : '已启用'}</span></Space>,
+      forceRender: true,
+      extra: <div onClick={(event) => event.stopPropagation()}><TableRowActions><Space><span>启用 <Switch aria-label={`启用${label} ${name + 1}`} checked={values[kind]?.[name]?.active !== false} onChange={(active) => form.setFieldValue([kind, name, 'active'], active)} /></span>{!saved.has(values[kind]?.[name]?.code) && <Button danger onClick={() => remove(name)}>移除</Button>}</Space></TableRowActions></div>,
+      children: <><Form.Item name={[name, 'code']} hidden><Input /></Form.Item><Form.Item name={[name, 'active']} hidden valuePropName="checked"><Switch /></Form.Item>{children(name)}</>,
+    }]} />)}
     <Button onClick={() => add({ code: id(), active: true, application_names: [], tag_codes: [], required_majors: [], required_tags: [], preferred_tags: [], priority: 0 })}>新增{label}</Button>
   </Space>}</Form.List>
   const save = async (policy) => {

@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@ant-design/pro-components', () => ({
   PageContainer: ({ children }) => <div>{children}</div>,
-  ModalForm: ({ children }) => <form>{children}</form>,
+  DrawerForm: ({ children }) => <form>{children}</form>,
   ProFormDigit: () => null,
   ProFormSelect: (props) => {
     if (props.name === 'department') mocks.departmentSelectProps = props

@@ -2,10 +2,10 @@ import client from './client'
 
 // ---- Auth / RBAC ----
 export function fetchW3OAuth2Status() {
-  return client.get('/auth/w3/status/')
+  return client.get('/auth/w3/status/', { silentError: true })
 }
 export function completeW3OAuth2Login() {
-  return client.post('/auth/w3/complete/')
+  return client.post('/auth/w3/complete/', undefined, { silentError: true })
 }
 export function validateDevToken(token) {
   return client.get('/me/', {
