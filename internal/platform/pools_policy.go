@@ -18,6 +18,7 @@ func (a *App) migratePositionPools(ctx context.Context, db DB) error {
 	_, err := db.Exec(ctx, `
 CREATE TABLE IF NOT EXISTS platform_pool_policy(singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),version bigint NOT NULL DEFAULT 1,policy jsonb NOT NULL);
 INSERT INTO platform_pool_policy(singleton,policy) VALUES(true,'{"tags":[],"pools":[],"standards":[],"rules":[]}') ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS platform_pool_config_events(id bigserial PRIMARY KEY,version bigint NOT NULL,actor_id bigint REFERENCES accounts_user(id),policy jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS platform_pool_memberships(
  id bigserial PRIMARY KEY,candidate_id bigint NOT NULL REFERENCES core_candidate(id),workflow_id bigint NOT NULL REFERENCES core_candidateworkflow(id),
  resume_id bigint NOT NULL REFERENCES core_resume(id),decision_id bigint NOT NULL REFERENCES core_agentdispatchdecision(id),run_id bigint NOT NULL REFERENCES core_processingrun(id),
@@ -94,7 +95,7 @@ func (a *App) validatePoolPolicy(ctx context.Context, db DB, policy Object) erro
 							return err
 						}
 					}
-					if item["entity"] != pool["entity"] || len(stringValues(item["application_names"])) == 0 || strings.TrimSpace(str(item["responsibilities"])) == "" {
+					if str(item["configuration_issue"]) == "" && (item["entity"] != pool["entity"] || len(stringValues(item["application_names"])) == 0 || strings.TrimSpace(str(item["responsibilities"])) == "") {
 						return bad("投递评估标准必须指定同主体职位池、投递映射和职责")
 					}
 					for _, name := range stringValues(item["application_names"]) {
@@ -114,7 +115,7 @@ func (a *App) validatePoolPolicy(ctx context.Context, db DB, policy Object) erro
 					if err != nil || normalized(str(job["entity"])) != normalized(str(pool["entity"])) {
 						return bad("部门岗位与职位池的招聘主体不一致")
 					}
-					if len(list(item["required_tags"]))+len(list(item["preferred_tags"])) == 0 {
+					if activePolicyItem(item) && len(list(item["required_tags"]))+len(list(item["preferred_tags"])) == 0 {
 						return bad("分配规则至少需要一个必需或优先标签")
 					}
 				}
@@ -148,7 +149,7 @@ func (a *App) validatePoolPolicy(ctx context.Context, db DB, policy Object) erro
 	}
 	for _, value := range list(policy["standards"]) {
 		standard := obj(value)
-		if !activePolicyItem(standard) {
+		if !activePolicyItem(standard) || str(standard["configuration_issue"]) != "" {
 			continue
 		}
 		codes := stringValues(standard["tag_codes"])
@@ -227,6 +228,10 @@ func resolveApplicationStandard(snapshot, current, d Object) Object {
 		d["status"] = "assessment_standard_missing"
 		return d
 	}
+	if issue := str(found["configuration_issue"]); issue != "" {
+		d["status"] = issue
+		return d
+	}
 	if strings.TrimSpace(str(found["responsibilities"])) == "" {
 		d["status"] = "job_responsibility_missing"
 		return d
@@ -240,19 +245,28 @@ func (a *App) poolConfigAPI(w http.ResponseWriter, r *http.Request, p *Principal
 		return &apiError{403, "无职位池配置权限"}
 	}
 	ctx := r.Context()
-	if r.Method == "GET" {
-		value, err := a.poolPolicy(ctx, a.Pool)
+	if r.Method == "POST" {
+		tx, err := a.Pool.Begin(ctx)
 		if err != nil {
 			return err
 		}
-		jobs, err := rows(ctx, a.Pool, "SELECT jsonb_build_object('id',j.id,'entity',j.entity,'position_name',j.position_name,'public_name',j.public_name,'department_name',d.name) FROM core_job j LEFT JOIN core_department d ON d.id=j.department_id ORDER BY j.id")
-		if err != nil {
+		defer tx.Rollback(ctx)
+		if err = a.lockAllAllocationScopes(ctx, tx); err != nil {
 			return err
 		}
-		value["job_options"] = jobs
-		write(w, 200, value)
-		return nil
+		if err = a.syncJobPolicy(ctx, tx, p); err != nil {
+			return err
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return err
+		}
+		a.wakeAllocation(ctx)
+		return a.writePoolConfiguration(w, r)
 	}
+	if r.Method == "GET" {
+		return a.writePoolConfiguration(w, r)
+	}
+
 	if r.Method != "PUT" {
 		return &apiError{405, "请求方法不允许"}
 	}
@@ -276,6 +290,22 @@ func (a *App) poolConfigAPI(w http.ResponseWriter, r *http.Request, p *Principal
 		return &apiError{409, "配置已被修改，请刷新后重试"}
 	}
 	policy := obj(body["policy"])
+	if policy == nil {
+		return bad("配置不能为空")
+	}
+	for _, value := range list(obj(current["policy"])["standards"]) {
+		old := obj(value)
+		if truth(old["generated"]) {
+			if next := policyItem(policy, "standards", str(old["code"])); next != nil {
+				next["generated"] = true
+			}
+		}
+	}
+	jobs, err := a.configurationJobs(ctx, tx)
+	if err != nil {
+		return err
+	}
+	policy = deriveJobPolicy(policy, jobs)
 	if err = a.validatePoolPolicy(ctx, tx, policy); err != nil {
 		return err
 	}
@@ -287,8 +317,19 @@ func (a *App) poolConfigAPI(w http.ResponseWriter, r *http.Request, p *Principal
 			}
 		}
 	}
+	impact, err := a.applyConfigurationImpact(ctx, tx, obj(current["policy"]), policy, !truth(body["preview"]))
+	if err != nil {
+		return err
+	}
+	if truth(body["preview"]) {
+		write(w, 200, impact)
+		return nil
+	}
 	value, err := one(ctx, tx, "UPDATE platform_pool_policy p SET version=version+1,policy=$1::jsonb WHERE singleton RETURNING row_to_json(p)", string(canonicalJSON(policy, false)))
 	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, "INSERT INTO platform_pool_config_events(version,actor_id,policy) VALUES($1,$2,$3::jsonb)", value["version"], p.User["id"], string(canonicalJSON(policy, false))); err != nil {
 		return err
 	}
 	if err = a.syncAllocationConfig(ctx, tx); err != nil {
@@ -297,8 +338,8 @@ func (a *App) poolConfigAPI(w http.ResponseWriter, r *http.Request, p *Principal
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
-	write(w, 200, value)
-	return nil
+	a.wakeAllocation(ctx)
+	return a.writePoolConfiguration(w, r)
 }
 
 func (a *App) poolEvent(ctx context.Context, db DB, member Object, kind string, payload Object, p *Principal) error {
@@ -308,19 +349,6 @@ func (a *App) poolEvent(ctx context.Context, db DB, member Object, kind string, 
 	}
 	_, err := db.Exec(ctx, "INSERT INTO platform_pool_events(member_id,kind,payload,actor_id) VALUES($1,$2,$3::jsonb,$4)", member["id"], kind, string(canonicalJSON(payload, false)), actor)
 	return err
-}
-
-func poolTagNames(policy Object, codes []string) string {
-	names := []string{}
-	for _, code := range codes {
-		tag := policyItem(policy, "tags", code)
-		name := str(tag["name"])
-		if name == "" {
-			name = code
-		}
-		names = append(names, name)
-	}
-	return strings.Join(names, "、")
 }
 
 func validatePolicyStrings(value any) error {

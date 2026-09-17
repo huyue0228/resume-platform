@@ -2,7 +2,7 @@
   "instruction_version": "fixture-instructions/v1",
   "kernel_build": "dev",
   "mock": false,
-  "protocol_version": "resume-analysis/v3",
+  "protocol_version": "resume-analysis/v4",
   "result_schema_version": "resume-application-assessment/v1",
   "task_kinds": [
     "candidate.application_assessment"

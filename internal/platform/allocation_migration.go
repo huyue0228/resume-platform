@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS platform_resume_sources(resume_id bigint PRIMARY KEY 
 ALTER TABLE platform_resume_sources ADD COLUMN IF NOT EXISTS last_checked_at timestamptz;
 DO $$ BEGIN IF EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='platform_resume_sources'::regclass AND conname='platform_resume_sources_resume_id_fkey' AND confdeltype<>'c') THEN ALTER TABLE platform_resume_sources DROP CONSTRAINT platform_resume_sources_resume_id_fkey; ALTER TABLE platform_resume_sources ADD CONSTRAINT platform_resume_sources_resume_id_fkey FOREIGN KEY(resume_id) REFERENCES core_resume(id) ON DELETE CASCADE; END IF; END $$;
 INSERT INTO platform_resume_sources(resume_id,file_path) SELECT id,COALESCE(resume_file,'') FROM core_resume ON CONFLICT DO NOTHING;
-CREATE TABLE IF NOT EXISTS platform_allocation_scopes(id bigserial PRIMARY KEY,entity text NOT NULL,pool_code text NOT NULL,revision bigint NOT NULL DEFAULT 1,epoch bigint NOT NULL DEFAULT 1,next_sequence bigint NOT NULL DEFAULT 1,allocation_mode text NOT NULL DEFAULT 'legacy' CHECK(allocation_mode IN ('legacy','simulate','execute_v1')),lease_token text NOT NULL DEFAULT '',lease_until timestamptz,UNIQUE(entity,pool_code));
+CREATE TABLE IF NOT EXISTS platform_allocation_scopes(id bigserial PRIMARY KEY,entity text NOT NULL,pool_code text NOT NULL,revision bigint NOT NULL DEFAULT 1,epoch bigint NOT NULL DEFAULT 1,next_sequence bigint NOT NULL DEFAULT 1,allocation_mode text NOT NULL DEFAULT 'execute_v1' CHECK(allocation_mode='execute_v1'),lease_token text NOT NULL DEFAULT '',lease_until timestamptz,UNIQUE(entity,pool_code));
 ALTER TABLE platform_allocation_scopes ADD COLUMN IF NOT EXISTS paused boolean NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS platform_allocation_changes(id bigserial PRIMARY KEY,scope_id bigint NOT NULL REFERENCES platform_allocation_scopes(id),created_at timestamptz NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS platform_allocation_changes_scope ON platform_allocation_changes(scope_id,id);
@@ -92,7 +92,7 @@ func (a *App) syncAllocationConfig(ctx context.Context, db DB) error {
 	_, err := db.Exec(ctx, `
 INSERT INTO platform_allocation_scopes(entity,pool_code) SELECT p->>'entity',p->>'code' FROM platform_pool_policy, jsonb_array_elements(policy->'pools') p ON CONFLICT DO NOTHING;
 INSERT INTO platform_demand_settings(demand_id,reception_state)
-SELECT j.id,CASE WHEN j.is_active AND EXISTS(SELECT 1 FROM platform_pool_policy,jsonb_array_elements(policy->'rules') r WHERE (r->>'job_id')::bigint=j.id AND COALESCE((r->>'active')::boolean,true)) THEN 'receiving' ELSE 'paused' END FROM core_job j ON CONFLICT DO NOTHING;
+SELECT j.id,CASE WHEN j.is_active THEN 'receiving' ELSE 'paused' END FROM core_job j ON CONFLICT DO NOTHING;
 `)
 	return err
 }

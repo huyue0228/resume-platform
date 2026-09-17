@@ -188,7 +188,7 @@ export default function CandidateAnalysis({ decision, onRetry, retrying = false 
   const current = loaded || decision
   const result = current.kernel_result || {}
   const hasMatches = Array.isArray(result.matches) && result.matches.length > 0
-  const isApplication = result.protocol_version === 'resume-analysis/v3'
+  const isApplication = result.protocol_version === 'resume-analysis/v4'
   const poolOutcomes = { pending_review: ['历史复核记录', 'default'], pending_allocation: ['入池待分配', 'processing'], allocated: ['已分配', 'success'], needs_reanalysis: ['需要重新评估', 'warning'], closed: ['入池资格已关闭', 'default'], rejected: ['历史复核未通过', 'default'] }
   const [outcome, color] = current.error_code ? ['分析未完成', 'error'] : poolOutcomes[current.pool_membership?.status] || OUTCOMES[current.recommendation] || ['等待处理', 'default']
   return (

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -77,245 +76,7 @@ func (a *App) savePoolAssessment(ctx context.Context, db DB, run, w, resume, ite
 	if _, err = a.saveScreeningQualification(ctx, db, member, true); err != nil {
 		return "", "", err
 	}
-	return a.allocatePoolMember(ctx, db, member, w, nil)
-}
-
-type poolOption struct {
-	job, rule Object
-	hits      []string
-	score     int
-}
-
-func eligiblePoolRules(policy, member Object, jobs map[int64]Object) []poolOption {
-	supported := map[string]bool{}
-	for _, value := range list(member["tags"]) {
-		tag := obj(value)
-		if activePolicyItem(policyItem(policy, "tags", str(tag["code"]))) && tag["status"] == "supported" && (tag["source"] == "manual" || floatValue(tag["confidence"]) >= .8) {
-			supported[str(tag["code"])] = true
-		}
-	}
-	options := []poolOption{}
-	for _, value := range list(policy["rules"]) {
-		rule := obj(value)
-		job := jobs[num(rule["job_id"])]
-		if !activePolicyItem(rule) || rule["pool_code"] != member["pool_code"] || job == nil || !truth(job["is_active"]) {
-			continue
-		}
-		pool := policyItem(policy, "pools", str(member["pool_code"]))
-		if normalized(str(job["entity"])) != normalized(str(pool["entity"])) {
-			continue
-		}
-		required, preferred := stringValues(rule["required_tags"]), stringValues(rule["preferred_tags"])
-		if len(required)+len(preferred) == 0 {
-			continue
-		}
-		ok := true
-		hits := []string{}
-		seen := map[string]bool{}
-		score := 0
-		for _, code := range required {
-			if !supported[code] {
-				ok = false
-				break
-			}
-			if !seen[code] {
-				hits = append(hits, code)
-				seen[code] = true
-			}
-		}
-		if !ok {
-			continue
-		}
-		for _, code := range preferred {
-			if supported[code] {
-				score++
-				if !seen[code] {
-					hits = append(hits, code)
-					seen[code] = true
-				}
-			}
-		}
-		if len(hits) == 0 {
-			continue
-		}
-		options = append(options, poolOption{job: job, rule: rule, hits: hits, score: score})
-	}
-	sort.Slice(options, func(i, j int) bool {
-		if options[i].score != options[j].score {
-			return options[i].score > options[j].score
-		}
-		if num(options[i].rule["priority"]) != num(options[j].rule["priority"]) {
-			return num(options[i].rule["priority"]) < num(options[j].rule["priority"])
-		}
-		return num(options[i].job["id"]) < num(options[j].job["id"])
-	})
-	return options
-}
-
-func (a *App) waitInPool(ctx context.Context, db DB, member Object, code, message string, p *Principal) (string, string, error) {
-	status := "pending_allocation"
-	if code == "assessment_changed" {
-		status = "needs_reanalysis"
-	}
-	_, err := db.Exec(ctx, "UPDATE platform_pool_memberships SET status=$2,revision=revision+1,updated_at=now() WHERE id=$1", member["id"], status)
-	if err != nil {
-		return "", "", err
-	}
-	if err = a.applicationState(ctx, db, member["resume_id"], status, message, Object{"pool_membership_id": member["id"], "reason_code": code}); err != nil {
-		return "", "", err
-	}
-	err = a.poolEvent(ctx, db, member, "allocation_waiting", Object{"code": code, "message": message}, p)
-	return code, message, err
-}
-
-func (a *App) allocatePoolMember(ctx context.Context, db DB, member, w Object, p *Principal) (string, string, error) {
-	scope, err := a.allocationScope(ctx, db, member, true)
-	if err != nil {
-		return "", "", err
-	}
-	if truth(scope["paused"]) || scope["allocation_mode"] != "legacy" {
-		return "allocation_queued", "筛选通过，已入池等待独立分配", nil
-	}
-	return a.legacyAllocatePoolMember(ctx, db, member, w, p)
-}
-func (a *App) legacyAllocatePoolMember(ctx context.Context, db DB, member, w Object, p *Principal) (string, string, error) {
-	if member["status"] != "pending_allocation" {
-		return "", "", bad("仅入池待分配的候选人可执行分配")
-	}
-	if num(w["current_resume_id"]) != num(member["resume_id"]) || contains([]string{"passed", "archived", "waiting_next", "talent_pool"}, str(w["status"])) {
-		return "", "", bad("当前有效志愿已变化，不能使用历史入池资格")
-	}
-	var active bool
-	if err := db.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM core_assignmentattempt WHERE workflow_id=$1 AND status IN ('pending_review','pending_dispatch','dispatched','passed'))", w["id"]).Scan(&active); err != nil {
-		return "", "", err
-	}
-	if active {
-		return "", "", bad("候选人已有有效分配记录")
-	}
-	config, err := one(ctx, db, "SELECT row_to_json(p) FROM platform_pool_policy p WHERE singleton FOR SHARE")
-	if err != nil {
-		return "", "", err
-	}
-	policy := obj(config["policy"])
-	standard := policyItem(policy, "standards", str(member["standard_code"]))
-	pool := policyItem(policy, "pools", str(member["pool_code"]))
-	if !activePolicyItem(standard) || !activePolicyItem(pool) || standard["pool_code"] != member["pool_code"] || standardJob(policy, standard)["content_hash"] != obj(obj(member["assessment"])["requirement"])["content_hash"] {
-		return a.waitInPool(ctx, db, member, "assessment_changed", "投递标准或标签定义已变化，请重新评估", p)
-	}
-	resume, err := a.get(ctx, db, "core_resume", member["resume_id"])
-	if err != nil {
-		return "", "", err
-	}
-	path, err := a.resumeFile(str(resume["resume_file"]))
-	if err != nil {
-		return a.waitInPool(ctx, db, member, "assessment_changed", "简历文件不可用，请补充后重新评估", p)
-	}
-	checksum, _, err := fileDigest(ctx, path)
-	if err != nil || checksum != member["file_checksum"] {
-		return a.waitInPool(ctx, db, member, "assessment_changed", "简历正文已变化，请重新评估", p)
-	}
-	candidate, err := a.get(ctx, db, "core_candidate", member["candidate_id"])
-	if err != nil {
-		return "", "", err
-	}
-	if fingerprint(brief(candidate, "highest_major", "highest_education")) != fingerprint(obj(obj(member["assessment"])["candidate"])) {
-		return a.waitInPool(ctx, db, member, "assessment_changed", "候选人基础信息已变化，请重新评估", p)
-	}
-	current := resolveApplicationStandard(Object{"pool_policy": policy}, resume, Object{})
-	if current["standard_code"] != member["standard_code"] || current["pool_code"] != member["pool_code"] {
-		return a.waitInPool(ctx, db, member, "assessment_changed", "投递关联已变化，请重新评估", p)
-	}
-	jobIDs := []int64{}
-	for _, value := range list(policy["rules"]) {
-		rule := obj(value)
-		if activePolicyItem(rule) && rule["pool_code"] == member["pool_code"] {
-			jobIDs = append(jobIDs, num(rule["job_id"]))
-		}
-	}
-	jobValues, err := rows(ctx, db, "SELECT row_to_json(j) FROM core_job j WHERE id=ANY($1) AND is_active ORDER BY id FOR UPDATE", jobIDs)
-	if err != nil {
-		return "", "", err
-	}
-	jobs := map[int64]Object{}
-	for _, job := range jobValues {
-		dep, e := a.get(ctx, db, "core_department", job["department_id"])
-		if e == nil && isJobDepartment(dep["level"]) {
-			jobs[num(job["id"])] = job
-		}
-	}
-	options := eligiblePoolRules(policy, member, jobs)
-	if len(options) == 0 {
-		return a.waitInPool(ctx, db, member, "pool_tags_unmatched", "尚无满足标签条件的部门需求，保留入池资格", p)
-	}
-	run, err := a.get(ctx, db, "core_processingrun", member["run_id"])
-	if err != nil {
-		return "", "", err
-	}
-	for _, option := range options {
-		job := option.job
-		capacity := num(job["headcount"]) * max(1, num(run["job_hc_coefficient_snapshot"]))
-		_, err = db.Exec(ctx, "INSERT INTO core_processingrunjobcapacity(run_id,job_id,capacity,used_count,headcount_snapshot,coefficient_snapshot) VALUES($1,$2,$3,0,$4,$5) ON CONFLICT(run_id,job_id) DO NOTHING", run["id"], job["id"], capacity, job["headcount"], max(1, num(run["job_hc_coefficient_snapshot"])))
-		if err != nil {
-			return "", "", err
-		}
-		cap, err := one(ctx, db, "UPDATE core_processingrunjobcapacity c SET capacity=GREATEST(used_count,$3) WHERE run_id=$1 AND job_id=$2 RETURNING row_to_json(c)", run["id"], job["id"], capacity)
-		if err != nil {
-			return "", "", err
-		}
-		if num(cap["used_count"]) >= capacity {
-			continue
-		}
-		if _, err = db.Exec(ctx, "UPDATE core_processingrunjobcapacity SET used_count=used_count+1 WHERE id=$1", cap["id"]); err != nil {
-			return "", "", err
-		}
-		target, err := a.get(ctx, db, "core_department", job["department_id"])
-		if err != nil {
-			return "", "", err
-		}
-		reason := "职位池：" + str(pool["name"]) + "；命中标签：" + poolTagNames(policy, option.hits)
-		attempt, err := a.createAttempt(ctx, db, w, resume, target, Object{"source": "ai", "match_mode": "ai", "agent_decision_id": member["decision_id"], "confidence_score": obj(member["assessment"])["score"], "match_reason": reason, "capacity_reservation_id": cap["id"], "review_required": false}, nil)
-		if err != nil {
-			return "", "", err
-		}
-		if err = a.recordLegacyTarget(ctx, db, member, attempt, job); err != nil {
-			return "", "", err
-		}
-		if _, err = a.save(ctx, db, "core_resume", resume["id"], Object{"job_id": job["id"], "job_category": job["category"], "category_mode": "ai", "category_reason": reason}); err != nil {
-			return "", "", err
-		}
-		if _, err = a.save(ctx, db, "core_agentdispatchdecision", member["decision_id"], Object{"recommendation": "dispatch", "recommended_job_id": job["id"], "recommended_department_id": job["department_id"]}); err != nil {
-			return "", "", err
-		}
-		if _, err = db.Exec(ctx, "UPDATE platform_pool_memberships SET status='allocated',revision=revision+1,updated_at=now() WHERE id=$1", member["id"]); err != nil {
-			return "", "", err
-		}
-		err = a.poolEvent(ctx, db, member, "allocated", Object{"job_id": job["id"], "attempt_id": attempt["id"], "matched_tags": option.hits, "rule": option.rule, "policy_version": config["version"], "reason": reason}, p)
-		return "pool_allocated", reason, err
-	}
-	return a.waitInPool(ctx, db, member, "job_hc_exhausted", "符合标签要求的部门名额已满，保留入池资格", p)
-}
-
-func (a *App) poolMemberDetail(ctx context.Context, db DB, member Object) (Object, error) {
-	if member == nil {
-		return nil, nil
-	}
-	value := clone(member)
-	delete(value, "file_checksum")
-	events, err := rows(ctx, db, "SELECT row_to_json(e) FROM platform_pool_events e WHERE member_id=$1 ORDER BY id", member["id"])
-	if err != nil {
-		return nil, err
-	}
-	value["events"] = events
-	item, e := one(ctx, db, `SELECT row_to_json(i) FROM platform_allocation_work_items i WHERE member_id=$1 ORDER BY id DESC LIMIT 1`, member["id"])
-	if e != nil && !noPoolRecord(e) {
-		return nil, e
-	}
-	target, e := one(ctx, db, `SELECT row_to_json(t) FROM platform_assignment_targets t JOIN core_assignmentattempt a ON a.id=t.attempt_id WHERE t.member_id=$1 AND a.status IN ('pending_review','pending_dispatch','dispatched','passed') ORDER BY a.id DESC LIMIT 1`, member["id"])
-	if e != nil && !noPoolRecord(e) {
-		return nil, e
-	}
-	value["allocation"] = Object{"task_id": item["task_id"], "status": item["status"], "reason_code": item["reason_code"], "reason": allocationReason(str(item["reason_code"])), "target": target}
-	return value, nil
+	return "allocation_queued", "筛选通过，已入池等待独立分配", nil
 }
 
 func (a *App) poolMembersAPI(w http.ResponseWriter, r *http.Request, path string, p *Principal) error {
@@ -491,3 +252,26 @@ func (a *App) poolMembersAPI(w http.ResponseWriter, r *http.Request, path string
 }
 
 func noPoolRecord(err error) bool { var e *apiError; return errors.As(err, &e) && e.Status == 404 }
+
+func (a *App) poolMemberDetail(ctx context.Context, db DB, member Object) (Object, error) {
+	if member == nil {
+		return nil, nil
+	}
+	value := clone(member)
+	delete(value, "file_checksum")
+	events, err := rows(ctx, db, "SELECT row_to_json(e) FROM platform_pool_events e WHERE member_id=$1 ORDER BY id", member["id"])
+	if err != nil {
+		return nil, err
+	}
+	value["events"] = events
+	item, e := one(ctx, db, `SELECT row_to_json(i) FROM platform_allocation_work_items i WHERE member_id=$1 ORDER BY id DESC LIMIT 1`, member["id"])
+	if e != nil && !noPoolRecord(e) {
+		return nil, e
+	}
+	target, e := one(ctx, db, `SELECT row_to_json(t) FROM platform_assignment_targets t JOIN core_assignmentattempt a ON a.id=t.attempt_id WHERE t.member_id=$1 AND a.status IN ('pending_review','pending_dispatch','dispatched','passed') ORDER BY a.id DESC LIMIT 1`, member["id"])
+	if e != nil && !noPoolRecord(e) {
+		return nil, e
+	}
+	value["allocation"] = Object{"task_id": item["task_id"], "status": item["status"], "reason_code": item["reason_code"], "reason": allocationReason(str(item["reason_code"])), "target": target}
+	return value, nil
+}

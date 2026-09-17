@@ -8,7 +8,9 @@ import {
   ProFormText,
   ProFormTextArea,
 } from '@ant-design/pro-components'
-import { Button, Input, Modal, Popconfirm, Select, Space, Tag, message } from 'antd'
+import { Tabs, Button, Input, Modal, Popconfirm, Select, Space, Tag, message } from 'antd'
+import { useSearchParams } from 'react-router-dom'
+import PositionPoolSettingsTab from './config/PositionPoolSettingsTab'
 import { jobBulkEdit } from '../components/tableEditConfigs'
 import { updateDemandReception } from '../api/pools'
 import { RECEPTION } from '../components/AllocationWorkspace'
@@ -31,6 +33,7 @@ const IMPORT_FIELDS = [
 ]
 
 export default function JobsPage() {
+  const [params, setParams] = useSearchParams()
   const actionRef = useRef()
   const { hasPermission } = useRole()
   const [jobModal, setJobModal] = useState({ open: false, record: null })
@@ -203,6 +206,8 @@ export default function JobsPage() {
   ].filter(Boolean)
   return (
     <PageContainer title="岗位需求" content="校招岗位分类及专业要求，可导入维护。">
+      <Tabs activeKey={params.get('tab') || (hasPermission('job.view') ? 'jobs' : 'configuration')} onChange={(tab) => setParams({ tab })} items={[...(hasPermission('job.view') ? [{ key: 'jobs', label: '岗位资料' }] : []), ...(hasPermission('settings.manage_config') ? [{ key: 'configuration', label: '筛选与分配配置' }] : [])]} />
+      {(params.get('tab') === 'configuration' || !hasPermission('job.view')) && hasPermission('settings.manage_config') ? <PositionPoolSettingsTab /> : <>
       <Modal title="调整需求接收状态" open={!!reception} onCancel={() => setReception(null)} confirmLoading={savingReception} okButtonProps={{ disabled: !reception?.reason?.trim() }} onOk={async () => {
         setSavingReception(true)
         try { await updateDemandReception(reception.record.id, { reception_state: reception.value, expected_revision: reception.record.reception_revision || 1, reason: reception.reason }); setReception(null); actionRef.current?.reload() } finally { setSavingReception(false) }
@@ -340,6 +345,7 @@ export default function JobsPage() {
         <ProFormDigit name="headcount" label="HC（计划人数）" min={0} fieldProps={{ precision: 0 }} />
         <ProFormSwitch name="is_public" label="对外发布" />
       </DrawerForm>
+      </>}
     </PageContainer>
   )
 }

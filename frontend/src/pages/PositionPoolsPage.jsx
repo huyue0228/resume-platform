@@ -6,7 +6,7 @@ import { retryAgentDecision } from '../api/services'
 import { useRole } from '../contexts/roleState'
 import SmartDataTable from '../components/SmartDataTable'
 import CandidateAnalysis from '../components/CandidateAnalysis'
-import AllocationWorkspace, { AllocationTaskDetail } from '../components/AllocationWorkspace'
+import { AllocationTaskDetail } from '../components/AllocationWorkspace'
 
 const POOL_STATUS = { pending_allocation: '入池待分配', allocated: '已分配', needs_reanalysis: '需要重新评估', closed: '资格已关闭', rejected: '历史复核未通过' }
 const EVENTS = { review_stage_removed: '按入池判定继续处理', assessment_saved: '投递评估完成', review_approved: '复核通过', review_rejected: '历史复核未通过', tags_revised: '人工修订标签', allocation_waiting: '等待分配', allocated: '完成分配', closed: '关闭入池资格' }
@@ -19,7 +19,6 @@ export default function PositionPoolsPage() {
   const [busy, setBusy] = useState(false)
   const [edit, setEdit] = useState(null)
   const [analysis, setAnalysis] = useState(null)
-  const [allocationOpen, setAllocationOpen] = useState(false)
   const [taskId, setTaskId] = useState(null)
   const canManage = hasPermission('attempt.dispatch')
   const open = async (id) => {
@@ -53,7 +52,7 @@ export default function PositionPoolsPage() {
   ]
   return <PageContainer title="职位候选人池">
     <Alert showIcon type="info" message="按当前投递评估，通过后进入对应内部职位池" description="评估达标后直接入池，按标签、配置优先级与同级供给均衡选择内部需求。等待分配不影响筛选通过资格。" style={{ marginBottom: 16 }} />
-    <Button onClick={() => setAllocationOpen(true)} style={{ marginBottom: 16 }}>需求供给与分配任务</Button>
+    <Button href="/processing-tasks?tab=allocation" style={{ marginBottom: 16 }}>需求供给与分配任务</Button>
     <SmartDataTable tableKey="position-pools" rowKey="id" actionRef={actionRef} columns={columns} request={fetchPoolMembers} />
     <Drawer title={member ? `${member.assessment?.pool?.name} · ${POOL_STATUS[member.status]}` : ''} open={!!member} onClose={close} width={800}>
       {member && <Space direction="vertical" size="large" style={{ width: '100%' }}>
@@ -72,7 +71,6 @@ export default function PositionPoolsPage() {
       {edit && <>{[['supported', '已确认'], ['uncertain', '待核实']].map(([field, label]) => <div key={field}><p>{label}</p><Select aria-label={label} mode="multiple" style={{ width: '100%' }} value={edit[field]} options={(member?.assessment?.tag_catalog || []).filter((t) => !edit[field === 'supported' ? 'uncertain' : 'supported'].includes(t.code)).map((t) => ({ value: t.code, label: t.name }))} onChange={(value) => setEdit({ ...edit, [field]: value })} /></div>)}</>}
       <p>请填写修订依据，操作会保留历史。</p><Input.TextArea aria-label="操作依据" rows={3} value={edit?.note} onChange={(e) => setEdit({ ...edit, note: e.target.value })} />
     </Modal>
-    <Drawer title="需求供给与分配任务" width={1200} open={allocationOpen} onClose={() => setAllocationOpen(false)}>{allocationOpen && <AllocationWorkspace />}</Drawer>
     <Drawer title={`分配任务 #${taskId}`} width={1050} open={!!taskId} onClose={() => setTaskId(null)}>{taskId && <AllocationTaskDetail taskId={taskId} onTaskChange={setTaskId} />}</Drawer>
     <Drawer width={1000} open={!!analysis} onClose={() => setAnalysis(null)} title="当前投递评估"><CandidateAnalysis decision={analysis} /></Drawer>
   </PageContainer>

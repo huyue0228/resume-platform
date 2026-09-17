@@ -4,7 +4,7 @@
 
 - 平台：Go + React，管理身份/RBAC、主数据、导入、志愿/准入/岗位池、PDF 文本提取、HC、人工工作流、结果校验与业务写入。
 - Kernel：Go，管理全文阅读/搜索、证据化画像、池内岗位匹配、模型循环、只读工具/MCP、预算和引用验证；不读取 PDF，不接入业务数据库。
-- 协议：`resume-analysis/v3` 的 JSON Schema、Python DTO、合成样例和模拟服务。两个 Go 消费者均持有 `internal/contract/bundle` 固定副本。
+- 协议：`resume-analysis/v4` 的 JSON Schema、Python DTO、合成样例和模拟服务。两个 Go 消费者均持有 `internal/contract/bundle` 固定副本。
 
 消费者构建不检出兄弟仓库。协议维护者在公开结构变更后运行 `tools/build_bundle.py --platform ../resume-platform --kernel ../resume-agent-kernel`，再在三个仓分别验证。结果仍为 `resume-application-assessment/v1`，公开协议和内部工具/指令版本分别管理。
 

@@ -2,15 +2,8 @@ package platform
 
 import (
 	"context"
-	_ "embed"
-	"encoding/json"
 	"errors"
 )
-
-// 内置专业词表沿用迁移前 seed_base 的内容；只补缺项，保留管理员的修改。
-//
-//go:embed initial_seed.json
-var initialSeed []byte
 
 func (a *App) seedInitialData(ctx context.Context, db DB) error {
 	for key, meta := range a.Spec.AIConfigs {
@@ -23,30 +16,6 @@ func (a *App) seedInitialData(ctx context.Context, db DB) error {
 	}
 	if _, err := a.seedRecord(ctx, db, "core_schooltag", "code", "NON_TARGET", Object{"code": "NON_TARGET", "name": "非目标院校", "is_active": true, "is_default": false}); err != nil {
 		return err
-	}
-	var categories []Object
-	if err := json.Unmarshal(initialSeed, &categories); err != nil {
-		return err
-	}
-	for _, entry := range categories {
-		values := clone(entry)
-		delete(values, "aliases")
-		category, err := a.seedRecord(ctx, db, "core_majorcategory", "code", entry["code"], values)
-		if err != nil {
-			return err
-		}
-		for _, alias := range list(entry["aliases"]) {
-			normalizedName := normalized(str(alias))
-			var exists bool
-			if err = db.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM core_majoralias WHERE category_id=$1 AND normalized_name=$2 AND source='builtin')", category["id"], normalizedName).Scan(&exists); err != nil {
-				return err
-			}
-			if !exists {
-				if _, err = a.save(ctx, db, "core_majoralias", nil, Object{"category_id": category["id"], "name": alias, "normalized_name": normalizedName, "source": "builtin", "match_type": "contains", "note": "内置第一版词表", "is_active": true}); err != nil {
-					return err
-				}
-			}
-		}
 	}
 	departments := map[string]Object{}
 	for _, definition := range []Object{{"name": "技术部", "level": 1}, {"name": "产品部", "level": 1}, {"name": "技术二部", "level": 2, "parent_name": "技术部"}, {"name": "产品二部", "level": 2, "parent_name": "产品部"}} {

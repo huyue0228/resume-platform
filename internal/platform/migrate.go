@@ -32,7 +32,7 @@ func (a *App) Migrate(ctx context.Context) error {
 		}
 	} else {
 		var active int
-		if err = tx.QueryRow(ctx, "SELECT count(*) FROM core_processingrun WHERE status IN ('pending','running','waiting_conflict','cancelling') AND protocol_version <> 'resume-analysis/v3'").Scan(&active); err != nil {
+		if err = tx.QueryRow(ctx, "SELECT count(*) FROM core_processingrun WHERE status IN ('pending','running','waiting_conflict','cancelling') AND protocol_version <> 'resume-analysis/v4'").Scan(&active); err != nil {
 			return err
 		}
 		if active > 0 {
@@ -65,9 +65,6 @@ ALTER TABLE core_processingrunscopeitem ADD COLUMN IF NOT EXISTS text_extraction
 		return err
 	}
 	if err = a.migrateApplications(ctx, tx); err != nil {
-		return err
-	}
-	if err = a.migrateRemovedReview(ctx, tx); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

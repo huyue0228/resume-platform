@@ -9,20 +9,20 @@
     "allocation.response.example.json": "9355076d5c453c960f06732cc1d8d5f98979c84f9ed4b8326c4b67450cee20e1",
     "allocation.response.schema.json": "ff6b4ec08e785bad828ab4b629f24847079558e4f5242bdfb86dde4febc47c12",
     "allocation_types.go.txt": "82275e36912654ffdde8fa7876fad88d93546a18aabf383f7c2b028192f4a550",
-    "capabilities.example.json": "c6ec6eb77288a44f925fe2a4cacdc538bc52fb7df0b220fe2c773ca94b0a7419",
-    "capabilities.schema.json": "f16f84cb4c27d5a697485b1a498f057e707f1e4ec121eae24659c357cd07ace0",
-    "request.example.json": "590ace62b51b641c9fac87b61be0743f86bc45c08fad8cfad7a2dde6a8c9ba67",
-    "request.schema.json": "688b38b67c3ef2535017599a5a91edb4824ba45ef57613251803ee443ab6b1f6",
-    "response.example.json": "dac75c4378e9c6feccd6ba72a821e4e378e8d8e5c49140f3694fd8d3b378627e",
-    "response.schema.json": "0ca678fed4a14bd14887efad09177a84eef6b18706e42cc40cfa8cd6bb1fbf2a"
+    "capabilities.example.json": "dcbae8e3d14c871fd977a08754b7eb91967e7e801fab7910162f8d6370e7ec3e",
+    "capabilities.schema.json": "b5ebfe0903a7e64c4aaa4ccb5579e41325655046d0e85695a8e32ab0447b9d66",
+    "request.example.json": "cfa6241e9e861a4148eebad52bbbbbc3e4811d926785f46c0817cc7b5fcfb394",
+    "request.schema.json": "f71055da38263276ce3351a044666ae97775b6ce8b3bc45b02185fcdb995a48a",
+    "response.example.json": "03e3cb105d1210254152d0897c337cd4931beb5489e94ff93cddff7b2e61ef65",
+    "response.schema.json": "f8c7f9ae8a9694d5805aea177cae9a16407cd702fc5f6473266e53d8de649492"
   },
   "python": {
-    "__init__.py": "0541d99c9c5c98f6cc909f21d1af5f142418ce512bb669456d304a59943a0b14",
+    "__init__.py": "cfd2d18dcf0d9ac3d2c34c72d32c1524b09ab658f85dbf18ac5f68c092bf7b6a",
     "allocation.py": "2417f4d23813b358e745fbfb51a3e53665578704713ab0c10b01c04f38cd0e16",
-    "fixtures.py": "cd15767872ba229cd473cc24d657ae2467c592150a7b8d2fe9cfef4c533fbd46",
-    "mock_server.py": "da572328c12b674ecf113eeda5d8eab62079bfcdc67a392a733127fdf35b0820",
-    "models.py": "997aca308a5e4b49250c15f8851a9b497bb1b009cea44c87ca129abaf0144ebd",
-    "verify.py": "495ce809430bb15a373b746eeab303f36f7599318b49d2c2025772f2210046a0"
+    "fixtures.py": "adb60cb778b1ee214ea57bd3ade388387c8cccacad11df806dc0928d6e36a6e0",
+    "mock_server.py": "a3b039f47f779fa5dffe7a52beb73cf0add945a8810344e7e2b974c839fc079a",
+    "models.py": "4a7d22982a176c00605e2f7b5a01a6c5b3e30866473c33969706a45b3015b330",
+    "verify.py": "71e2f26462731f1c9e002620d5e704578100bb7b70d7c81e34d22130d3513205"
   },
-  "version": "3.1.0"
+  "version": "4.0.0"
 }

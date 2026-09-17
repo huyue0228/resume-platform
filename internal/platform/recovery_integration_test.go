@@ -156,7 +156,7 @@ func TestVerifiedAnalysisReuseInvalidatesChangedApplicationStandard(t *testing.T
 	}
 }
 
-func TestConcurrentCandidatesRespectRunCapacity(t *testing.T) {
+func TestConcurrentCandidatesAllocateWithoutHCLimit(t *testing.T) {
 	t.Setenv("AGENT_KERNEL_ROLLOUT", "enforced")
 	f := newPipelineFixture(t)
 	ctx := context.Background()
@@ -164,15 +164,12 @@ func TestConcurrentCandidatesRespectRunCapacity(t *testing.T) {
 	mustSave(t, f.a, "core_resume", Object{"candidate_id": c["id"], "apply_id": token(6), "entity": "YLS", "position_name": f.job["public_name"], "resume_file": f.resume["resume_file"]})
 	run := f.submit(t, f.candidate["id"], c["id"])
 	f.executeJob(t, run, ctx)
-	var reserved, attempts int
-	if err := f.a.Pool.QueryRow(ctx, "SELECT used_count FROM core_processingrunjobcapacity WHERE run_id=$1 AND job_id=$2", run["id"], f.job["id"]).Scan(&reserved); err != nil {
-		t.Fatal(err)
-	}
+	var attempts int
 	if err := f.a.Pool.QueryRow(ctx, "SELECT count(*) FROM core_assignmentattempt a JOIN core_agentdispatchdecision d ON a.agent_decision_id=d.id WHERE d.processing_run_id=$1", run["id"]).Scan(&attempts); err != nil {
 		t.Fatal(err)
 	}
-	if reserved != 1 || attempts != 1 {
-		t.Fatalf("capacity overbooking: reserved=%d attempts=%d", reserved, attempts)
+	if attempts != 2 {
+		t.Fatalf("HC limited demand supply: attempts=%d", attempts)
 	}
 	current, err := f.a.get(ctx, f.a.Pool, "core_processingrun", run["id"])
 	if err != nil || current["status"] != "success" {

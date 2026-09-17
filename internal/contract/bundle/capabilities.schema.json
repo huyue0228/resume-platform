@@ -20,8 +20,8 @@
       "type": "boolean"
     },
     "protocol_version": {
-      "const": "resume-analysis/v3",
-      "default": "resume-analysis/v3",
+      "const": "resume-analysis/v4",
+      "default": "resume-analysis/v4",
       "title": "Protocol Version",
       "type": "string"
     },

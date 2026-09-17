@@ -147,10 +147,8 @@ func (a *App) retainApplicationWork(ctx context.Context, db DB, run, w Object) (
 		return false, "", "", err
 	}
 	if member != nil && !forceReprocess(run) {
-		code, message, err := a.allocatePoolMember(ctx, db, member, w, nil)
-		if err == nil {
-			_, err = a.invalidateWorkflow(ctx, db, w)
-		}
+		code, message := "allocation_queued", "筛选资格已保留，等待独立分配"
+		_, err = a.invalidateWorkflow(ctx, db, w)
 		return true, code, message, err
 	}
 	return false, "", "", nil

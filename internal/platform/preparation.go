@@ -11,7 +11,7 @@ import (
 type preparationData struct {
 	schools, tags           map[string]Object
 	fallback, nonTarget     Object
-	jobs, rules, taxonomy   []any
+	jobs, rules             []any
 	jobIDs, ruleIDs, tagIDs Object
 	thresholds              Object
 	policy                  Object
@@ -23,7 +23,7 @@ func (a *App) loadPreparationData(ctx context.Context) (*preparationData, error)
 	if !contains([]string{"review_only", "enforced"}, lane) {
 		return nil, taskError("agent_snapshot_unavailable", "运行策略不支持，请配置 review_only 或 enforced")
 	}
-	d := &preparationData{schools: map[string]Object{}, tags: map[string]Object{}, jobs: []any{}, rules: []any{}, taxonomy: []any{}, jobIDs: Object{}, ruleIDs: Object{}, tagIDs: Object{}, lane: lane}
+	d := &preparationData{schools: map[string]Object{}, tags: map[string]Object{}, jobs: []any{}, rules: []any{}, jobIDs: Object{}, ruleIDs: Object{}, tagIDs: Object{}, lane: lane}
 	schools, err := a.all(ctx, a.Pool, "core_school")
 	if err != nil {
 		return nil, err
@@ -132,13 +132,6 @@ func (a *App) loadPreparationData(ctx context.Context) (*preparationData, error)
 		}
 		d.rules = append(d.rules, value)
 	}
-	aliases, err := rows(ctx, a.Pool, "SELECT row_to_json(a) FROM (SELECT a.name,c.name category,a.match_type FROM core_majoralias a JOIN core_majorcategory c ON c.id=a.category_id WHERE a.is_active AND c.is_active ORDER BY a.id) a")
-	if err != nil {
-		return nil, err
-	}
-	for _, alias := range aliases {
-		d.taxonomy = append(d.taxonomy, alias)
-	}
 	policy, err := a.poolPolicy(ctx, a.Pool)
 	if err != nil {
 		return nil, err
@@ -192,7 +185,7 @@ func (a *App) freezeCase(ctx context.Context, run, candidate, pin Object, data *
 	if retry := obj(run["scope"])["retry_resume_id"]; num(retry) > 0 {
 		wf["retry_volunteer_ref"] = a.ref("volunteer", retry)
 	}
-	snapshot := Object{"candidate": c, "workflow": wf, "volunteers": volunteers, "jobs": data.jobs, "admission_rules": data.rules, "taxonomy": data.taxonomy, "pool_policy": data.policy}
+	snapshot := Object{"candidate": c, "workflow": wf, "volunteers": volunteers, "jobs": data.jobs, "admission_rules": data.rules, "pool_policy": data.policy}
 	frozen := Object{"snapshot": snapshot, "volunteer_ids": volunteerIDs, "job_ids": data.jobIDs, "rule_ids": data.ruleIDs, "tag_ids": data.tagIDs, "task_id": token(16), "pin": pin, "lane": data.lane, "thresholds": data.thresholds}
 	frozen["preflight"] = prepareSnapshot(snapshot)
 	configureAssessmentSnapshot(frozen)

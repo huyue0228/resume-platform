@@ -296,8 +296,6 @@ func (a *App) writeResource(w http.ResponseWriter, r *http.Request, resource str
 		if num(merged["headcount"]) < 0 {
 			return bad("岗位 HC 不能为负数")
 		}
-	case "major-aliases":
-		values["normalized_name"] = normalized(str(merged["name"]))
 	case "candidates":
 		phone := normalizedPhone(str(merged["phone"]))
 		if phone == "" {
@@ -342,6 +340,11 @@ func (a *App) writeResource(w http.ResponseWriter, r *http.Request, resource str
 	}
 	if err = a.syncRelations(ctx, tx, resource, saved, body); err != nil {
 		return err
+	}
+	if resource == "jobs" {
+		if err = a.syncJobPolicy(ctx, tx, p); err != nil {
+			return err
+		}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return err
@@ -500,6 +503,11 @@ func (a *App) deleteResource(w http.ResponseWriter, r *http.Request, resource st
 	}
 	if err != nil {
 		return err
+	}
+	if resource == "jobs" {
+		if err = a.syncJobPolicy(ctx, tx, p); err != nil {
+			return err
+		}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return err

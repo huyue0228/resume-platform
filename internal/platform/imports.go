@@ -608,6 +608,11 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 			}
 		}
 	}
+	if tables["jobs"] != nil {
+		if err = a.syncJobPolicy(ctx, tx, p); err != nil {
+			return err
+		}
+	}
 	affected := map[int64]bool{}
 	educations := map[string]string{}
 	ranks := map[string]int{"associate": 1, "bachelor": 2, "master": 3, "doctor": 4}

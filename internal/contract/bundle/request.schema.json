@@ -39,7 +39,7 @@
       "title": "AbilityTagV1",
       "type": "object"
     },
-    "AnalysisScopeV3": {
+    "AnalysisScopeV4": {
       "additionalProperties": false,
       "properties": {
         "candidate": {
@@ -65,13 +65,6 @@
           "title": "Tag Catalog",
           "type": "array"
         },
-        "taxonomy": {
-          "items": {
-            "$ref": "#/$defs/MajorAliasV1"
-          },
-          "title": "Taxonomy",
-          "type": "array"
-        },
         "volunteer_ref": {
           "maxLength": 128,
           "minLength": 1,
@@ -85,7 +78,7 @@
         "resume_text",
         "jobs"
       ],
-      "title": "AnalysisScopeV3",
+      "title": "AnalysisScopeV4",
       "type": "object"
     },
     "CandidateContextV1": {
@@ -191,30 +184,6 @@
         "content_hash"
       ],
       "title": "JobRequirementV1",
-      "type": "object"
-    },
-    "MajorAliasV1": {
-      "additionalProperties": false,
-      "properties": {
-        "category": {
-          "title": "Category",
-          "type": "string"
-        },
-        "match_type": {
-          "title": "Match Type",
-          "type": "string"
-        },
-        "name": {
-          "title": "Name",
-          "type": "string"
-        }
-      },
-      "required": [
-        "name",
-        "category",
-        "match_type"
-      ],
-      "title": "MajorAliasV1",
       "type": "object"
     },
     "ModelConfigV1": {
@@ -395,8 +364,8 @@
           "type": "string"
         },
         "protocol_version": {
-          "const": "resume-analysis/v3",
-          "default": "resume-analysis/v3",
+          "const": "resume-analysis/v4",
+          "default": "resume-analysis/v4",
           "title": "Protocol Version",
           "type": "string"
         },
@@ -443,13 +412,13 @@
       "$ref": "#/$defs/TaskPinV1"
     },
     "protocol_version": {
-      "const": "resume-analysis/v3",
-      "default": "resume-analysis/v3",
+      "const": "resume-analysis/v4",
+      "default": "resume-analysis/v4",
       "title": "Protocol Version",
       "type": "string"
     },
     "scope": {
-      "$ref": "#/$defs/AnalysisScopeV3"
+      "$ref": "#/$defs/AnalysisScopeV4"
     },
     "task_id": {
       "maxLength": 128,
@@ -482,6 +451,6 @@
     "scope",
     "model"
   ],
-  "title": "AnalysisRequestV3",
+  "title": "AnalysisRequestV4",
   "type": "object"
 }

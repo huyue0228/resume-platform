@@ -216,7 +216,7 @@ func (a *App) prepareItem(ctx context.Context, run Object, id any, step string) 
 		if reason == "" {
 			reason = "agent_no_recommendation"
 		}
-		message := map[string]string{"assessment_standard_missing": "当前投递尚未关联评估标准，请在职位池配置中补齐", "job_not_found": "当前志愿未找到对应岗位", "job_pool_empty": "岗位缺少有效一级或二级部门", "job_mapping_ambiguous": "当前投递关联多个评估标准，请修正映射配置", "internal_position_name_missing": "岗位缺少内部职位名称", "job_responsibility_missing": "岗位职责未填写，请补齐后重试"}[str(d["status"])]
+		message := map[string]string{"source_job_conflict": configurationMessages["source_job_conflict"], "source_job_missing": configurationMessages["source_job_missing"], "assessment_standard_missing": "当前投递尚未关联评估标准，请到岗位需求的筛选与分配配置检查", "job_not_found": "当前志愿未找到对应岗位", "job_pool_empty": "岗位缺少有效一级或二级部门", "job_mapping_ambiguous": "当前投递关联多个评估标准，请修正映射配置", "internal_position_name_missing": "岗位缺少内部职位名称", "job_responsibility_missing": "岗位职责未填写，请补齐后重试"}[str(d["status"])]
 		if message == "" {
 			message = "当前志愿未通过准入与岗位检查"
 		}
@@ -226,7 +226,7 @@ func (a *App) prepareItem(ctx context.Context, run Object, id any, step string) 
 		if err = a.touchWorkflow(ctx, tx, w, resume); err != nil {
 			return false, err
 		}
-		if contains([]string{"assessment_standard_missing", "job_mapping_ambiguous", "job_responsibility_missing"}, str(d["status"])) {
+		if contains([]string{"assessment_standard_missing", "source_job_missing", "source_job_conflict", "job_mapping_ambiguous", "job_responsibility_missing"}, str(d["status"])) {
 			if err = a.closePoolMemberships(ctx, tx, w["id"], nil, "assessment_unavailable"); err != nil {
 				return false, err
 			}

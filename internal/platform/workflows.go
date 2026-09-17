@@ -27,16 +27,6 @@ func (a *App) archiveWorkflow(ctx context.Context, db DB, w Object, reason, deta
 func (a *App) invalidateWorkflow(ctx context.Context, db DB, w Object) (Object, error) {
 	return a.save(ctx, db, "core_candidateworkflow", w["id"], Object{"active_processing_scope_item_id": nil, "active_processing_token": nil, "active_processing_expires_at": nil, "revision": num(w["revision"]) + 1})
 }
-func (a *App) releaseCapacity(ctx context.Context, db DB, at Object) error {
-	if at["capacity_reservation_id"] == nil || at["capacity_released_at"] != nil {
-		return nil
-	}
-	if _, err := db.Exec(ctx, "UPDATE core_processingrunjobcapacity SET used_count=GREATEST(0,used_count-1) WHERE id=$1", at["capacity_reservation_id"]); err != nil {
-		return err
-	}
-	_, err := a.save(ctx, db, "core_assignmentattempt", at["id"], Object{"capacity_released_at": time.Now().UTC()})
-	return err
-}
 func (a *App) cancelOpenAttempts(ctx context.Context, db DB, w Object, reason string, sources []string) error {
 	attempts, err := rows(ctx, db, "SELECT row_to_json(a) FROM core_assignmentattempt a WHERE workflow_id=$1 AND status IN ('pending_review','pending_dispatch','dispatched') ORDER BY id FOR UPDATE", w["id"])
 	if err != nil {
@@ -45,9 +35,6 @@ func (a *App) cancelOpenAttempts(ctx context.Context, db DB, w Object, reason st
 	for _, at := range attempts {
 		if len(sources) > 0 && !contains(sources, str(at["source"])) {
 			continue
-		}
-		if err = a.releaseCapacity(ctx, db, at); err != nil {
-			return err
 		}
 		if _, err = a.save(ctx, db, "core_assignmentattempt", at["id"], Object{"status": "cancelled", "cancel_reason": reason, "cancelled_at": time.Now().UTC()}); err != nil {
 			return err
@@ -334,9 +321,6 @@ func (a *App) mutateAttempt(ctx context.Context, id any, action string, body Obj
 		if at["status"] != required {
 			return stateError("当前尝试状态不可取消")
 		}
-		if err = a.releaseCapacity(ctx, tx, at); err != nil {
-			return nil, err
-		}
 		reason := str(body["reason"])
 		if reason == "" {
 			reason = "hr_cancelled"
@@ -413,9 +397,6 @@ func (a *App) mutateAttempt(ctx context.Context, id any, action string, body Obj
 				return nil, err
 			}
 		} else {
-			if err = a.releaseCapacity(ctx, tx, at); err != nil {
-				return nil, err
-			}
 			if err = a.waitAfterDepartmentRejection(ctx, tx, w); err != nil {
 				return nil, err
 			}

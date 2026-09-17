@@ -4,6 +4,6 @@
 
 app 镜像由 Go 提供嵌入 React、业务 API 和后台任务；另有独立 Kernel、PostgreSQL、Redis，共四个常驻容器。首次 init 为一次性命令。平台和 Kernel 均默认校验模型 TLS，企业 CA 使用附带的覆盖文件只读挂载。
 
-已有环境保留原 Compose 项目名、数据卷、密钥和 CA。新建环境先生成独立密钥、配置 HTTPS 域名及 W3 OAuth2；模型连接在授权的系统设置页面填写。v3 升级前完成或取消旧任务，配套选择支持 resume-analysis/v3 与 resume-allocation/v1 的 Kernel v3.1.0。存量池默认 legacy，先核对接收状态及试算，再显式启用 execute_v1；回退先暂停新分配。
+本版本面向新环境，使用独立数据库和媒体目录，配置 HTTPS 域名及 W3 OAuth2；模型连接在授权的系统设置页面填写。平台与 Kernel 必须同时支持协议包 4.0.0（resume-analysis/v4、resume-allocation/v1）。所有范围使用独立分配；不提供旧词表、HC 容量或历史分配模式迁移。不要覆盖已有环境或删除已有数据卷。
 
 代码回退使用 Git 提交和标签。发布附件在 GitHub 校验通过后删除本地临时副本；运行数据不随源码清理。

@@ -1,3 +1,4 @@
+import { confirmProcessingConfiguration } from '../components/checkProcessingConfiguration'
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import dayjs from 'dayjs'
 import { useSearchParams } from 'react-router-dom'
@@ -862,6 +863,7 @@ export default function ResumesPage() {
     try {
       if (schedule?.repeat && schedule.repeat !== 'now') {
         const scope = buildResumeProcessingScope({ processCurrentSelected, processCandidateSnapshot, processStatusSelection: statuses, lastQuery: processFilterSnapshot })
+        if (!await confirmProcessingConfiguration(scope)) return
         await createProcessingSchedule({ ...schedule, name: schedule.name || '定时简历处理', scope })
         message.success('定时任务已创建，可在任务中心查看或取消')
         window.dispatchEvent(new Event('srf:processing-schedule-created'))

@@ -80,7 +80,7 @@ func TestPreparationPublicQueriesDoNotScaleWithCandidatesOrJobs(t *testing.T) {
 			t.Fatal(err)
 		}
 		queries := trace.take()
-		for _, from := range []string{`FROM "core_school"`, `FROM "core_schooltag"`, `FROM "core_department"`, "FROM core_job j", "FROM core_jobmajor m", "FROM core_schooltagrule r", "FROM core_schooltagruletag l", "FROM core_schooltagruleeducation l", "FROM core_majoralias a"} {
+		for _, from := range []string{`FROM "core_school"`, `FROM "core_schooltag"`, `FROM "core_department"`, "FROM core_job j", "FROM core_jobmajor m", "FROM core_schooltagrule r", "FROM core_schooltagruletag l", "FROM core_schooltagruleeducation l"} {
 			count := 0
 			for _, sql := range queries {
 				if strings.Contains(sql, from) {

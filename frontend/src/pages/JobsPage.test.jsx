@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import JobsPage from './JobsPage'
+import { MemoryRouter } from 'react-router-dom'
 
 const mocks = vi.hoisted(() => ({
   columns: [],
@@ -92,7 +93,7 @@ describe('JobsPage', () => {
   })
 
   it('shows, filters and requires job responsibilities', () => {
-    render(<JobsPage />)
+    render(<MemoryRouter><JobsPage /></MemoryRouter>)
 
     const responsibilitiesColumn = mocks.columns.find(
       (column) => column.dataIndex === 'responsibilities',
@@ -108,7 +109,7 @@ describe('JobsPage', () => {
   })
 
   it('shows and filters the primary and secondary department levels', () => {
-    render(<JobsPage />)
+    render(<MemoryRouter><JobsPage /></MemoryRouter>)
 
     expect(
       mocks.columns
@@ -132,7 +133,7 @@ describe('JobsPage', () => {
       },
     })
 
-    render(<JobsPage />)
+    render(<MemoryRouter><JobsPage /></MemoryRouter>)
 
     await waitFor(() => expect(mocks.departmentSelectProps?.options).toEqual([
       { label: '技术中心', value: 1 },
@@ -145,7 +146,7 @@ describe('JobsPage', () => {
   })
 
   it('downloads all jobs matching the current table filters', async () => {
-    render(<JobsPage />)
+    render(<MemoryRouter><JobsPage /></MemoryRouter>)
 
     await userEvent.click(screen.getByRole('button', { name: '下载职位清单' }))
 
@@ -162,7 +163,7 @@ describe('JobsPage', () => {
 
   it('restores the download button after an export error', async () => {
     mocks.exportJobs.mockRejectedValueOnce(new Error('download failed'))
-    render(<JobsPage />)
+    render(<MemoryRouter><JobsPage /></MemoryRouter>)
 
     await userEvent.click(screen.getByRole('button', { name: '下载职位清单' }))
 

@@ -11,7 +11,7 @@ import (
 )
 
 func (a *App) createAllocationTask(ctx context.Context, db DB, scope Object, ids []int64, mode, key string, p *Principal, automatic bool, version string) (Object, error) {
-	if truth(scope["paused"]) {
+	if truth(scope["paused"]) && mode != "simulate" {
 		return nil, &apiError{409, "当前范围已暂停分配"}
 	}
 	if len(ids) == 0 || len(ids) > 100 || !contains([]string{"simulate", "execute"}, mode) {
@@ -67,14 +67,7 @@ func (a *App) enqueuePoolAllocation(ctx context.Context, db DB, member Object, p
 	if err != nil {
 		return nil, err
 	}
-	mode, version := "execute", "v1"
-	if scope["allocation_mode"] == "legacy" {
-		version = "legacy"
-	}
-	if scope["allocation_mode"] == "simulate" {
-		mode = "simulate"
-	}
-	return a.createAllocationTask(ctx, db, scope, []int64{num(member["id"])}, mode, "", p, false, version)
+	return a.createAllocationTask(ctx, db, scope, []int64{num(member["id"])}, "execute", "", p, false, "v1")
 }
 func (a *App) lockCandidateAllocationScopes(ctx context.Context, db DB, candidateID any) error {
 	var ready bool
@@ -95,10 +88,10 @@ func (a *App) claimAllocation(ctx context.Context) (Object, Object, error) {
 	defer tx.Rollback(ctx)
 	scope, err := one(ctx, tx, `
 SELECT row_to_json(s) FROM platform_allocation_scopes s
-WHERE NOT s.paused AND (s.lease_until IS NULL OR s.lease_until < now())
+WHERE (s.lease_until IS NULL OR s.lease_until < now())
   AND (
-    EXISTS (SELECT 1 FROM platform_allocation_tasks t WHERE t.scope_id=s.id AND t.status IN ('pending','running'))
-    OR (s.allocation_mode <> 'legacy' AND EXISTS (
+    EXISTS (SELECT 1 FROM platform_allocation_tasks t WHERE t.scope_id=s.id AND t.status IN ('pending','running') AND (NOT s.paused OR t.mode='simulate'))
+    OR (NOT s.paused AND EXISTS (
       SELECT 1 FROM platform_allocation_work_items i
       JOIN platform_pool_memberships m ON m.id=i.member_id
       WHERE m.pool_code=s.pool_code AND m.assessment->'pool'->>'entity'=s.entity
@@ -120,7 +113,13 @@ ORDER BY s.id FOR UPDATE SKIP LOCKED LIMIT 1`)
 	if _, err = tx.Exec(ctx, `UPDATE platform_allocation_work_items i SET status=CASE WHEN t.status='failed' THEN 'failed' ELSE 'pending' END FROM platform_allocation_tasks t WHERE i.task_id=t.id AND i.status='leased' AND t.scope_id=$1 AND t.status IN ('pending','failed')`, scope["id"]); err != nil {
 		return nil, nil, err
 	}
-	task, err := one(ctx, tx, `SELECT row_to_json(t) FROM platform_allocation_tasks t WHERE scope_id=$1 AND status='pending' ORDER BY id LIMIT 1 FOR UPDATE`, scope["id"])
+	task, err := one(ctx, tx, `SELECT row_to_json(t) FROM platform_allocation_tasks t WHERE scope_id=$1 AND status='pending' AND (NOT $2::boolean OR mode='simulate') ORDER BY id LIMIT 1 FOR UPDATE`, scope["id"], truth(scope["paused"]))
+	if noPoolRecord(err) && truth(scope["paused"]) {
+		if err = tx.Commit(ctx); err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, &apiError{404, "当前范围暂停执行，无待试算任务"}
+	}
 	if noPoolRecord(err) {
 		// Wake waiting qualifications only when inputs changed. New active work supersedes old waits.
 		revision, e := a.allocationRevision(ctx, tx, scope)
@@ -145,11 +144,7 @@ ORDER BY s.id FOR UPDATE SKIP LOCKED LIMIT 1`)
 			}
 			return nil, nil, &apiError{404, "无待分配成员"}
 		}
-		mode := "execute"
-		if scope["allocation_mode"] == "simulate" {
-			mode = "simulate"
-		}
-		task, err = a.createAllocationTask(ctx, tx, scope, ids, mode, "", nil, true, "v1")
+		task, err = a.createAllocationTask(ctx, tx, scope, ids, "execute", "", nil, true, "v1")
 	}
 	if err != nil {
 		return nil, nil, err
@@ -205,9 +200,6 @@ func (a *App) wakeAllocation(ctx context.Context) {
 	}
 }
 func (a *App) processAllocation(ctx context.Context, scope, task Object) error {
-	if task["execution_version"] == "legacy" {
-		return a.executeLegacyAllocationTask(ctx, scope, task)
-	}
 	pin := c.AllocationPin{}
 	var err error
 	if len(obj(task["pin"])) > 0 {
@@ -267,7 +259,7 @@ func (a *App) processAllocation(ctx context.Context, scope, task Object) error {
 	return a.commitAllocation(ctx, scope, task, request, result)
 }
 func (a *App) lockAllocationLease(ctx context.Context, db DB, scope, task Object) (Object, error) {
-	current, err := one(ctx, db, `SELECT row_to_json(s) FROM platform_allocation_scopes s WHERE id=$1 AND NOT paused AND lease_token=$2 AND lease_until>now() FOR UPDATE`, scope["id"], task["worker_token"])
+	current, err := one(ctx, db, `SELECT row_to_json(s) FROM platform_allocation_scopes s WHERE id=$1 AND (NOT paused OR $3='simulate') AND lease_token=$2 AND lease_until>now() FOR UPDATE`, scope["id"], task["worker_token"], task["mode"])
 	if err != nil {
 		return nil, taskError("allocation_lease_lost", "分配租约失效")
 	}

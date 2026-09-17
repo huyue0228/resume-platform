@@ -101,10 +101,11 @@ type pipelineFixture struct {
 	extractHook            func(context.Context, pdftext.Options) error
 	analyzeHook            func(context.Context, Object) error
 	resultHook             func(Object)
+	independentAllocation  bool
 }
 
 func newPipelineFixture(t *testing.T) *pipelineFixture {
-	return newPipelineFixtureWithApp(t, integrationApp(t))
+	return newPipelineFixtureWithApp(t, isolatedInboxApp(t, false))
 }
 
 func newPipelineFixtureWithApp(t *testing.T, a *App) *pipelineFixture {
@@ -132,6 +133,7 @@ func newPipelineFixtureWithApp(t *testing.T, a *App) *pipelineFixture {
 	}
 	caps := fixtureObject(t, "capabilities")
 	responseFixture := fixtureObject(t, "response")
+	allocationCaps := fixtureObject(t, "allocation.capabilities")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Agent-Kernel-Token") != "test-kernel-token" {
 			w.WriteHeader(401)
@@ -139,6 +141,22 @@ func newPipelineFixtureWithApp(t *testing.T, a *App) *pipelineFixture {
 		}
 		if r.URL.Path == "/v2/capabilities" {
 			write(w, 200, caps)
+			return
+		}
+		// Standalone platform CI uses a contract fixture. Paired acceptance runs
+		// finishAllocations against TEST_ALLOCATION_KERNEL_URL instead.
+		if r.URL.Path == "/v2/allocation/capabilities" {
+			write(w, 200, allocationCaps)
+			return
+		}
+		if r.URL.Path == "/v2/allocation/tasks/execute" {
+			var request contract.AllocationRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Error(err)
+				w.WriteHeader(400)
+				return
+			}
+			write(w, 200, contract.AllocationResponse{ProtocolVersion: allocationProtocol, ResultSchemaVersion: allocationResult, TaskID: request.TaskID, IdempotencyKey: request.IdempotencyKey, Pin: request.Pin, SnapshotHash: request.SnapshotHash, TerminalState: "DONE", Decisions: expectedAllocation(request.Snapshot), SafeTrace: contract.AllocationTrace{ToolNames: []string{}}})
 			return
 		}
 		analyses.Add(1)
@@ -242,6 +260,7 @@ func TestGoPipelineTextToSavedDecision(t *testing.T) {
 	if err := a.executeRun(ctx, run["id"]); err != nil {
 		t.Fatalf("worker: %v", err)
 	}
+	f.finishAllocations(t)
 	finished, err := a.get(ctx, a.Pool, "core_processingrun", run["id"])
 	if err != nil {
 		t.Fatal(err)
@@ -265,14 +284,13 @@ func TestGoPipelineTextToSavedDecision(t *testing.T) {
 		t.Fatal("saved profile lost full text")
 	}
 	member := poolMemberForTest(t, f)
-	var attempts, reservations int
+	var attempts int
 	a.Pool.QueryRow(ctx, "SELECT count(*) FROM core_assignmentattempt WHERE workflow_id=$1", member["workflow_id"]).Scan(&attempts)
-	a.Pool.QueryRow(ctx, "SELECT COALESCE(sum(used_count),0) FROM core_processingrunjobcapacity WHERE run_id=$1", run["id"]).Scan(&reservations)
-	if member["status"] != "allocated" || attempts != 1 || reservations != 1 {
-		t.Fatalf("direct admission did not allocate exactly once: member=%v attempts=%d HC=%d", member["status"], attempts, reservations)
+	if member["status"] != "allocated" || attempts != 1 {
+		t.Fatalf("direct admission did not allocate exactly once: member=%v attempts=%d", member["status"], attempts)
 	}
 	at, err := one(ctx, a.Pool, "SELECT row_to_json(a) FROM core_assignmentattempt a WHERE agent_decision_id=$1", decision["id"])
-	if err != nil || at["status"] != "pending_dispatch" || at["capacity_reservation_id"] == nil {
+	if err != nil || at["status"] != "pending_dispatch" {
 		t.Fatalf("missing allocation: %v %v", at, err)
 	}
 	decision, _ = a.get(ctx, a.Pool, "core_agentdispatchdecision", decision["id"])
@@ -302,6 +320,32 @@ func (f *pipelineFixture) executeJob(t *testing.T, run Object, ctx context.Conte
 		t.Fatal(err)
 	}
 	f.a.executeJob(ctx, job, owner)
+	if !f.independentAllocation {
+		f.finishAllocations(t)
+	}
+}
+
+func (f *pipelineFixture) finishAllocations(t *testing.T) {
+	t.Helper()
+	url := os.Getenv("TEST_ALLOCATION_KERNEL_URL")
+	previous := f.a.Config.KernelURL
+	if url != "" {
+		f.a.Config.KernelURL = url
+	}
+	defer func() { f.a.Config.KernelURL = previous }()
+	for i := 0; i < 100; i++ {
+		scope, task, err := f.a.claimAllocation(context.Background())
+		if noPoolRecord(err) {
+			return
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = f.a.processAllocation(context.Background(), scope, task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Fatal("allocation queue did not settle")
 }
 func assertNoDecision(t *testing.T, a *App, run Object) {
 	t.Helper()

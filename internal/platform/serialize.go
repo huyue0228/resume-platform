@@ -167,12 +167,6 @@ func (a *App) serialize(ctx context.Context, resource string, row Object, p *Pri
 			}
 			result["majors"] = values
 		}
-	case "major-categories":
-		var count int64
-		if err := a.Pool.QueryRow(ctx, "SELECT count(*) FROM core_majoralias WHERE category_id=$1", row["id"]).Scan(&count); err != nil {
-			return nil, err
-		}
-		result["alias_count"] = count
 	case "school-tag-rules":
 		for _, degree := range []string{"first", "highest"} {
 			tags, err := rows(ctx, a.Pool, "SELECT row_to_json(t) FROM core_schooltag t JOIN core_schooltagruletag l ON l.school_tag_id=t.id WHERE l.rule_id=$1 AND l.degree_type=$2 ORDER BY t.code,t.id", row["id"], degree)

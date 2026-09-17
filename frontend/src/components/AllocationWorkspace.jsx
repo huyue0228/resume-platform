@@ -6,11 +6,10 @@ import { fetchAllocationScopes, fetchAllocationSupply, fetchAllocationTasks, fet
 
 // oxlint-disable-next-line react/only-export-components
 export const RECEPTION = { receiving: '接收中', paused: '暂停接收', closed: '已结束' }
-const MODES = { legacy: '历史分配规则', simulate: '试算并保留历史执行', execute_v1: '双 Agent 分配' }
 const STATES = { pending: '排队中', running: '计算中', completed: '已完成', failed: '失败，可独立重试', cancelled: '已取消' }
 const WORK_STATES = { pending: '等待分配', leased: '分配中', assigned: '已归属需求', waiting: '等待条件满足', failed: '分配失败', cancelled: '已取消' }
 const PLAN_STATES = { proposed: '待校验', simulated: '试算完成', committed: '已执行', stale: '快照失效', invalid: '校验未通过', cancelled: '已取消' }
-const REASONS = { allocated: '已归属需求', no_active_mapping: '等待内部需求映射', no_receiving_demand: '等待需求接收', required_tags_unavailable: '缺少可用标签', qualification_stale: '资格已变化，需要重新筛选', allocation_snapshot_stale: '输入变化，请重试', kernel_unavailable: '分配服务暂不可用', allocation_output_invalid: '方案未通过平台校验', allocation_timeout: '分配超时', allocation_mode_changed: '分配范围已调整', allocation_lease_expired: '工作进程租约过期', task_cancelled: '任务已取消' }
+const REASONS = { allocated: '已归属需求', no_active_mapping: '等待内部需求映射', no_receiving_demand: '等待需求接收', required_tags_unavailable: '缺少可用标签', qualification_stale: '资格已变化，需要重新筛选', allocation_snapshot_stale: '输入变化，请重试', kernel_unavailable: '分配服务暂不可用', allocation_output_invalid: '方案未通过平台校验', allocation_timeout: '分配超时', allocation_scope_paused: '分配暂停状态已调整', allocation_lease_expired: '工作进程租约过期', task_cancelled: '任务已取消' }
 const errorText = (error) => (typeof error?.response?.data?.detail === 'string' ? error.response.data.detail : '') || '操作失败，请刷新后重试'
 
 export function AllocationTaskDetail({ taskId, onTaskChange }) {
@@ -71,7 +70,6 @@ export default function AllocationWorkspace() {
   const [scopes, setScopes] = useState([])
   const [scopeId, setScopeId] = useState(null)
   const [supply, setSupply] = useState([])
-  const [unknownTargets, setUnknownTargets] = useState([])
   const [tasks, setTasks] = useState([])
   const [selected, setSelected] = useState(null)
   const [edit, setEdit] = useState(null)
@@ -89,7 +87,7 @@ export default function AllocationWorkspace() {
       if (!scopeId) { setScopeId(data.results?.[0]?.id || null); return }
       const [s, t] = await Promise.all([fetchAllocationSupply(scopeId), fetchAllocationTasks({ scope_id: scopeId, page_size: 100 })])
       if (generation !== refreshGeneration.current) return
-      setSupply(s.data.results || []); setUnknownTargets(s.data.unknown_targets || []); setTasks(t.data.results || []); setError('')
+      setSupply(s.data.results || []); setTasks(t.data.results || []); setError('')
     } catch (e) { setError(errorText(e)) }
   }, [scopeId])
   // This ref is a request generation counter, intentionally invalidated on cleanup.
@@ -103,7 +101,7 @@ export default function AllocationWorkspace() {
   const save = async () => {
     setBusy(true)
     try {
-      if (['mode', 'pause'].includes(edit.kind)) await updateAllocationScope(scopeId, { ...(edit.kind === 'mode' ? { allocation_mode: edit.value } : { paused: edit.value }), expected_revision: edit.revision, reason: edit.reason })
+      if (edit.kind === 'pause') await updateAllocationScope(scopeId, { paused: edit.value, expected_revision: edit.revision, reason: edit.reason })
       else await updateDemandReception(edit.demand.demand_id, { reception_state: edit.value, expected_revision: edit.demand.revision, reason: edit.reason })
       setEdit(null); await refresh()
     } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
@@ -111,13 +109,11 @@ export default function AllocationWorkspace() {
   return <Space direction="vertical" size="middle" style={{ width: '100%' }}>
     <Alert showIcon type="info" message="标签与配置优先级先于供给均衡" description="同等条件下优先选择近 7 天获得推荐较少的需求。公开与非公开岗位共同参与，HC 为计划招聘人数，不限制候选人数量。" />
     {error && <Alert showIcon type="error" message={error} />}
-    <Space wrap><Select aria-label="分配范围" placeholder="选择主体与职位池" value={scopeId} style={{ minWidth: 250 }} options={scopes.map((s) => ({ value: s.id, label: `${s.entity} · ${s.pool_code}` }))} onChange={setScopeId} /><Tag>{MODES[scope?.allocation_mode] || '未配置'}</Tag><Button onClick={refresh}>刷新供给与任务</Button>
-      {hasPermission('settings.manage_config') && scope && <Button onClick={() => setEdit({ kind: 'mode', value: scope.allocation_mode, revision: scope.revision, reason: '' })}>调整分配模式</Button>}
+    <Space wrap><Select aria-label="分配范围" placeholder="选择主体与职位池" value={scopeId} style={{ minWidth: 250 }} options={scopes.map((s) => ({ value: s.id, label: `${s.entity} · ${s.pool_code}` }))} onChange={setScopeId} /><Tag>独立分配</Tag><Button onClick={refresh}>刷新供给与任务</Button>
       {hasPermission('settings.manage_config') && scope && <Button onClick={() => setEdit({ kind: 'pause', value: !scope.paused, revision: scope.revision, reason: '' })}>{scope.paused ? '恢复新分配' : '暂停新分配'}</Button>}
-      {hasPermission('attempt.dispatch') && scope && <><Button loading={busy} disabled={scope.paused} onClick={() => create('simulate')}>试算待分配候选人</Button><Button type="primary" loading={busy} disabled={scope.paused || scope.allocation_mode !== 'execute_v1'} onClick={() => create('execute')}>执行分配</Button></>}
+      {hasPermission('attempt.dispatch') && scope && <><Button loading={busy} onClick={() => create('simulate')}>试算待分配候选人</Button><Button type="primary" loading={busy} disabled={scope.paused} onClick={() => create('execute')}>执行分配</Button></>}
     </Space>
     {scope?.paused && <Alert type="warning" showIcon message="新分配已暂停" description="筛选继续入池，已有资格和归属保留。恢复后待分配成员使用新快照执行。" />}
-    {scope?.allocation_mode === 'legacy' && <Alert type="info" message="当前范围仍使用历史分配规则；启用双 Agent 后，候选人数量不再受 HC 限制。" />}
     {!scope && <Empty description="暂无可访问的内部职位池，请先配置投递标准和部门需求" />}
     <Tabs items={[
       { key: 'supply', label: '需求供给', children: <Card size="small"><Space><Checkbox checked={nonpublic} onChange={(e) => setNonpublic(e.target.checked)}>仅非公开岗位</Checkbox><Checkbox checked={zeroSupply} onChange={(e) => setZeroSupply(e.target.checked)}>近 7 天零供给</Checkbox></Space><Table rowKey="demand_id" scroll={{ x: 1000 }} dataSource={supply.filter((d) => (!nonpublic || !d.is_public) && (!zeroSupply || !d.recent_supply_count))} columns={[
@@ -125,14 +121,11 @@ export default function AllocationWorkspace() {
         { title: '接收状态', dataIndex: 'reception_state', render: (v) => RECEPTION[v] }, { title: '近 7 天推荐', dataIndex: 'recent_supply_count' }, { title: '待下发', dataIndex: 'pending_dispatch' }, { title: '待反馈', dataIndex: 'awaiting_feedback' }, { title: '最后分配', dataIndex: 'last_allocated_at', render: (v) => v ? new Date(v).toLocaleString('zh-CN') : '从未分配' },
         { title: '', width: 64, render: (_, d) => hasPermission('job.manage') && <TableRowActions><Button onClick={() => setEdit({ kind: 'reception', demand: d, value: d.reception_state, reason: '' })}>调整接收状态</Button></TableRowActions> },
       ]} /></Card> },
-      { key: 'unknown', label: `历史未知需求（${unknownTargets.length}）`, children: <><Alert type="info" message="以下记录仅能确认历史部门归属，未猜测需求，也未计入具体需求供给。" /><Table rowKey="attempt_id" dataSource={unknownTargets} columns={[{ title: '分配记录', dataIndex: 'attempt_id' }, { title: '入池记录', dataIndex: 'member_id' }, { title: '历史部门', dataIndex: 'department_name' }, { title: '归属时间', dataIndex: 'allocated_at', render: (v) => new Date(v).toLocaleString('zh-CN') }]} /></> },
       { key: 'tasks', label: '分配任务', children: <Table rowKey="id" dataSource={tasks} columns={[{ title: '任务', dataIndex: 'id', render: (v) => <Button type="link" onClick={() => setSelected(v)}>#{v}</Button> }, { title: '模式', dataIndex: 'mode', render: (v) => v === 'simulate' ? '试算' : '执行' }, { title: '状态', dataIndex: 'status', render: (v) => STATES[v] }, { title: '结果', render: (_, t) => `${t.mode === 'simulate' ? '拟' : '已'}分配 ${t.progress?.assigned || 0}，等待 ${t.progress?.waiting || 0}` }, { title: '原因', dataIndex: 'error_code', render: (v) => REASONS[v] || v }]} /> },
     ]} />
-    <Modal okText="保存" cancelText="取消" title={edit?.kind === 'mode' ? '调整分配模式' : edit?.kind === 'pause' ? (edit.value ? '暂停新分配' : '恢复新分配') : '调整需求接收状态'} open={!!edit} onCancel={() => setEdit(null)} onOk={save} confirmLoading={busy} okButtonProps={{ disabled: !edit?.reason?.trim() }}>
-      {edit?.kind === 'mode' && <p>切换前会检查正在执行的任务；启用新分配会校验历史资格，无法验证的记录会标记为需要重新筛选。已下发候选人保持原归属。</p>}
+    <Modal okText="保存" cancelText="取消" title={edit?.kind === 'pause' ? (edit.value ? '暂停新分配' : '恢复新分配') : '调整需求接收状态'} open={!!edit} onCancel={() => setEdit(null)} onOk={save} confirmLoading={busy} okButtonProps={{ disabled: !edit?.reason?.trim() }}>
       {edit?.kind === 'pause' && <p>{edit.value ? '暂停后，运行中的方案将失效；保留筛选资格、待分配成员和已提交归属。' : '恢复后，系统将继续处理待分配成员。'}</p>}
-      {edit?.kind === 'mode' && <p>当前有 {supply.filter((d) => d.is_active && d.mapping_active && d.reception_state === 'receiving' && d.headcount === 0).length} 条 HC 为 0 的有效接收需求，启用双 Agent 后这些需求也会获得候选人。</p>}
-      {edit?.kind !== 'pause' && <Select aria-label="目标状态" value={edit?.value} style={{ width: '100%' }} options={Object.entries(edit?.kind === 'mode' ? MODES : RECEPTION).map(([value, label]) => ({ value, label }))} onChange={(value) => setEdit({ ...edit, value })} />}
+      {edit?.kind !== 'pause' && <Select aria-label="目标状态" value={edit?.value} style={{ width: '100%' }} options={Object.entries(RECEPTION).map(([value, label]) => ({ value, label }))} onChange={(value) => setEdit({ ...edit, value })} />}
       <Input.TextArea aria-label="调整原因" placeholder="填写调整原因，操作会保留记录" value={edit?.reason} onChange={(e) => setEdit({ ...edit, reason: e.target.value })} style={{ marginTop: 12 }} />
     </Modal>
     <Drawer title={`分配任务 #${selected}`} width={1050} open={!!selected} onClose={() => setSelected(null)}>{selected && <AllocationTaskDetail taskId={selected} onTaskChange={setSelected} />}</Drawer>

@@ -93,6 +93,8 @@ func TestPoolTagsAreAuditedAndStandardChangesRequireReassessment(t *testing.T) {
 		t.Fatal("manual tag audit lost previous values or actor")
 	}
 	editTestStandard(t, f)
+	detail = responseObject(t, apiRequest(t, f.a, f.p, "GET", path, nil), 200)
+	allocationLocalKernel(t, f)
 	response := responseObject(t, apiRequest(t, f.a, f.p, "POST", path+"allocate/", Object{"revision": detail["revision"]}), 202)
 	if _, _, err := runAllocation(t, f); err != nil {
 		t.Fatal(err)
@@ -195,43 +197,14 @@ func editTestStandard(t *testing.T, f *pipelineFixture) {
 	responseObject(t, apiRequest(t, f.a, f.p, "PUT", "/api/position-pools/config/", Object{"version": cfg["version"], "policy": policy}), 200)
 }
 
-func TestPoolWaitsForHCAndAllocatesWithoutModel(t *testing.T) {
+func TestHCZeroAllocatesWithoutRepeatingAnalysis(t *testing.T) {
 	f := newPipelineFixtureWithApp(t, isolatedInboxApp(t, false))
 	ctx := context.Background()
 	if _, err := f.a.save(ctx, f.a.Pool, "core_job", f.job["id"], Object{"headcount": 0}); err != nil {
 		t.Fatal(err)
 	}
-	run := f.submit(t)
-	f.executeJob(t, run, ctx)
-	m := poolMemberForTest(t, f)
-	response := responseObject(t, apiRequest(t, f.a, f.p, "POST", "/api/position-pools/members/"+str(m["id"])+"/allocate/", Object{"revision": m["revision"]}), 202)
-	if _, _, err := runAllocation(t, f); err != nil {
-		t.Fatal(err)
-	}
-	if response["code"] != "allocation_queued" {
-		t.Fatalf("expected retained eligibility: %v", response)
-	}
-	m = poolMemberForTest(t, f)
-	if m["status"] != "pending_allocation" {
-		t.Fatalf("lost pool eligibility: %v", m["status"])
-	}
-	if _, err := f.a.save(ctx, f.a.Pool, "core_job", f.job["id"], Object{"headcount": 1, "responsibilities": "部门需求改变不会改变投递标准"}); err != nil {
-		t.Fatal(err)
-	}
-	path := "/api/position-pools/members/" + str(m["id"]) + "/allocate/"
-	response = responseObject(t, apiRequest(t, f.a, f.p, "POST", path, Object{"revision": m["revision"]}), 202)
-	if _, _, err := runAllocation(t, f); err != nil {
-		t.Fatal(err)
-	}
-	if response["code"] != "allocation_queued" || poolMemberForTest(t, f)["status"] != "allocated" {
-		t.Fatalf("allocation failed: %v", response)
-	}
-	responseObject(t, apiRequest(t, f.a, f.p, "POST", path, Object{"revision": m["revision"]}), 409)
-	if f.extractions.Load() != 1 || f.analyses.Load() != 1 {
-		t.Fatal("reallocation reran analysis")
-	}
-	var used int
-	if err := f.a.Pool.QueryRow(ctx, "SELECT sum(used_count) FROM core_processingrunjobcapacity WHERE run_id=$1", run["id"]).Scan(&used); err != nil || used != 1 {
-		t.Fatalf("HC consumed more than once: %d %v", used, err)
+	f.executeJob(t, f.submit(t), ctx)
+	if poolMemberForTest(t, f)["status"] != "allocated" || f.analyses.Load() != 1 || f.extractions.Load() != 1 {
+		t.Fatal("HC prevented allocation or repeated screening")
 	}
 }

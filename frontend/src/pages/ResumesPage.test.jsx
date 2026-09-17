@@ -1,3 +1,4 @@
+vi.mock('../components/checkProcessingConfiguration', () => ({ confirmProcessingConfiguration: vi.fn().mockResolvedValue(true) }))
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ConfigProvider } from 'antd'

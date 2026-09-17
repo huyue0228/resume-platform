@@ -441,7 +441,6 @@ func (a *App) executeRun(ctx context.Context, id any) error {
 				return err
 			}
 		}
-		coefficient := max(int64(1), min(int64(100), num(a.configValue(ctx, "job_hc_coefficient", 1))))
 		limit := max(int64(1), min(int64(20), num(a.configValue(ctx, "ai_concurrency_limit", 8))))
 		tx, err := a.Pool.Begin(ctx)
 		if err != nil {
@@ -459,28 +458,11 @@ func (a *App) executeRun(ctx context.Context, id any) error {
 		values["model_name"] = str(c["model_name"])
 		values["prompt_version"] = str(pin["instruction_version"])
 		values["decision_version"] = policyVersion
-		values["job_hc_coefficient_snapshot"] = coefficient
 		values["ai_concurrency_limit"] = limit
 		values["ai_effective_concurrency"] = limit
 		run, err = a.save(ctx, tx, "core_processingrun", id, values)
 		if err != nil {
 			return err
-		}
-		jobs, err := a.all(ctx, tx, "core_job")
-		if err != nil {
-			return err
-		}
-		for _, job := range jobs {
-			var enabled bool
-			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM platform_allocation_scopes s JOIN platform_pool_policy p ON true,jsonb_array_elements(p.policy->'rules') r WHERE r->>'pool_code'=s.pool_code AND (r->>'job_id')::bigint=$1 AND s.allocation_mode='execute_v1')`, job["id"]).Scan(&enabled); err != nil {
-				return err
-			}
-			if enabled {
-				continue
-			}
-			if _, err = a.save(ctx, tx, "core_processingrunjobcapacity", nil, Object{"run_id": id, "job_id": job["id"], "headcount_snapshot": job["headcount"], "coefficient_snapshot": coefficient, "capacity": num(job["headcount"]) * coefficient}); err != nil {
-				return err
-			}
 		}
 		if err = tx.Commit(ctx); err != nil {
 			return err

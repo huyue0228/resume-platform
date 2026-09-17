@@ -192,7 +192,7 @@ func (a *App) configSettings(w http.ResponseWriter, r *http.Request, path string
 	key := strings.Trim(path, "/")
 	if key == "" && r.Method == "GET" {
 		items := []Object{}
-		for _, k := range []string{"welink_enabled", "job_hc_coefficient"} {
+		for _, k := range []string{"welink_enabled"} {
 			items = append(items, a.configItem(r.Context(), k, a.Spec.Configs[k]))
 		}
 		write(w, 200, items)
@@ -203,12 +203,6 @@ func (a *App) configSettings(w http.ResponseWriter, r *http.Request, path string
 		return &apiError{404, "未知配置项"}
 	}
 	if r.Method == "PATCH" || r.Method == "PUT" {
-		if key == "job_hc_coefficient" && !p.has("settings.manage_config") {
-			return &apiError{403, "无分配参数维护权限"}
-		}
-		if key == "job_hc_coefficient" {
-			return &apiError{410, "HC coefficient is historical and read-only"}
-		}
 		body, err := readBody(w, r)
 		if err != nil {
 			return err

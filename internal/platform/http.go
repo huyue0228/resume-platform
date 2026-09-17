@@ -119,6 +119,12 @@ func (a *App) api(w http.ResponseWriter, r *http.Request, path string, p *Princi
 	if path == "pipeline/schedules" || strings.HasPrefix(path, "pipeline/schedules/") {
 		return a.schedulesAPI(w, r, path, p)
 	}
+	if path == "pipeline/config-check" {
+		return a.processingConfigurationCheck(w, r, p)
+	}
+	if path == "position-pools/config/reprocess" {
+		return a.reprocessConfiguration(w, r, p)
+	}
 	if path == "position-pools/config" {
 		return a.poolConfigAPI(w, r, p)
 	}
@@ -331,11 +337,7 @@ func (a *App) filtered(ctx context.Context, resource string, r *http.Request, p 
 	}
 	var raw []Object
 	var err error
-	if resource == "major-aliases" {
-		raw, err = rows(ctx, a.Pool, "SELECT to_jsonb(a)||jsonb_build_object('_category_sort_order',c.sort_order,'_category_code',c.code) FROM core_majoralias a JOIN core_majorcategory c ON c.id=a.category_id ORDER BY a.id")
-	} else {
-		raw, err = a.all(ctx, a.Pool, a.Spec.Resources[resource].Table)
-	}
+	raw, err = a.all(ctx, a.Pool, a.Spec.Resources[resource].Table)
 	if err != nil {
 		return nil, err
 	}
@@ -487,7 +489,7 @@ func (a *App) filtered(ctx context.Context, resource string, r *http.Request, p 
 				if str(actual) != q {
 					matched = false
 				}
-			} else if strings.HasSuffix(field, "_id") || field == "id" || field == "level" || field == "headcount" || field == "category" && resource == "major-aliases" {
+			} else if strings.HasSuffix(field, "_id") || field == "id" || field == "level" || field == "headcount" {
 				if str(actual) != q {
 					matched = false
 				}

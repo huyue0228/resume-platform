@@ -1,3 +1,4 @@
+import { confirmProcessingConfiguration } from './checkProcessingConfiguration'
 import TableRowActions from './TableRowActions'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -580,6 +581,7 @@ export default function ProcessingTaskCenter() {
         setSearchParams({ tab: 'runs', ...(id ? { run_id: String(id) } : {}) })
         message.success('已提交处理任务')
       } else {
+        if (!await confirmProcessingConfiguration(scope)) return
         await createProcessingSchedule({ ...timing, name: timing.name || '定时简历处理', scope })
         window.dispatchEvent(new Event('srf:processing-schedule-created'))
         setSearchParams({ tab: 'schedules' })

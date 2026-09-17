@@ -21,11 +21,11 @@
     "model_config_revision": "fixture-model",
     "pin_id": "fixture-pin",
     "policy_version": "fixture-policy/v1",
-    "protocol_version": "resume-analysis/v3",
+    "protocol_version": "resume-analysis/v4",
     "result_schema_version": "resume-application-assessment/v1",
     "toolset_version": "fixture-tools/v1"
   },
-  "protocol_version": "resume-analysis/v3",
+  "protocol_version": "resume-analysis/v4",
   "scope": {
     "candidate": {
       "highest_education": "本科",
@@ -60,7 +60,6 @@
       "warnings": []
     },
     "tag_catalog": [],
-    "taxonomy": [],
     "volunteer_ref": "volunteer-fixture"
   },
   "task_id": "fixture-task",

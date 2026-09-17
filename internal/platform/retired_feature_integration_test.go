@@ -48,6 +48,7 @@ func TestRetiredSpecialRoutingCannotOverridePoolAllocation(t *testing.T) {
 	if err := a.executeRun(ctx, run["id"]); err != nil {
 		t.Fatal(err)
 	}
+	f.finishAllocations(t)
 	decision, err := one(ctx, a.Pool, "SELECT row_to_json(d) FROM core_agentdispatchdecision d WHERE processing_run_id=$1", run["id"])
 	if err != nil {
 		t.Fatal(err)

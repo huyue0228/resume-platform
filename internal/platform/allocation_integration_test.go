@@ -13,6 +13,7 @@ import (
 func newAllocationFixture(t *testing.T) *pipelineFixture {
 	t.Helper()
 	f := newPipelineFixtureWithApp(t, isolatedInboxApp(t, false))
+	f.independentAllocation = true
 	ctx := context.Background()
 	if err := f.a.syncAllocationConfig(ctx, f.a.Pool); err != nil {
 		t.Fatal(err)
@@ -62,15 +63,12 @@ func TestAllocationRealKernelNonpublicHCZero(t *testing.T) {
 	if m["status"] != "allocated" || f.analyses.Load() != 1 {
 		t.Fatal("allocation repeated screening or failed")
 	}
-	var targets, reservations, capacity int
-	if err = f.a.Pool.QueryRow(ctx, `SELECT count(*),count(*) FILTER(WHERE a.capacity_reservation_id IS NOT NULL) FROM platform_assignment_targets t JOIN core_assignmentattempt a ON a.id=t.attempt_id WHERE t.scope_id=$1 AND t.demand_id=$2`, scope["id"], f.job["id"]).Scan(&targets, &reservations); err != nil {
+	var targets int
+	if err = f.a.Pool.QueryRow(ctx, `SELECT count(*) FROM platform_assignment_targets WHERE scope_id=$1 AND demand_id=$2`, scope["id"], f.job["id"]).Scan(&targets); err != nil {
 		t.Fatal(err)
 	}
-	if err = f.a.Pool.QueryRow(ctx, `SELECT count(*) FROM core_processingrunjobcapacity WHERE job_id=$1`, f.job["id"]).Scan(&capacity); err != nil {
-		t.Fatal(err)
-	}
-	if targets != 1 || reservations != 0 || capacity != 0 {
-		t.Fatalf("HC capacity leaked: targets=%d reservations=%d capacity=%d", targets, reservations, capacity)
+	if targets != 1 {
+		t.Fatalf("HC-zero demand did not receive candidate: %d", targets)
 	}
 	detail := responseObject(t, apiRequest(t, f.a, f.p, "GET", "/api/position-pools/allocation-tasks/"+str(task["id"])+"/", nil), 200)
 	if detail["status"] != "completed" || num(obj(detail["progress"])["assigned"]) != 1 {
@@ -180,53 +178,6 @@ func TestAllocationStaleSnapshotAndCancellationWriteNothing(t *testing.T) {
 	}
 }
 
-func TestAllocationHistoricalBackfillAndSourceIntegrity(t *testing.T) {
-	f := newAllocationFixture(t)
-	ctx := context.Background()
-	m := poolMemberForTest(t, f)
-	if _, err := f.a.Pool.Exec(ctx, `TRUNCATE platform_screening_qualifications CASCADE`); err != nil {
-		t.Fatal(err)
-	}
-	if !f.a.proveHistoricalQualification(ctx, f.a.Pool, m) {
-		t.Fatal("preserved evidence could not prove historical qualification")
-	}
-	scope, err := f.a.allocationScope(ctx, f.a.Pool, m, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tx, err := f.a.Pool.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = f.a.backfillAllocationScope(ctx, tx, scope); err != nil {
-		t.Fatal(err)
-	}
-	if err = tx.Commit(ctx); err != nil {
-		t.Fatal(err)
-	}
-	var count int
-	if err = f.a.Pool.QueryRow(ctx, `SELECT count(*) FROM platform_screening_qualifications WHERE member_id=$1`, m["id"]).Scan(&count); err != nil || count != 1 || f.analyses.Load() != 1 {
-		t.Fatal("backfill repeated screening", err)
-	}
-	source, err := one(ctx, f.a.Pool, `SELECT row_to_json(s) FROM platform_resume_sources s WHERE resume_id=$1`, m["resume_id"])
-	if err != nil {
-		t.Fatal(err)
-	}
-	path, err := f.a.resumeFile(str(source["file_path"]))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = os.WriteFile(path, []byte("test external corruption"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err = f.a.inspectAllocationSources(ctx); err != nil {
-		t.Fatal(err)
-	}
-	updated, err := one(ctx, f.a.Pool, `SELECT row_to_json(s) FROM platform_resume_sources s WHERE resume_id=$1`, m["resume_id"])
-	if err != nil || truth(updated["verified"]) || num(updated["revision"]) <= num(source["revision"]) {
-		t.Fatal("corruption did not invalidate source", err)
-	}
-}
 func TestAllocationAPIIdempotencyAndPermission(t *testing.T) {
 	f := newAllocationFixture(t)
 	ctx := context.Background()
@@ -372,6 +323,8 @@ func TestAllocationManualSimulationAndFreshRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "/api/position-pools/allocation-tasks/"
+	scopePath := "/api/position-pools/allocation-scopes/" + str(scope["id"]) + "/"
+	paused := responseObject(t, apiRequest(t, f.a, f.p, "PATCH", scopePath, Object{"paused": true, "expected_revision": scope["revision"], "reason": "暂停执行后试算"}), 200)
 	simulated := responseObject(t, apiRequest(t, f.a, f.p, "POST", path, Object{"scope_id": scope["id"], "mode": "simulate", "member_ids": []any{m["id"]}, "idempotency_key": "only-simulate"}), 202)
 	if _, _, err = runAllocation(t, f); err != nil {
 		t.Fatal(err)
@@ -384,6 +337,10 @@ func TestAllocationManualSimulationAndFreshRetry(t *testing.T) {
 	if len(list(detail["screening_runs"])) != 1 {
 		t.Fatal("missing screening provenance")
 	}
+	if _, _, err = f.a.claimAllocation(ctx); !noPoolRecord(err) {
+		t.Fatal("simulation resumed paused automatic allocation", err)
+	}
+	responseObject(t, apiRequest(t, f.a, f.p, "PATCH", scopePath, Object{"paused": false, "expected_revision": paused["revision"], "reason": "试算后恢复"}), 200)
 	f.a.Config.KernelToken = ""
 	_, failed, err := runAllocation(t, f)
 	if err == nil {
@@ -486,53 +443,5 @@ func TestAllocationConcurrentClaimsAndDuplicateTasks(t *testing.T) {
 	}
 	if f.analyses.Load() != 1 {
 		t.Fatal("duplicate task screened resume")
-	}
-}
-
-func TestAllocationHistoricalTargetsRequireEvidence(t *testing.T) {
-	f := newAllocationFixture(t)
-	allocationLocalKernel(t, f)
-	ctx := context.Background()
-	scope, _, err := runAllocation(t, f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = f.a.Pool.Exec(ctx, `DELETE FROM platform_assignment_targets`); err != nil {
-		t.Fatal(err)
-	}
-	tx, err := f.a.Pool.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = f.a.backfillAssignmentTargets(ctx, tx, scope); err != nil {
-		t.Fatal(err)
-	}
-	if err = tx.Commit(ctx); err != nil {
-		t.Fatal(err)
-	}
-	known, err := one(ctx, f.a.Pool, `SELECT row_to_json(t) FROM platform_assignment_targets t`)
-	if err != nil || known["target_kind"] != "demand" || num(known["demand_id"]) != num(f.job["id"]) {
-		t.Fatal("saved evidence not used", err)
-	}
-	if _, err = f.a.Pool.Exec(ctx, `DELETE FROM platform_assignment_targets; DELETE FROM platform_pool_events WHERE kind='allocated'`); err != nil {
-		t.Fatal(err)
-	}
-	tx, err = f.a.Pool.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = f.a.backfillAssignmentTargets(ctx, tx, scope); err != nil {
-		t.Fatal(err)
-	}
-	if err = tx.Commit(ctx); err != nil {
-		t.Fatal(err)
-	}
-	unknown, err := one(ctx, f.a.Pool, `SELECT row_to_json(t) FROM platform_assignment_targets t`)
-	if err != nil || unknown["target_kind"] != "unknown" || unknown["demand_id"] != nil {
-		t.Fatal("guessed historical demand", err)
-	}
-	supply := responseObject(t, apiRequest(t, f.a, f.p, "GET", "/api/position-pools/allocation-scopes/"+str(scope["id"])+"/supply/", nil), 200)
-	if len(list(supply["unknown_targets"])) != 1 || num(obj(list(supply["results"])[0])["recent_supply_count"]) != 0 {
-		t.Fatal("unknown demand not separated", supply)
 	}
 }

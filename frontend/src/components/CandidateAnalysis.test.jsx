@@ -27,7 +27,7 @@ describe('CandidateAnalysis', () => {
   })
 
   it('shows only the current application assessment and separates admission from allocation', () => {
-    const current = { ...decision, pool_membership: { status: 'pending_allocation', assessment: { pool: { name: '机械工程师池' }, tag_catalog: [{ code: 'cad', name: '三维设计' }] } }, kernel_result: { ...decision.kernel_result, protocol_version: 'resume-analysis/v3', matches: [{ ...decision.kernel_result.matches[0], job_title: '机械工程师投递标准' }], profile: { tags: [{ code: 'cad', status: 'supported', evidence: evidence('完成三维机构设计与验证') }] } } }
+    const current = { ...decision, pool_membership: { status: 'pending_allocation', assessment: { pool: { name: '机械工程师池' }, tag_catalog: [{ code: 'cad', name: '三维设计' }] } }, kernel_result: { ...decision.kernel_result, protocol_version: 'resume-analysis/v4', matches: [{ ...decision.kernel_result.matches[0], job_title: '机械工程师投递标准' }], profile: { tags: [{ code: 'cad', status: 'supported', evidence: evidence('完成三维机构设计与验证') }] } } }
     render(<CandidateAnalysis decision={current} />)
     expect(screen.getByRole('tab', { name: '当前投递契合度' })).toBeTruthy()
     expect(screen.getByText('入池待分配')).toBeTruthy()

@@ -199,18 +199,15 @@ func TestMixedAIAndDepartmentRejectionsExhaustApplications(t *testing.T) {
 	if err != nil || departmental["system_status"] != "screening_rejected" || departmental["application_history"] != nil {
 		t.Fatalf("department scope leaked candidate state/history: %v %v", departmental["system_status"], err)
 	}
-	var active, used, runs int
+	var active, runs int
 	if err = f.a.Pool.QueryRow(ctx, "SELECT count(*) FROM platform_pool_memberships WHERE candidate_id=$1 AND status IN ('pending_review','pending_allocation','allocated','needs_reanalysis')", f.candidate["id"]).Scan(&active); err != nil {
-		t.Fatal(err)
-	}
-	if err = f.a.Pool.QueryRow(ctx, "SELECT used_count FROM core_processingrunjobcapacity WHERE id=$1", at["capacity_reservation_id"]).Scan(&used); err != nil {
 		t.Fatal(err)
 	}
 	if err = f.a.Pool.QueryRow(ctx, "SELECT count(*) FROM core_processingrunscopeitem WHERE candidate_id=$1", f.candidate["id"]).Scan(&runs); err != nil {
 		t.Fatal(err)
 	}
-	if active != 0 || used != 0 || runs != 1 {
-		t.Fatalf("rejection leaked pool/capacity or queued a run: %d %d %d", active, used, runs)
+	if active != 0 || runs != 1 {
+		t.Fatalf("rejection leaked pool membership or queued a run: %d %d", active, runs)
 	}
 	if _, err = f.a.mutateAttempt(ctx, at["id"], "feedback", Object{"result": "rejected", "reason_code": "other", "note": "duplicate"}, p, nil); err == nil {
 		t.Fatal("duplicate rejection accepted")

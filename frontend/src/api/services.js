@@ -90,30 +90,6 @@ export function updateSchoolTag(id, body) {
 export function deleteSchoolTag(id) {
   return client.delete(`/school-tags/${id}/`)
 }
-export function fetchMajorCategories(params) {
-  return client.get('/major-categories/', { params })
-}
-export function createMajorCategory(body) {
-  return client.post('/major-categories/', body)
-}
-export function updateMajorCategory(id, body) {
-  return client.patch(`/major-categories/${id}/`, body)
-}
-export function deleteMajorCategory(id) {
-  return client.delete(`/major-categories/${id}/`)
-}
-export function fetchMajorAliases(params) {
-  return client.get('/major-aliases/', { params })
-}
-export function createMajorAlias(body) {
-  return client.post('/major-aliases/', body)
-}
-export function updateMajorAlias(id, body) {
-  return client.patch(`/major-aliases/${id}/`, body)
-}
-export function deleteMajorAlias(id) {
-  return client.delete(`/major-aliases/${id}/`)
-}
 
 // ---- Data import ----
 // POST /api/import/  (multipart)

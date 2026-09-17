@@ -52,15 +52,6 @@ export const roleBulkEdit = (permissionTree, onComplete) => config('roles', '批
 }], { onComplete })
 
 export const schoolTagBulkEdit = () => config('school-tags', '批量编辑院校标签', [active])
-export const majorCategoryBulkEdit = (onComplete) => config('major-categories', '批量编辑专业大类', [
-  { ...text('description', '说明'), type: 'textarea' }, { name: 'sort_order', label: '排序', type: 'number' }, active,
-], { onComplete })
-export const majorAliasBulkEdit = (categories, onComplete) => config('major-aliases', '批量编辑专业别名', [
-  selection('category', '所属大类', categories),
-  selection('match_type', '匹配方式', [{ value: 'contains', label: '包含匹配' }, { value: 'exact', label: '精确匹配' }]),
-  selection('source', '来源', [{ value: 'builtin', label: '内置' }, { value: 'user', label: '人工维护' }, { value: 'import', label: '导入' }]),
-  { ...text('note', '备注'), type: 'textarea' }, active,
-], { onComplete })
 export const admissionBulkEdit = (tags, educations) => config('school-tag-rules', '批量编辑院校准入规则', [
   { name: 'priority', label: '优先级', type: 'number', min: 0 }, active,
   { name: 'first_degree_tag_ids', label: '第一学历允许标签（整体替换）', type: 'multiple', options: tags },

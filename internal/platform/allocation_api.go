@@ -145,9 +145,6 @@ func (a *App) allocationAPI(w http.ResponseWriter, r *http.Request, path string,
 			return &apiError{403, "无当前范围分配权限"}
 		}
 		mode := str(body["mode"])
-		if mode == "execute" && scope["allocation_mode"] != "execute_v1" {
-			return &apiError{409, "请先在职位池启用新分配执行模式"}
-		}
 		ids := []int64{}
 		seen := map[int64]bool{}
 		for _, v := range list(body["member_ids"]) {
@@ -355,24 +352,19 @@ func (a *App) allocationScopesAPI(w http.ResponseWriter, r *http.Request, parts 
 		return &apiError{405, "请求方法不允许"}
 	}
 	if !p.has("settings.manage_config") {
-		return &apiError{403, "无分配模式配置权限"}
+		return &apiError{403, "无分配暂停配置权限"}
 	}
 	body, err := readBody(w, r)
 	if err != nil {
 		return err
 	}
 	mode := str(body["allocation_mode"])
-	paused, hasPause := body["paused"]
-	if hasPause {
-		if _, ok := paused.(bool); !ok {
-			return bad("暂停状态必须是布尔值")
-		}
+	paused, ok := body["paused"].(bool)
+	if !ok {
+		return bad("必须填写布尔值暂停状态")
 	}
-	if mode == "" && hasPause {
-		mode = str(scope["allocation_mode"])
-	}
-	if !contains([]string{"legacy", "simulate", "execute_v1"}, mode) || strings.TrimSpace(str(body["reason"])) == "" {
-		return bad("请选择分配模式并填写原因")
+	if (mode != "" && mode != "execute_v1") || strings.TrimSpace(str(body["reason"])) == "" {
+		return bad("请使用独立分配并填写暂停或恢复原因")
 	}
 	tx, err := a.Pool.Begin(ctx)
 	if err != nil {
@@ -386,29 +378,17 @@ func (a *App) allocationScopesAPI(w http.ResponseWriter, r *http.Request, parts 
 	if num(body["expected_revision"]) != num(scope["revision"]) {
 		return &apiError{409, "范围版本已变化，请刷新"}
 	}
-	if scope["lease_until"] != nil && !(hasPause && truth(paused)) {
+	if scope["lease_until"] != nil && !paused {
 		at, _ := time.Parse(time.RFC3339Nano, str(scope["lease_until"]))
 		if at.After(time.Now()) {
 			return &apiError{409, "当前分配任务尚未结束，请稍后切换"}
 		}
 	}
-	if mode == "execute_v1" && scope["allocation_mode"] != mode {
-		if err = a.backfillAllocationScope(ctx, tx, scope); err != nil {
-			return err
-		}
-	}
-	previous := scope["allocation_mode"]
-	if !hasPause {
-		paused = scope["paused"]
-	}
-	if mode != previous && scope["allocation_mode"] == "execute_v1" && mode == "legacy" && !truth(scope["paused"]) {
-		return &apiError{409, "回退前请先暂停新分配"}
-	}
-	scope, err = one(ctx, tx, `UPDATE platform_allocation_scopes s SET allocation_mode=$2,paused=$3,epoch=epoch+1,revision=revision+1,lease_token='',lease_until=NULL WHERE id=$1 RETURNING row_to_json(s)`, scope["id"], mode, paused)
+	scope, err = one(ctx, tx, `UPDATE platform_allocation_scopes s SET paused=$2,epoch=epoch+1,revision=revision+1,lease_token='',lease_until=NULL WHERE id=$1 RETURNING row_to_json(s)`, scope["id"], paused)
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE platform_allocation_tasks SET status='cancelled',error_code='allocation_mode_changed' WHERE scope_id=$1 AND status IN ('pending','running')`, scope["id"]); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE platform_allocation_tasks SET status='cancelled',error_code='allocation_scope_paused' WHERE scope_id=$1 AND status IN ('pending','running')`, scope["id"]); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE platform_allocation_plans SET status='cancelled',validation_code='allocation_scope_changed' WHERE status='proposed' AND task_id IN (SELECT id FROM platform_allocation_tasks WHERE scope_id=$1 AND status='cancelled');`, scope["id"]); err != nil {
@@ -417,7 +397,7 @@ func (a *App) allocationScopesAPI(w http.ResponseWriter, r *http.Request, parts 
 	if _, err = tx.Exec(ctx, `UPDATE platform_allocation_work_items SET status='pending',task_id=NULL,reason_code='' WHERE status IN ('pending','leased') AND task_id IN (SELECT id FROM platform_allocation_tasks WHERE scope_id=$1 AND status='cancelled')`, scope["id"]); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO platform_allocation_audit(scope_id,actor_id,kind,payload) VALUES($1,$2,'mode_changed',$3::jsonb)`, scope["id"], p.User["id"], string(canonicalJSON(Object{"previous": previous, "mode": mode, "paused": paused, "reason": body["reason"]}, false))); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO platform_allocation_audit(scope_id,actor_id,kind,payload) VALUES($1,$2,'pause_changed',$3::jsonb)`, scope["id"], p.User["id"], string(canonicalJSON(Object{"paused": paused, "reason": body["reason"]}, false))); err != nil {
 		return err
 	}
 	if err = tx.Commit(ctx); err != nil {

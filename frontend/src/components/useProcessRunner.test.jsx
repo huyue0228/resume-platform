@@ -1,6 +1,8 @@
+vi.mock('./checkProcessingConfiguration', () => ({ confirmProcessingConfiguration: vi.fn().mockResolvedValue(true) }))
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchPipelineRuns, runPipeline } from '../api/services'
+import { confirmProcessingConfiguration } from './checkProcessingConfiguration'
 import { useProcessRunner } from './useProcessRunner'
 import useProcessingRuns from './useProcessingRuns'
 
@@ -12,6 +14,7 @@ vi.mock('../api/services', () => ({
 describe('useProcessRunner', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    confirmProcessingConfiguration.mockResolvedValue(true)
   })
 
   it('submits the selected scope and immediately refreshes the shared task center', async () => {

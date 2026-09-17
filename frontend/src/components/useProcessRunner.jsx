@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { confirmProcessingConfiguration } from './checkProcessingConfiguration'
 import { runPipeline } from '../api/services'
 
 // 仅负责提交后台任务。进度由 BasicLayout 的共享任务中心轮询，不再用 Modal 冻结当前页面。
@@ -16,6 +17,7 @@ export function useProcessRunner() {
     setSubmitting(true)
     try {
       const scope = normalizedSteps[0]?.scope || options.scope
+      if (step !== 'step1' && !await confirmProcessingConfiguration(scope || {})) return { success: false, error: '请先补齐岗位配置' }
       const { data } = await runPipeline({
         step,
         ...(options.name ? { name: options.name } : {}),

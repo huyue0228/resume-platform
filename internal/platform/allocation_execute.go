@@ -32,9 +32,6 @@ func (a *App) commitAllocation(ctx context.Context, scope, task Object, request 
 	if err = a.authorizeAllocationTask(ctx, tx, scope, task); err != nil {
 		return err
 	}
-	if task["mode"] == "execute" && scope["allocation_mode"] != "execute_v1" {
-		return taskError("allocation_snapshot_stale", "分配执行模式已变化")
-	}
 	at, err := time.Parse(time.RFC3339, request.Snapshot.SnapshotAt)
 	if err != nil || time.Since(at) > 60*time.Second {
 		return taskError("allocation_snapshot_stale", "分配快照已过期")
@@ -116,34 +113,11 @@ func (a *App) commitAllocation(ctx context.Context, scope, task Object, request 
 	planStatus := "committed"
 	if task["mode"] == "simulate" {
 		planStatus = "simulated"
-		if truth(task["automatic"]) && scope["allocation_mode"] == "simulate" {
-			for _, m := range current.Members {
-				member, e := one(ctx, tx, `SELECT row_to_json(m) FROM platform_pool_memberships m WHERE id=$1 FOR UPDATE`, m.MemberID)
-				if e != nil {
-					return e
-				}
-				w, e := a.lockWorkflow(ctx, tx, member["candidate_id"])
-				if e != nil {
-					return e
-				}
-				code, _, e := a.legacyAllocatePoolMember(ctx, tx, member, w, nil)
-				if e != nil {
-					return e
-				}
-				state := "waiting"
-				if code == "pool_allocated" {
-					state = "assigned"
-				}
-				if _, e = tx.Exec(ctx, `UPDATE platform_allocation_work_items SET status=$2,reason_code=$3 WHERE member_id=$1 AND task_id=$4 AND status='leased'`, m.MemberID, state, code, task["id"]); e != nil {
-					return e
-				}
-			}
-		} else {
-			if _, err = tx.Exec(ctx, `UPDATE platform_allocation_work_items SET status='pending',task_id=NULL WHERE task_id=$1 AND status='leased'`, task["id"]); err != nil {
-				return err
-			}
+		if _, err = tx.Exec(ctx, `UPDATE platform_allocation_work_items SET status='pending',task_id=NULL WHERE task_id=$1 AND status='leased'`, task["id"]); err != nil {
+			return err
 		}
 	}
+
 	if maxSequence > 0 {
 		if _, err = tx.Exec(ctx, `UPDATE platform_allocation_scopes SET next_sequence=GREATEST(next_sequence,$2),revision=revision+1 WHERE id=$1`, scope["id"], maxSequence+1); err != nil {
 			return err
@@ -160,55 +134,6 @@ func (a *App) commitAllocation(ctx context.Context, scope, task Object, request 
 		return err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE platform_allocation_tasks SET status='completed',progress=$2::jsonb,updated_at=now() WHERE id=$1`, task["id"], string(canonicalJSON(Object{"selected": len(result.Decisions), "assigned": assigned, "waiting": waiting, "stage": planStatus, "simulated": task["mode"] == "simulate"}, false))); err != nil {
-		return err
-	}
-	if err = a.releaseAllocationLease(ctx, tx, scope, task); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
-}
-func (a *App) executeLegacyAllocationTask(ctx context.Context, scope, task Object) error {
-	tx, err := a.Pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	scope, err = a.lockAllocationLease(ctx, tx, scope, task)
-	if err != nil {
-		return err
-	}
-	if scope["allocation_mode"] != "legacy" {
-		return taskError("allocation_snapshot_stale", "分配模式已变化，请创建新任务")
-	}
-	if err = a.authorizeAllocationTask(ctx, tx, scope, task); err != nil {
-		return err
-	}
-	assigned, waiting := 0, 0
-	for _, id := range list(task["member_ids"]) {
-		member, e := one(ctx, tx, `SELECT row_to_json(m) FROM platform_pool_memberships m WHERE id=$1`, id)
-		if e != nil {
-			return e
-		}
-		w, e := a.lockWorkflow(ctx, tx, member["candidate_id"])
-		if e != nil {
-			return e
-		}
-		code, _, e := a.legacyAllocatePoolMember(ctx, tx, member, w, nil)
-		if e != nil {
-			return e
-		}
-		state := "waiting"
-		if code == "pool_allocated" {
-			assigned++
-			state = "assigned"
-		} else {
-			waiting++
-		}
-		if _, err = tx.Exec(ctx, `UPDATE platform_allocation_work_items SET status=$2,reason_code=$3 WHERE member_id=$1 AND task_id=$4 AND status='leased'`, id, state, code, task["id"]); err != nil {
-			return err
-		}
-	}
-	if _, err = tx.Exec(ctx, `UPDATE platform_allocation_tasks SET status='completed',progress=$2::jsonb,updated_at=now() WHERE id=$1`, task["id"], string(canonicalJSON(Object{"assigned": assigned, "waiting": waiting, "stage": "legacy"}, false))); err != nil {
 		return err
 	}
 	if err = a.releaseAllocationLease(ctx, tx, scope, task); err != nil {

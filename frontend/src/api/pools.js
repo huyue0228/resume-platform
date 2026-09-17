@@ -15,3 +15,7 @@ export const createAllocationTask = (body) => client.post('/position-pools/alloc
 export const retryAllocationTask = (id, body) => client.post(`/position-pools/allocation-tasks/${id}/retry/`, body)
 export const cancelAllocationTask = (id) => client.post(`/position-pools/allocation-tasks/${id}/cancel/`, {})
 export const updateDemandReception = (id, body) => client.patch(`/jobs/${id}/reception/`, body)
+
+export const initializeJobPolicy = () => client.post('/position-pools/config/', {})
+export const reprocessConfiguration = () => client.post('/position-pools/config/reprocess/', {})
+export const checkProcessingConfiguration = (scope) => client.post('/pipeline/config-check/', { scope })

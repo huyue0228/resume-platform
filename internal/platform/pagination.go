@@ -8,7 +8,7 @@ import (
 )
 
 func defaultOrdering(resource string) string {
-	order := map[string]string{"candidates": "-updated_at", "resumes": "-imported_at", "workflows": "-updated_at", "workflow-attempts": "-created_at", "agent-decisions": "-created_at", "pipeline/runs": "-created_at", "schools": "name", "school-tags": "code,id", "school-tag-rules": "priority,id", "major-categories": "sort_order,code,id", "major-aliases": "_category_sort_order,_category_code,name,id"}[resource]
+	order := map[string]string{"candidates": "-updated_at", "resumes": "-imported_at", "workflows": "-updated_at", "workflow-attempts": "-created_at", "agent-decisions": "-created_at", "pipeline/runs": "-created_at", "schools": "name", "school-tags": "code,id", "school-tag-rules": "priority,id"}[resource]
 	if order == "" {
 		return "id"
 	}
@@ -85,9 +85,6 @@ func (a *App) pagedResource(w http.ResponseWriter, r *http.Request, resource str
 	}
 	table := a.Spec.Resources[resource].Table
 	from := quote(table) + " t"
-	if resource == "major-aliases" {
-		from += " JOIN core_majorcategory mc ON mc.id=t.category_id"
-	}
 	order := r.URL.Query().Get("ordering")
 	if order == "" {
 		order = defaultOrdering(resource)
@@ -99,14 +96,6 @@ func (a *App) pagedResource(w http.ResponseWriter, r *http.Request, resource str
 			direction = " DESC"
 		}
 		key = strings.TrimPrefix(key, "-")
-		if resource == "major-aliases" && (key == "_category_sort_order" || key == "_category_code") {
-			column := "mc.sort_order"
-			if key == "_category_code" {
-				column = "mc.code"
-			}
-			keys = append(keys, column+direction)
-			continue
-		}
 		field, ok := fieldFor(a, table, key)
 		if !ok {
 			return false, nil

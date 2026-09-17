@@ -1,3 +1,4 @@
+vi.mock('./checkProcessingConfiguration', () => ({ confirmProcessingConfiguration: vi.fn().mockResolvedValue(true) }))
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'

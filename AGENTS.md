@@ -2,10 +2,10 @@
 
 - Go 1.25 业务平台，React JSX 前端嵌入 Go；PostgreSQL、Redis 和独立 Go Agent Kernel，共四个常驻容器。Python 仅用于构建/验收工具。
 - 主入口 `cmd/resume-platform/main.go`；API、RBAC、导入、业务工作流和任务编排在 `internal/platform`，Poppler 提取在 `internal/pdftext`。
-- 提交只冻结范围并返回 202；后台按有效志愿和准入固定一个投递标准，Kernel 只收到单候选人完整文本、该标准和受控标签字典；平台判定达标并事务保存不可变资格和分配工作项；独立分配只接收结构化标签，平台复算后归属部门/需求。新路径 HC 仅为计划人数，保留历史容量释放兼容。
-- 公开协议 `resume-analysis/v3`，结果 `resume-application-assessment/v1`。`internal/contract/bundle` 是 resume-contracts 3.1.0 固定副本，仅由协议仓生成工具更新，禁止手改。
-- 分配协议 `resume-allocation/v1`，结果 `resume-allocation-plan/v1`；数据库为任务真相，Redis 仅唤醒。主体/池默认 legacy，显式启用 simulate/execute_v1；回退先暂停。快照生成、提交是短事务，Kernel 调用在事务外。
-- `internal/compat` 中数据库字段、表和约束用于升级兼容；不能因为含历史命名就删掉。`DJANGO_SECRET_KEY` 等环境变量为兼容保留。
+- 提交只冻结范围并返回 202；后台按有效志愿和准入固定一个投递标准，Kernel 只收到单候选人完整文本、该标准和受控标签字典；平台判定达标并事务保存不可变资格和分配工作项；独立分配只接收结构化标签，平台复算后归属部门/需求。HC 仅为计划人数，不使用 HC 容量限制。
+- 公开协议 `resume-analysis/v4`，结果 `resume-application-assessment/v1`。`internal/contract/bundle` 是 resume-contracts 4.0.0 固定副本，仅由协议仓生成工具更新，禁止手改。
+- 分配协议 `resume-allocation/v1`，结果 `resume-allocation-plan/v1`；数据库为任务真相，Redis 仅唤醒。主体/池统一独立分配；试算仅返回方案，暂停控制新分配。快照生成、提交是短事务，Kernel 调用在事务外。
+- 当前版本面向新数据库，不提供旧词表、HC 容量与历史分配模式迁移；`internal/compat` 仍是基础数据库结构和 API 元数据入口。不得删除已有运行数据卷。
 - `make check` 验证 Go race/vet/build、React 与发布工具。集成测试使用独立 `TEST_DATABASE_URL`、`TEST_REDIS_URL`，不得连接生产库。`make build` 构建并嵌入 React。
 - 生产登录仅 W3；账号保持不可用密码，禁止恢复密码登录或 admin 页面。开发 Token 仅在 DEBUG 且 W3 未就绪时签发。
 - 导入以业务键合并；Candidate 按规范姓名/手机号，Resume 按 apply_id。保留历史和权限边界；业务逻辑不直接依赖外部表头。
