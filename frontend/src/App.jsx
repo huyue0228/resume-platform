@@ -7,8 +7,7 @@ import { canAccessRoute, getDefaultAuthenticatedPath } from './routePermissions'
 import AuthenticationPage from './pages/AuthenticationPage'
 
 const BasicLayout = lazy(() => import('./layouts/BasicLayout'))
-const ResumesPage = lazy(() => import('./pages/ResumesPage'))
-const PositionPoolsPage = lazy(() => import('./pages/PositionPoolsPage'))
+const ResumeWorkspace = lazy(() => import('./pages/ResumeWorkspace'))
 const JobsPage = lazy(() => import('./pages/JobsPage'))
 const SchoolsPage = lazy(() => import('./pages/SchoolsPage'))
 const DepartmentsPage = lazy(() => import('./pages/DepartmentsPage'))
@@ -64,9 +63,9 @@ function AppRoutes() {
         <Route index element={<Navigate to={defaultPath} replace />} />
         <Route
           path="/resumes"
-          element={guarded('/resumes', <ResumesPage />)}
+          element={guarded('/resumes', <ResumeWorkspace />)}
         />
-        <Route path="/position-pools" element={guarded('/position-pools', <PositionPoolsPage />)} />
+        <Route path="/position-pools" element={guarded('/position-pools', <Navigate to="/resumes?tab=pool" replace />)} />
         <Route path="/jobs" element={guarded('/jobs', <JobsPage />)} />
         <Route path="/schools" element={guarded('/schools', <SchoolsPage />)} />
         <Route

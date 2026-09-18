@@ -56,6 +56,8 @@ func (a *App) reusableAnalysis(ctx context.Context, item, frozen, request Object
 			trace[name] = 0
 		}
 		trace["tool_calls"] = []any{}
+		trace["rounds"] = []any{}
+		delete(trace, "budget") // Cached results incur no new model budget or round usage.
 		if contract.Validate("response", canonicalJSON(result, false)) != nil || validateAnalysis(request, result, text, refs) != nil {
 			continue
 		}

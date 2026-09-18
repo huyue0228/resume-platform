@@ -1,5 +1,6 @@
 {
   "budget": {
+    "max_context_tokens": 32768,
     "max_duration_seconds": 600,
     "max_tokens": 120000,
     "max_tool_calls": 256,
@@ -21,11 +22,11 @@
     "model_config_revision": "fixture-model",
     "pin_id": "fixture-pin",
     "policy_version": "fixture-policy/v1",
-    "protocol_version": "resume-analysis/v4",
+    "protocol_version": "resume-analysis/v5",
     "result_schema_version": "resume-application-assessment/v1",
     "toolset_version": "fixture-tools/v1"
   },
-  "protocol_version": "resume-analysis/v4",
+  "protocol_version": "resume-analysis/v5",
   "scope": {
     "candidate": {
       "highest_education": "本科",

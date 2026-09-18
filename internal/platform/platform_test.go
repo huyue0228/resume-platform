@@ -53,6 +53,12 @@ func TestMigrationAndSeed(t *testing.T) {
 	if count != 4 || invalid != 0 {
 		t.Fatalf("fresh initialization must create a valid two-level department tree without duplicates: count=%d invalid=%d", count, invalid)
 	}
+	if err := a.Pool.QueryRow(context.Background(), "SELECT count(*) FROM core_contact").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("initialization must not create demonstration personnel grants")
+	}
 }
 func TestPrivateConnectionEncryption(t *testing.T) {
 	a := unitApp(t)

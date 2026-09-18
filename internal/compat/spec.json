@@ -8161,6 +8161,15 @@
       "min": 0,
       "max": 1
     },
+    "ai_context_tokens": {
+      "label": "AI 单次上下文上限",
+      "description": "按模型服务支持的输入与输出合计容量设置；独立于每次分析的累计 Token 预算。",
+      "section": "runtime",
+      "value_type": "integer",
+      "default": 32768,
+      "min": 1024,
+      "max": 1000000
+    },
     "ai_timeout_seconds": {
       "label": "AI 超时时间",
       "description": "单次 AI 调用超时时间，单位秒。",

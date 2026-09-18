@@ -201,6 +201,14 @@ func one(ctx context.Context, db DB, sql string, args ...any) (Object, error) {
 	return values[0], nil
 }
 func (a *App) get(ctx context.Context, db DB, table string, id any) (Object, error) {
+	if data := candidateSummaries(ctx); data != nil && db == a.Pool {
+		if records, ok := data.related[table]; ok {
+			if record := records[num(id)]; record != nil {
+				return record, nil
+			}
+			return nil, &apiError{404, "未找到记录"}
+		}
+	}
 	if _, ok := a.Spec.Models[table]; !ok {
 		return nil, bad("无效数据类型")
 	}

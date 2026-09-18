@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const protocolVersion = "resume-analysis/v4"
+const protocolVersion = "resume-analysis/v5"
 const resultVersion = "resume-application-assessment/v1"
 const policyVersion = "application-pool-policy/v1"
 

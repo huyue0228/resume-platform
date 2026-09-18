@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-var bulkCandidateFilters = []string{"system_status", "system_statuses", "current_entity_in", "current_position_name_in", "job_department_name_in", "current_job_category_in", "school_tag_in", "allocation_source", "reason_code"}
+var bulkCandidateFilters = []string{"system_status", "system_statuses", "pool_status", "current_entity_in", "current_position_name_in", "job_department_name_in", "current_job_category_in", "school_tag_in", "allocation_source", "reason_code"}
 
 func validateBulkFilters(filters Object) error {
 	nonempty := false
@@ -43,9 +43,14 @@ func validateCandidateFilters(r *http.Request, p *Principal) error {
 	q := r.URL.Query()
 	if !p.has("resume.view") {
 		for key := range q {
-			if contains([]string{"processing_run_id", "processing_result", "workflow_status", "reason_code"}, key) || strings.HasPrefix(key, "analytics_") {
+			if contains([]string{"processing_run_id", "processing_result", "workflow_status", "reason_code", "pool_status"}, key) || strings.HasPrefix(key, "analytics_") {
 				return bad("部门接口人不可使用筛选字段：" + key)
 			}
+		}
+	}
+	for _, status := range queryValues(r, "pool_status") {
+		if !contains([]string{"admitted", "none", "pending_allocation", "allocated", "needs_reanalysis"}, status) {
+			return bad("不支持的入池状态：" + status)
 		}
 	}
 	for _, key := range []string{"system_status", "system_statuses"} {
@@ -94,12 +99,28 @@ func validateCandidateFilters(r *http.Request, p *Principal) error {
 func (a *App) candidateFilter(ctx context.Context, r *http.Request, p *Principal, row, value Object, key, q string) (bool, bool, error) {
 	current, at := obj(value["current_resume"]), obj(value["current_attempt"])
 	switch key {
+	case "pool_status":
+		member := obj(value["pool_membership"])
+		status := str(member["status"])
+		admitted := contains([]string{"pending_allocation", "allocated", "needs_reanalysis"}, status)
+		for _, expected := range queryValues(r, key) {
+			if expected == status || expected == "admitted" && admitted || expected == "none" && !admitted {
+				return true, true, nil
+			}
+		}
+		return false, true, nil
 	case "search", "name":
 		texts := []string{str(row["name"]), str(row["name_pinyin"]), str(row["name_pinyin_initials"])}
 		if key == "search" {
 			if p.has("resume.view") {
 				texts = append(texts, str(row["phone"]))
-				resumes, err := rows(ctx, a.Pool, "SELECT row_to_json(r) FROM (SELECT apply_id,position_name FROM core_resume WHERE candidate_id=$1) r", row["id"])
+				var resumes []Object
+				var err error
+				if data := candidateSummaries(ctx); data != nil {
+					resumes = data.resumes[num(row["id"])]
+				} else {
+					resumes, err = rows(ctx, a.Pool, "SELECT row_to_json(r) FROM (SELECT apply_id,position_name FROM core_resume WHERE candidate_id=$1) r", row["id"])
+				}
 				if err != nil {
 					return false, true, err
 				}

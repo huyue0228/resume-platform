@@ -51,6 +51,7 @@ import {
 import ImportButton from '../components/ImportButton'
 import ResumePreview from '../components/ResumePreview'
 import CandidateAnalysis from '../components/CandidateAnalysis'
+import PoolMemberDrawer from '../components/PoolMemberDrawer'
 import SchoolTagBadge from '../components/SchoolTagBadge'
 import SmartDataTable from '../components/SmartDataTable'
 import ResumeExportModal from '../components/ResumeExportModal'
@@ -96,6 +97,7 @@ const REASON_CODE_OPTIONS = {
   ai_invalid_output: 'AI 输出不合法',
   agent_incomplete: 'AI 分析未完成',
   agent_budget_exhausted: 'AI 分析预算耗尽',
+  agent_stalled: 'AI 分析连续无进展',
   ai_reference_invalidated: 'AI 引用已失效',
   rule_assigned: '历史规则分配成功',
   ai_dispatched: 'AI 建议下发',
@@ -183,6 +185,14 @@ const SYSTEM_STATUS_OPTIONS = {
     description: '最近有效尝试已反馈未通过，或全部志愿未通过导致归档',
   },
 }
+
+const POOL_STATUS_OPTIONS = [
+  { value: 'admitted', label: '已入池（全部状态）' },
+  { value: 'pending_allocation', label: '入池待分配' },
+  { value: 'allocated', label: '入池已分配' },
+  { value: 'needs_reanalysis', label: '需要重新评估' },
+  { value: 'none', label: '当前未入池' },
+]
 
 const ATTEMPT_STATUS = {
   pending_review: { color: 'default', text: '历史复核' },
@@ -337,6 +347,7 @@ export default function ResumesPage() {
   const canSelectCandidates = canRunPipeline || canDispatch || canTransfer || canExport || canImport
   const { run } = useProcessRunner()
   const [detailRecord, setDetailRecord] = useState(null)
+  const [poolMemberId, setPoolMemberId] = useState(null)
   const [previewRecord, setPreviewRecord] = useState(null)
   const [agentDecisions, setAgentDecisions] = useState([])
   const [agentDecisionsLoading, setAgentDecisionsLoading] = useState(false)
@@ -486,7 +497,7 @@ export default function ResumesPage() {
       await loadAgentDecisions(decision.workflow)
       actionRef.current?.reload()
       window.dispatchEvent(new Event('srf:processing-run-created'))
-      message.success(data?.detail || '已创建 AI 重试任务，请在处理任务中心查看进度')
+      message.success(data?.detail || '已创建 AI 重试任务，请在任务中心查看进度')
     } finally {
       setRetryingDecisionId(null)
     }
@@ -538,6 +549,7 @@ export default function ResumesPage() {
         current_job_category_in: toArray(lastQuery.current_job_category_in),
         school_tag_in: toArray(lastQuery.school_tag_in),
         allocation_source: toArray(lastQuery.allocation_source),
+        pool_status: toArray(lastQuery.pool_status),
       },
       options: {},
     })
@@ -992,10 +1004,12 @@ export default function ResumesPage() {
     }
   }, [searchParams])
 
+  const poolStatus = hasPermission('resume.view') ? searchParams.get('pool_status') || '' : ''
   const externalRequestParams = useMemo(() => ({
     ...processingRequestParams,
     ...(analyticsDrilldown?.params || {}),
-  }), [analyticsDrilldown?.params, processingRequestParams])
+    ...(poolStatus ? { pool_status: poolStatus } : {}),
+  }), [analyticsDrilldown?.params, processingRequestParams, poolStatus])
 
   useEffect(() => {
     setDetailRecord(null)
@@ -1003,6 +1017,7 @@ export default function ResumesPage() {
     analyticsDrilldown?.params,
     processingResultFilter?.runId,
     processingResultFilter?.result,
+    poolStatus,
   ])
 
   const requestCandidates = useCallback((params) => {
@@ -1194,6 +1209,17 @@ export default function ResumesPage() {
         onDone={handleImported}
       /> : null}
     >
+      {hasPermission('resume.view') && <Space style={{ marginBottom: 16 }}>
+        <Typography.Text>入池状态</Typography.Text>
+        <Select aria-label="入池状态" placeholder="全部候选人" allowClear style={{ width: 220 }} value={poolStatus || undefined} options={POOL_STATUS_OPTIONS} onChange={(value) => {
+          setSearchParams((previous) => {
+            const next = new URLSearchParams(previous)
+            if (value) next.set('pool_status', value)
+            else next.delete('pool_status')
+            return next
+          })
+        }} />
+      </Space>}
       {processingResultFilter && (
         <Alert
           showIcon
@@ -1359,6 +1385,7 @@ export default function ResumesPage() {
             <Space direction="vertical" size="small" style={{ width: '100%' }}>
               {[
                 ['system_statuses', '简历状态', Object.entries(SYSTEM_STATUS_OPTIONS).map(([value, item]) => ({ value, label: item.text }))],
+                ['pool_status', '入池状态', POOL_STATUS_OPTIONS],
                 ['current_entity_in', '招聘主体', bulkDispatchModal.options.current_entity || []],
                 ['current_position_name_in', '投递岗位', bulkDispatchModal.options.current_position_name || []],
                 ['job_department_name_in', '岗位部门', bulkDispatchModal.options.job_department_name || []],
@@ -1519,6 +1546,7 @@ export default function ResumesPage() {
             </Descriptions>
 
             {renderDetailActions(detailRecord)}
+            {hasPermission('resume.view') && detailRecord.pool_membership?.id && <Button style={{ marginTop: 12 }} onClick={() => setPoolMemberId(detailRecord.pool_membership.id)}>入池与分配详情</Button>}
 
             <SmartDataTable
               tableId="candidate-resumes"
@@ -1787,6 +1815,7 @@ export default function ResumesPage() {
                     render: (_, decision) => (
                       <Space>
                         <a onClick={() => setAgentDecisionDetail(decision)}>详情</a>
+                        {hasPermission('resume.view') && decision.pool_membership?.id && <Button type="link" size="small" onClick={() => setPoolMemberId(decision.pool_membership.id)}>入池记录</Button>}
                         {decision.can_retry !== false && (decision.error_code || decision.recommendation === 'archive') && hasPermission('attempt.dispatch') && (
                           <Button
                             type="link"
@@ -1806,6 +1835,7 @@ export default function ResumesPage() {
           </>
         )}
       </Drawer>
+      <PoolMemberDrawer memberId={poolMemberId} onClose={() => setPoolMemberId(null)} onChange={reloadCandidates} />
       <Modal
         title="简历与岗位匹配"
         open={Boolean(agentDecisionDetail)}

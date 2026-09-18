@@ -21,7 +21,7 @@ export const allRoute = {
     },
     {
       path: '/processing-tasks',
-      name: '处理任务',
+      name: '任务中心',
       icon: <ScheduleOutlined />,
     },
     {
@@ -30,7 +30,6 @@ export const allRoute = {
       icon: <DatabaseOutlined />,
       routes: [
         { path: '/resumes', name: '简历库', icon: <ProfileOutlined /> },
-        { path: '/position-pools', name: '职位候选人池', icon: <TeamOutlined /> },
         { path: '/jobs', name: '岗位需求', icon: <ApartmentOutlined /> },
         { path: '/schools', name: '院校清单', icon: <BankOutlined /> },
         { path: '/departments', name: '部门人员授权', icon: <TeamOutlined /> },

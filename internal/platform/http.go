@@ -289,6 +289,9 @@ func (a *App) readResource(w http.ResponseWriter, r *http.Request, resource stri
 	if handled, err := a.pagedResource(w, r, resource, p); handled {
 		return err
 	}
+	if resource == "candidates" {
+		return a.pagedCandidates(w, r, p)
+	}
 	values, err := a.filtered(r.Context(), resource, r, p)
 	if err != nil {
 		return err
@@ -341,6 +344,13 @@ func (a *App) filtered(ctx context.Context, resource string, r *http.Request, p 
 	if err != nil {
 		return nil, err
 	}
+	if resource == "candidates" && ctx.Value(candidateSummaryKey{}) == true {
+		data, err := a.loadCandidateReadModel(ctx, r)
+		if err != nil {
+			return nil, err
+		}
+		ctx = context.WithValue(ctx, candidateSummaryKey{}, data)
+	}
 	out := []Object{}
 	for _, row := range raw {
 		if resource == "departments" && !isJobDepartment(row["level"]) {
@@ -375,7 +385,12 @@ func (a *App) filtered(ctx context.Context, resource string, r *http.Request, p 
 				}
 			}
 			if runID := r.URL.Query().Get("processing_run_id"); runID != "" {
-				item, _ := one(ctx, a.Pool, "SELECT row_to_json(i) FROM core_processingrunscopeitem i WHERE run_id=$1 AND candidate_id=$2", num(runID), row["id"])
+				var item Object
+				if data := candidateSummaries(ctx); data != nil {
+					item = data.items[num(row["id"])]
+				} else {
+					item, _ = one(ctx, a.Pool, "SELECT row_to_json(i) FROM core_processingrunscopeitem i WHERE run_id=$1 AND candidate_id=$2", num(runID), row["id"])
+				}
 				if item == nil {
 					continue
 				}
@@ -391,7 +406,12 @@ func (a *App) filtered(ctx context.Context, resource string, r *http.Request, p 
 					}
 				} else if contains([]string{"review", "dispatch", "archive"}, result) {
 					var exists bool
-					err := a.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM core_agentdispatchdecision d JOIN core_candidateworkflow w ON d.workflow_id=w.id WHERE d.processing_run_id=$1 AND w.candidate_id=$2 AND d.recommendation=$3)", num(runID), row["id"], result).Scan(&exists)
+					var err error
+					if data := candidateSummaries(ctx); data != nil {
+						exists = data.recommendations[num(row["id"])]
+					} else {
+						err = a.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM core_agentdispatchdecision d JOIN core_candidateworkflow w ON d.workflow_id=w.id WHERE d.processing_run_id=$1 AND w.candidate_id=$2 AND d.recommendation=$3)", num(runID), row["id"], result).Scan(&exists)
+					}
 					if err != nil {
 						return nil, err
 					}

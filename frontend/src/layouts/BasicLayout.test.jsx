@@ -11,7 +11,7 @@ describe('BasicLayout menu hierarchy', () => {
   it('puts the data dashboard and processing tasks before the collapsible menu groups', () => {
     expect(allRoute.routes.map((route) => route.name)).toEqual([
       '数据看板',
-      '处理任务',
+      '任务中心',
       '数据管理',
       '系统设置',
     ])

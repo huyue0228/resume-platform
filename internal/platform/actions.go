@@ -301,7 +301,11 @@ func (a *App) filterOptions(w http.ResponseWriter, r *http.Request, resource str
 	u := *r.URL
 	clean.URL = &u
 	u.RawQuery = ""
-	values, err := a.filtered(r.Context(), resource, clean, p)
+	ctx := r.Context()
+	if resource == "candidates" {
+		ctx = context.WithValue(ctx, candidateSummaryKey{}, true)
+	}
+	values, err := a.filtered(ctx, resource, clean, p)
 	if err != nil {
 		return err
 	}

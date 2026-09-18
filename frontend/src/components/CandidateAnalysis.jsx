@@ -20,6 +20,15 @@ const OUTCOMES = {
 }
 const readableRisk = (risk) => ({ profile_incomplete: '简历信息不足，需人工核实', ocr_fallback: '扫描材料经文字识别处理' }[risk] || risk)
 const scoreText = (score) => score == null || !Number.isFinite(Number(score)) ? '—' : Math.round(Number(score) * 100)
+const STOP_REASONS = {
+  token_limit: '累计 Token 额度耗尽', next_request: '剩余额度不足以完成下一轮',
+  context_limit: '下一轮超过单次上下文上限', turn_limit: '模型轮次达到上限',
+  tool_limit: '工具调用次数达到上限', no_progress: '连续调用未推进分析',
+  invalid_output: '模型输出格式修正失败', materials_incomplete: '材料不足以完成分析',
+  model_error: '模型请求失败', cancelled: '任务已取消', timeout: '任务超时',
+}
+const USAGE_SOURCES = { reported: '模型返回用量', estimated: '估算用量', mixed: '包含估算用量' }
+const numberText = (value) => value == null ? '—' : Number(value).toLocaleString('zh-CN')
 
 function Evidence({ items = [] }) {
   if (!items.length) return <p className="candidate-analysis-muted">该记录没有保留可定位的原文证据。</p>
@@ -140,16 +149,31 @@ function Diagnostics({ decision }) {
   const result = decision.kernel_result || {}
   const trace = result.safe_trace || decision.safe_trace || {}
   const tools = trace.tool_calls || []
+  const budget = trace.budget
+  const rounds = trace.rounds || []
   return (
     <details className="candidate-analysis-diagnostics">
       <summary>运行记录与版本 <span>供问题排查使用</span></summary>
       <dl>
         <div><dt>分析模型</dt><dd>{decision.model_name || '未记录'}</dd></div>
         <div><dt>内核版本</dt><dd>{decision.kernel_build || '历史版本'}</dd></div>
-        <div><dt>模型轮次</dt><dd>{trace.turns ?? '—'}</dd></div>
+        <div><dt>模型轮次</dt><dd>{trace.turns ?? '—'}{budget ? ` / ${budget.max_turns}` : ''}</dd></div>
         <div><dt>Token 用量</dt><dd>{trace.input_tokens == null ? '—' : (Number(trace.input_tokens) + Number(trace.output_tokens || 0)).toLocaleString('zh-CN')}</dd></div>
+        {budget && <>
+          <div><dt>用量来源</dt><dd>{USAGE_SOURCES[budget.usage_source] || '未记录'}</dd></div>
+          <div><dt>累计 Token 上限</dt><dd>{numberText(budget.max_tokens)}</dd></div>
+          <div><dt>剩余 Token</dt><dd>{numberText(budget.remaining_tokens)}</dd></div>
+          <div><dt>单次上下文上限</dt><dd>{numberText(budget.max_context_tokens)}</dd></div>
+          <div><dt>预检输入 Token</dt><dd>{numberText(budget.next_input_tokens)}</dd></div>
+          <div><dt>收尾预留 Token</dt><dd>{numberText(budget.reserved_tokens)}</dd></div>
+          <div><dt>工具调用</dt><dd>{trace.tool_call_count} / {budget.max_tool_calls}</dd></div>
+          <div><dt>历史整理 / 重复调用</dt><dd>{budget.compactions || 0} / {budget.repeated_calls || 0}</dd></div>
+          <div><dt>格式修正 / 校验失败 / 网络重试</dt><dd>{budget.format_repairs || 0} / {budget.validation_failures || 0} / {budget.transport_retries || 0}</dd></div>
+        </>}
       </dl>
-      {tools.length > 0 && <div className="candidate-analysis-trace"><table><caption>阶段与工具调用</caption><thead><tr><th>阶段 / 工具</th><th>状态</th><th>耗时</th></tr></thead><tbody>{tools.map((tool, index) => <tr key={`${tool.name}-${index}`}><td>{tool.name}</td><td>{['ok', 'success', 'ready'].includes(tool.status) ? '完成' : ['error', 'rejected'].includes(tool.status) ? '未完成' : tool.status}</td><td>{tool.duration_ms} ms</td></tr>)}</tbody></table></div>}
+      {budget?.stop_reason && <Alert type="warning" showIcon message={STOP_REASONS[budget.stop_reason] || '分析未完成'} />}
+      {rounds.length > 0 && <div className="candidate-analysis-trace"><table><caption>逐轮模型调用</caption><thead><tr><th>轮次</th><th>阶段</th><th>预估输入</th><th>输入 / 输出</th><th>输出上限 / 收尾预留</th><th>模型耗时</th><th>进展</th></tr></thead><tbody>{rounds.map((round) => <tr key={round.turn}><td>{round.turn}</td><td>{round.phase === 'finalize' ? '收尾' : '分析'}{round.compacted ? ' · 已整理历史' : ''}</td><td>{numberText(round.estimated_input_tokens)}</td><td>{numberText(round.input_tokens)} / {numberText(round.output_tokens)}<small> · {USAGE_SOURCES[round.usage_source]}</small></td><td>{numberText(round.output_limit)} / {numberText(round.reserved_tokens)}</td><td>{numberText(round.model_duration_ms)} ms</td><td>{round.progress ? '有进展' : '无进展'}</td></tr>)}</tbody></table></div>}
+      {tools.length > 0 && <div className="candidate-analysis-trace"><table><caption>阶段与工具调用（耗时不含模型请求，低于 1ms 显示 0ms）</caption><thead><tr><th>阶段 / 工具</th><th>状态</th><th>耗时</th><th>校验信息</th></tr></thead><tbody>{tools.map((tool, index) => <tr key={`${tool.name}-${index}`}><td>{tool.name}</td><td>{['ok', 'success', 'ready'].includes(tool.status) ? '完成' : ['error', 'rejected'].includes(tool.status) ? '未完成' : tool.status}{tool.repeated ? ' · 重复调用' : ''}</td><td>{tool.duration_ms} ms</td><td>{tool.error_code || '—'}{tool.error_field ? ` · ${tool.error_field}` : ''}</td></tr>)}</tbody></table></div>}
     </details>
   )
 }
@@ -188,7 +212,7 @@ export default function CandidateAnalysis({ decision, onRetry, retrying = false 
   const current = loaded || decision
   const result = current.kernel_result || {}
   const hasMatches = Array.isArray(result.matches) && result.matches.length > 0
-  const isApplication = result.protocol_version === 'resume-analysis/v4'
+  const isApplication = ['resume-analysis/v4', 'resume-analysis/v5'].includes(result.protocol_version)
   const poolOutcomes = { pending_review: ['历史复核记录', 'default'], pending_allocation: ['入池待分配', 'processing'], allocated: ['已分配', 'success'], needs_reanalysis: ['需要重新评估', 'warning'], closed: ['入池资格已关闭', 'default'], rejected: ['历史复核未通过', 'default'] }
   const [outcome, color] = current.error_code ? ['分析未完成', 'error'] : poolOutcomes[current.pool_membership?.status] || OUTCOMES[current.recommendation] || ['等待处理', 'default']
   return (

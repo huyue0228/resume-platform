@@ -300,6 +300,7 @@ const exportCatalog = {
 
 describe('ResumesPage detail', () => {
   beforeEach(() => {
+    delete candidate.pool_membership
     candidate.current_attempt = null
     candidate.attempts = []
     candidate.application_history = []
@@ -376,6 +377,15 @@ describe('ResumesPage detail', () => {
     transferAllocation.mockResolvedValue({ data: {} })
     fetchCandidates.mockReset()
     fetchCandidates.mockResolvedValue({ data: { count: 0, results: [] } })
+  })
+
+  it('restores admission filtering in candidate queries', async () => {
+    roleState.permissions = new Set(['resume.view', 'pipeline.run'])
+    render(<MemoryRouter initialEntries={['/resumes?pool_status=admitted']}><ResumesPage /></MemoryRouter>)
+    expect(screen.getByRole('combobox', { name: '入池状态' })).toBeTruthy()
+    expect(JSON.parse(screen.getByTestId('table-candidates').dataset.params).pool_status).toBe('admitted')
+    await userEvent.click(screen.getByRole('button', { name: '加载候选人' }))
+    expect(fetchCandidates).toHaveBeenCalledWith(expect.objectContaining({ pool_status: 'admitted' }))
   })
 
   it('renders raw confidence and hides failed or invalid values despite ProTable formatting', async () => {

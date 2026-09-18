@@ -332,7 +332,13 @@ func elapsed(start, end any) any {
 	return max(int64(0), int64(e.Sub(s).Seconds()))
 }
 func (a *App) candidateTags(ctx context.Context, c Object) ([]Object, error) {
-	tags, err := rows(ctx, a.Pool, "SELECT row_to_json(t) FROM core_schooltag t JOIN core_candidate_school_tags l ON l.schooltag_id=t.id WHERE l.candidate_id=$1 ORDER BY t.code,t.id", c["id"])
+	var tags []Object
+	var err error
+	if data := candidateSummaries(ctx); data != nil {
+		tags = data.tags[num(c["id"])]
+	} else {
+		tags, err = rows(ctx, a.Pool, "SELECT row_to_json(t) FROM core_schooltag t JOIN core_candidate_school_tags l ON l.schooltag_id=t.id WHERE l.candidate_id=$1 ORDER BY t.code,t.id", c["id"])
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -356,8 +362,16 @@ func (a *App) candidateTags(ctx context.Context, c Object) ([]Object, error) {
 var systemLabels = map[string]string{"raw": "待处理", "talent_pool": "人才库", "pending_allocation": "入池待分配", "archived": "已归档", "pending_reallocation": "待重新分配", "pending_dispatch": "待下发", "pending_screening": "待业务反馈", "screening_passed": "通过", "screening_rejected": "不通过"}
 
 func (a *App) candidateJSON(ctx context.Context, c, result Object, p *Principal, detail bool) (Object, error) {
-	workflow, _ := one(ctx, a.Pool, "SELECT row_to_json(w) FROM core_candidateworkflow w WHERE candidate_id=$1", c["id"])
-	resumes, err := rows(ctx, a.Pool, `SELECT row_to_json(v) FROM (SELECT r.*,COALESCE(a.status,'pending') lifecycle_status,COALESCE(a.reason,'') lifecycle_reason,a.completed_at lifecycle_completed_at FROM core_resume r LEFT JOIN platform_applications a ON a.resume_id=r.id WHERE r.candidate_id=$1 ORDER BY volunteer_rank NULLS LAST,apply_date NULLS LAST,r.id) v`, c["id"])
+	data := candidateSummaries(ctx)
+	var workflow Object
+	var resumes []Object
+	var err error
+	if data != nil {
+		workflow, resumes = data.workflows[num(c["id"])], data.resumes[num(c["id"])]
+	} else {
+		workflow, _ = one(ctx, a.Pool, "SELECT row_to_json(w) FROM core_candidateworkflow w WHERE candidate_id=$1", c["id"])
+		resumes, err = rows(ctx, a.Pool, `SELECT row_to_json(v) FROM (SELECT r.*,COALESCE(a.status,'pending') lifecycle_status,COALESCE(a.reason,'') lifecycle_reason,a.completed_at lifecycle_completed_at FROM core_resume r LEFT JOIN platform_applications a ON a.resume_id=r.id WHERE r.candidate_id=$1 ORDER BY volunteer_rank NULLS LAST,apply_date NULLS LAST,r.id) v`, c["id"])
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +395,11 @@ func (a *App) candidateJSON(ctx context.Context, c, result Object, p *Principal,
 	}
 	attempts := []Object{}
 	if workflow != nil {
-		attempts, err = rows(ctx, a.Pool, "SELECT row_to_json(a) FROM core_assignmentattempt a WHERE workflow_id=$1 ORDER BY attempt_no,id", workflow["id"])
+		if data != nil {
+			attempts = data.attempts[num(workflow["id"])]
+		} else {
+			attempts, err = rows(ctx, a.Pool, "SELECT row_to_json(a) FROM core_assignmentattempt a WHERE workflow_id=$1 ORDER BY attempt_no,id", workflow["id"])
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -459,7 +477,18 @@ func (a *App) candidateJSON(ctx context.Context, c, result Object, p *Principal,
 		}
 	}
 	if p.has("resume.view") {
-		member, err := one(ctx, a.Pool, "SELECT row_to_json(m) FROM platform_pool_memberships m WHERE candidate_id=$1 AND resume_id=$2 AND status IN ('pending_review','pending_allocation','allocated','needs_reanalysis') ORDER BY id DESC LIMIT 1", c["id"], current["id"])
+		var member Object
+		var err error
+		if data != nil {
+			for _, m := range data.members[num(c["id"])] {
+				if num(m["resume_id"]) == num(current["id"]) {
+					member = m
+					break
+				}
+			}
+		} else {
+			member, err = one(ctx, a.Pool, "SELECT row_to_json(m) FROM platform_pool_memberships m WHERE candidate_id=$1 AND resume_id=$2 AND status IN ('pending_review','pending_allocation','allocated','needs_reanalysis') ORDER BY id DESC LIMIT 1", c["id"], current["id"])
+		}
 		if err != nil && !noPoolRecord(err) {
 			return nil, err
 		}
@@ -557,13 +586,23 @@ func (a *App) candidateJSON(ctx context.Context, c, result Object, p *Principal,
 		if attempt == nil && workflow["started_at"] != nil {
 			result["allocation_source"] = str(workflow["dispatch_strategy"])
 		}
-		item, _ := one(ctx, a.Pool, "SELECT row_to_json(i) FROM core_processingrunscopeitem i WHERE candidate_id=$1 ORDER BY created_at DESC,id DESC LIMIT 1", c["id"])
+		var item Object
+		if data != nil {
+			item = data.items[num(c["id"])]
+		} else {
+			item, _ = one(ctx, a.Pool, "SELECT row_to_json(i) FROM core_processingrunscopeitem i WHERE candidate_id=$1 ORDER BY created_at DESC,id DESC LIMIT 1", c["id"])
+		}
 		result["reason_code"] = str(item["reason_code"])
 		result["processing_result"] = str(item["result_type"])
 	}
 	result["resumes"] = []any{}
 	result["attempts"] = []any{}
 	result["current_attempt"] = nil
+	if data != nil {
+		// Filter on the same projection, then hydrate only the requested page.
+		result["current_attempt"] = attempt
+		return result, nil
+	}
 	if detail && p.has("resume.view") {
 		history, err := rows(ctx, a.Pool, `SELECT row_to_json(v) FROM (SELECT e.*,r.apply_id,r.volunteer_rank,r.position_name FROM platform_application_events e JOIN core_resume r ON r.id=e.resume_id WHERE r.candidate_id=$1 ORDER BY e.id) v`, c["id"])
 		if err != nil {

@@ -250,8 +250,8 @@ func (a *App) analyze(ctx context.Context, item, frozen Object, text pdftext.Tex
 		}
 	}
 	taskID := str(frozen["task_id"]) + "-" + str(item["attempt_count"])
-	request := Object{"protocol_version": protocolVersion, "task_kind": "candidate.application_assessment", "task_id": taskID, "trigger": "processing_run", "workflow_revision": obj(snapshot["workflow"])["revision"], "pin": pin, "scope": Object{"candidate": brief(obj(snapshot["candidate"]), "ref", "highest_major", "highest_education"), "volunteer_ref": d["current_volunteer_ref"], "resume_text": text, "jobs": jobs, "tag_catalog": snapshot["tag_catalog"]}, "model": Object{"api_style": c["api_style"], "base_url": c["base_url"], "model_name": c["model_name"], "structured_output_mode": a.configValue(ctx, "ai_connection_structured_output_mode", "json_compat"), "timeout_seconds": a.configValue(ctx, "ai_timeout_seconds", 60), "retry_count": a.configValue(ctx, "ai_retry_count", 1), "insecure_skip_verify": boolEnv("AGENT_KERNEL_MODEL_INSECURE_SKIP_VERIFY")}, "budget": Object{"max_turns": 32, "max_tool_calls": 256, "max_duration_seconds": 600, "max_tokens": 120000}}
-	request["idempotency_key"] = fingerprint(Object{"task_id": taskID, "pin": pin, "scope": request["scope"], "workflow_revision": request["workflow_revision"]})
+	request := Object{"protocol_version": protocolVersion, "task_kind": "candidate.application_assessment", "task_id": taskID, "trigger": "processing_run", "workflow_revision": obj(snapshot["workflow"])["revision"], "pin": pin, "scope": Object{"candidate": brief(obj(snapshot["candidate"]), "ref", "highest_major", "highest_education"), "volunteer_ref": d["current_volunteer_ref"], "resume_text": text, "jobs": jobs, "tag_catalog": snapshot["tag_catalog"]}, "model": Object{"api_style": c["api_style"], "base_url": c["base_url"], "model_name": c["model_name"], "structured_output_mode": a.configValue(ctx, "ai_connection_structured_output_mode", "json_compat"), "timeout_seconds": a.configValue(ctx, "ai_timeout_seconds", 60), "retry_count": a.configValue(ctx, "ai_retry_count", 1), "insecure_skip_verify": boolEnv("AGENT_KERNEL_MODEL_INSECURE_SKIP_VERIFY")}, "budget": Object{"max_turns": 32, "max_tool_calls": 256, "max_duration_seconds": 600, "max_tokens": 120000, "max_context_tokens": a.configValue(ctx, "ai_context_tokens", 32768)}}
+	request["idempotency_key"] = fingerprint(Object{"task_id": taskID, "pin": pin, "scope": request["scope"], "workflow_revision": request["workflow_revision"], "budget": request["budget"]})
 	raw := canonicalJSON(request, false)
 	if len(raw) > 2<<20 {
 		return nil, taskError("request_too_large", "全文与岗位数据编码后超过 2 MiB 请求上限，未截断全文")
@@ -323,6 +323,10 @@ func validateAnalysis(request, result Object, text pdftext.Text, refs []string) 
 	if manifest["terminal_state"] != "DONE" {
 		code := str(manifest["failure_code"])
 		mapping := map[string]string{"task_timeout": "llm_timeout", "task_cancelled": "agent_cancelled", "budget_exhausted": "agent_budget_exhausted", "text_invalid": "resume_text_unavailable", "model_connection_error": "ai_connection_error", "model_rate_limited": "ai_rate_limited", "model_output_invalid": "agent_invalid_output", "materials_incomplete": "agent_incomplete"}
+		for _, reason := range []string{"token_budget_exhausted", "next_request_budget_insufficient", "context_limit_exceeded", "turn_budget_exhausted", "tool_budget_exhausted"} {
+			mapping[reason] = "agent_budget_exhausted"
+		}
+		mapping["analysis_stalled"] = "agent_stalled"
 		mapped := mapping[code]
 		if mapped == "" {
 			mapped = "agent_incomplete"

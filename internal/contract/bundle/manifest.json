@@ -9,20 +9,20 @@
     "allocation.response.example.json": "9355076d5c453c960f06732cc1d8d5f98979c84f9ed4b8326c4b67450cee20e1",
     "allocation.response.schema.json": "ff6b4ec08e785bad828ab4b629f24847079558e4f5242bdfb86dde4febc47c12",
     "allocation_types.go.txt": "82275e36912654ffdde8fa7876fad88d93546a18aabf383f7c2b028192f4a550",
-    "capabilities.example.json": "dcbae8e3d14c871fd977a08754b7eb91967e7e801fab7910162f8d6370e7ec3e",
-    "capabilities.schema.json": "b5ebfe0903a7e64c4aaa4ccb5579e41325655046d0e85695a8e32ab0447b9d66",
-    "request.example.json": "cfa6241e9e861a4148eebad52bbbbbc3e4811d926785f46c0817cc7b5fcfb394",
-    "request.schema.json": "f71055da38263276ce3351a044666ae97775b6ce8b3bc45b02185fcdb995a48a",
-    "response.example.json": "03e3cb105d1210254152d0897c337cd4931beb5489e94ff93cddff7b2e61ef65",
-    "response.schema.json": "f8c7f9ae8a9694d5805aea177cae9a16407cd702fc5f6473266e53d8de649492"
+    "capabilities.example.json": "308334c8419a285988942bcf4c89c9ab03bdbe7dec0f21d7177c2494458ce3b3",
+    "capabilities.schema.json": "cc4fd6ff2026da2d0a845a8c1f49ace388c6a37140c4c74365b76d44aa6f57fb",
+    "request.example.json": "1a088a1fb192487dc0f80bc4e8dd6fcd6a37eeec077d9d03d70a9cd933d52274",
+    "request.schema.json": "281bd7b7a9ab0abaf7daf967374ef2101cfd8b82a93d176825a0e3837b2c620a",
+    "response.example.json": "a2ea7b318ea60cd4cbb716e4b6cf48a9c24a28caabc69da02d1a2e8b1b6033d5",
+    "response.schema.json": "76b3dff0f7e51ff7639308f10d1709103c2fae6060d57acf76ab2e9371526dff"
   },
   "python": {
-    "__init__.py": "cfd2d18dcf0d9ac3d2c34c72d32c1524b09ab658f85dbf18ac5f68c092bf7b6a",
+    "__init__.py": "18b9ae0c452992deab842c0efd677a44af98a4f506c2da53a67b3ad232635440",
     "allocation.py": "2417f4d23813b358e745fbfb51a3e53665578704713ab0c10b01c04f38cd0e16",
-    "fixtures.py": "adb60cb778b1ee214ea57bd3ade388387c8cccacad11df806dc0928d6e36a6e0",
-    "mock_server.py": "a3b039f47f779fa5dffe7a52beb73cf0add945a8810344e7e2b974c839fc079a",
-    "models.py": "4a7d22982a176c00605e2f7b5a01a6c5b3e30866473c33969706a45b3015b330",
-    "verify.py": "71e2f26462731f1c9e002620d5e704578100bb7b70d7c81e34d22130d3513205"
+    "fixtures.py": "4f859eec9ea3db950d652b9a28c15b1b62f232511501ff699ccbe6d8052fe3d7",
+    "mock_server.py": "83c93bddaeec11424b3961725c7c22f570691ac0cabb31b47512dfe44264a33b",
+    "models.py": "8d49d9dc34ea06993217f949bb49b4faeb7c5ddc318fa84469f3ab38aaffcbdf",
+    "verify.py": "a4aeafca5e56c633150a18eb1827ba895ed1afd579affe768b15e5ffc027f100"
   },
-  "version": "4.0.0"
+  "version": "5.0.0"
 }

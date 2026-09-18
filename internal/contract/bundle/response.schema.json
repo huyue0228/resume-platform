@@ -304,6 +304,124 @@
       "title": "TagAssertionV1",
       "type": "object"
     },
+    "TaskBudgetTraceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "compactions": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Compactions",
+          "type": "integer"
+        },
+        "format_repairs": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Format Repairs",
+          "type": "integer"
+        },
+        "max_context_tokens": {
+          "minimum": 1024,
+          "title": "Max Context Tokens",
+          "type": "integer"
+        },
+        "max_tokens": {
+          "minimum": 1,
+          "title": "Max Tokens",
+          "type": "integer"
+        },
+        "max_tool_calls": {
+          "maximum": 512,
+          "minimum": 1,
+          "title": "Max Tool Calls",
+          "type": "integer"
+        },
+        "max_turns": {
+          "maximum": 64,
+          "minimum": 1,
+          "title": "Max Turns",
+          "type": "integer"
+        },
+        "next_input_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Next Input Tokens",
+          "type": "integer"
+        },
+        "remaining_tokens": {
+          "minimum": 0,
+          "title": "Remaining Tokens",
+          "type": "integer"
+        },
+        "repeated_calls": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Repeated Calls",
+          "type": "integer"
+        },
+        "reserved_tokens": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Reserved Tokens",
+          "type": "integer"
+        },
+        "stop_reason": {
+          "default": "",
+          "enum": [
+            "",
+            "token_limit",
+            "next_request",
+            "context_limit",
+            "turn_limit",
+            "tool_limit",
+            "no_progress",
+            "invalid_output",
+            "materials_incomplete",
+            "model_error",
+            "cancelled",
+            "timeout"
+          ],
+          "title": "Stop Reason",
+          "type": "string"
+        },
+        "tokenizer": {
+          "default": "",
+          "maxLength": 64,
+          "title": "Tokenizer",
+          "type": "string"
+        },
+        "transport_retries": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Transport Retries",
+          "type": "integer"
+        },
+        "usage_source": {
+          "default": "estimated",
+          "enum": [
+            "reported",
+            "estimated",
+            "mixed"
+          ],
+          "title": "Usage Source",
+          "type": "string"
+        },
+        "validation_failures": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Validation Failures",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_tokens",
+        "max_context_tokens",
+        "max_turns",
+        "max_tool_calls",
+        "remaining_tokens"
+      ],
+      "title": "TaskBudgetTraceV1",
+      "type": "object"
+    },
     "TaskManifestV1": {
       "additionalProperties": false,
       "properties": {
@@ -406,8 +524,8 @@
           "type": "string"
         },
         "protocol_version": {
-          "const": "resume-analysis/v4",
-          "default": "resume-analysis/v4",
+          "const": "resume-analysis/v5",
+          "default": "resume-analysis/v5",
           "title": "Protocol Version",
           "type": "string"
         },
@@ -435,9 +553,114 @@
       "title": "TaskPinV1",
       "type": "object"
     },
+    "TaskRoundTraceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "compacted": {
+          "default": false,
+          "title": "Compacted",
+          "type": "boolean"
+        },
+        "estimated_input_tokens": {
+          "minimum": 0,
+          "title": "Estimated Input Tokens",
+          "type": "integer"
+        },
+        "input_tokens": {
+          "minimum": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "model_duration_ms": {
+          "minimum": 0,
+          "title": "Model Duration Ms",
+          "type": "integer"
+        },
+        "output_limit": {
+          "minimum": 0,
+          "title": "Output Limit",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "minimum": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "phase": {
+          "enum": [
+            "analysis",
+            "finalize"
+          ],
+          "title": "Phase",
+          "type": "string"
+        },
+        "progress": {
+          "default": false,
+          "title": "Progress",
+          "type": "boolean"
+        },
+        "remaining_tokens": {
+          "minimum": 0,
+          "title": "Remaining Tokens",
+          "type": "integer"
+        },
+        "reserved_tokens": {
+          "minimum": 0,
+          "title": "Reserved Tokens",
+          "type": "integer"
+        },
+        "transport_attempts": {
+          "maximum": 6,
+          "minimum": 1,
+          "title": "Transport Attempts",
+          "type": "integer"
+        },
+        "turn": {
+          "maximum": 64,
+          "minimum": 1,
+          "title": "Turn",
+          "type": "integer"
+        },
+        "usage_source": {
+          "enum": [
+            "reported",
+            "estimated",
+            "mixed"
+          ],
+          "title": "Usage Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "turn",
+        "phase",
+        "estimated_input_tokens",
+        "input_tokens",
+        "output_tokens",
+        "output_limit",
+        "remaining_tokens",
+        "reserved_tokens",
+        "model_duration_ms",
+        "usage_source",
+        "transport_attempts"
+      ],
+      "title": "TaskRoundTraceV1",
+      "type": "object"
+    },
     "TaskSafeTraceV1": {
       "additionalProperties": false,
       "properties": {
+        "budget": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TaskBudgetTraceV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "finished_at": {
           "anyOf": [
             {
@@ -467,6 +690,14 @@
           "minimum": 0,
           "title": "Output Tokens",
           "type": "integer"
+        },
+        "rounds": {
+          "items": {
+            "$ref": "#/$defs/TaskRoundTraceV1"
+          },
+          "maxItems": 64,
+          "title": "Rounds",
+          "type": "array"
         },
         "started_at": {
           "anyOf": [
@@ -527,6 +758,18 @@
           "title": "Duration Ms",
           "type": "integer"
         },
+        "error_code": {
+          "default": "",
+          "maxLength": 64,
+          "title": "Error Code",
+          "type": "string"
+        },
+        "error_field": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Error Field",
+          "type": "string"
+        },
         "item_count": {
           "minimum": 0,
           "title": "Item Count",
@@ -536,6 +779,11 @@
           "maxLength": 200,
           "title": "Name",
           "type": "string"
+        },
+        "repeated": {
+          "default": false,
+          "title": "Repeated",
+          "type": "boolean"
         },
         "status": {
           "maxLength": 64,
@@ -585,8 +833,8 @@
       "default": null
     },
     "protocol_version": {
-      "const": "resume-analysis/v4",
-      "default": "resume-analysis/v4",
+      "const": "resume-analysis/v5",
+      "default": "resume-analysis/v5",
       "title": "Protocol Version",
       "type": "string"
     },
@@ -612,6 +860,6 @@
     "manifest",
     "safe_trace"
   ],
-  "title": "AnalysisResponseV4",
+  "title": "AnalysisResponseV5",
   "type": "object"
 }

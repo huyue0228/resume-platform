@@ -70,7 +70,7 @@ export default function PositionPoolSettingsTab() {
     <Space wrap>
       <Button loading={busy} onClick={load}>刷新配置</Button>
       <Button aria-label="从当前岗位生成关联" loading={busy} onClick={async () => { setBusy(true); try { const { data: value } = await initializeJobPolicy(); setData(value); message.success('已按当前岗位生成并检查关联') } finally { setBusy(false) } }}>从当前岗位生成关联</Button>
-      {hasPermission('pipeline.run') && <Button onClick={() => Modal.confirm({ title: '重新处理配置受阻的候选人', content: '将重新提交因配置受阻或标准变化需要重新评估的候选人，可在处理任务中查看进度。', okText: '提交处理', cancelText: '取消', onOk: async () => { const { data: run } = await reprocessConfiguration(); message.success(`已提交任务 #${run.run_id}，共 ${run.candidate_count} 名候选人`); window.dispatchEvent(new Event('srf:processing-run-created')) } })}>修复后批量重新处理</Button>}
+      {hasPermission('pipeline.run') && <Button onClick={() => Modal.confirm({ title: '重新处理配置受阻的候选人', content: '将重新提交因配置受阻或标准变化需要重新评估的候选人，可在任务中心查看进度。', okText: '提交处理', cancelText: '取消', onOk: async () => { const { data: run } = await reprocessConfiguration(); message.success(`已提交任务 #${run.run_id}，共 ${run.candidate_count} 名候选人`); window.dispatchEvent(new Event('srf:processing-run-created')) } })}>修复后批量重新处理</Button>}
     </Space>
     <Tabs activeKey={kind} onChange={(value) => { setKind(value); setSelected([]); setSearch('') }} items={Object.entries(labels).map(([key, label]) => ({ key, label }))} />
     <Space><Input.Search aria-label="搜索配置" placeholder="名称、主体、岗位" value={search} onChange={(e) => setSearch(e.target.value)} allowClear />

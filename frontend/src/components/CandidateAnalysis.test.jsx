@@ -20,6 +20,22 @@ const decision = {
 }
 
 describe('CandidateAnalysis', () => {
+  it('explains an early budget stop and separates model time from local tools', () => {
+    render(<CandidateAnalysis decision={{ ...decision, kernel_result: { ...decision.kernel_result, safe_trace: {
+      turns: 15, input_tokens: 90000, output_tokens: 6338, tool_call_count: 18,
+      budget: { max_turns: 32, max_tokens: 120000, max_context_tokens: 32768, max_tool_calls: 256, remaining_tokens: 23662, next_input_tokens: 24000, reserved_tokens: 0, stop_reason: 'next_request', usage_source: 'mixed', compactions: 2, repeated_calls: 1 },
+      rounds: [{ turn: 15, phase: 'finalize', estimated_input_tokens: 8000, input_tokens: 7900, output_tokens: 1000, output_limit: 4096, reserved_tokens: 0, model_duration_ms: 2300, usage_source: 'reported', progress: false }],
+      tool_calls: [{ name: 'candidate_profile.submit', status: 'error', duration_ms: 0, error_code: 'evidence_mismatch', error_field: 'claims[0].evidence[0].quote', repeated: true }],
+    } } }} />)
+    expect(screen.getByText('15 / 32')).toBeTruthy()
+    expect(screen.getByText('96,338')).toBeTruthy()
+    expect(screen.getByText('23,662')).toBeTruthy()
+    expect(screen.getByText('剩余额度不足以完成下一轮')).toBeTruthy()
+    expect(screen.getByText('包含估算用量')).toBeTruthy()
+    expect(screen.getByText('2,300 ms')).toBeTruthy()
+    expect(screen.getByText(/耗时不含模型请求/)).toBeTruthy()
+    expect(screen.getByText(/claims\[0\]\.evidence\[0\]\.quote/)).toBeTruthy()
+  })
   it('keeps a closed application readable without offering to overwrite it', () => {
     render(<CandidateAnalysis decision={{ ...decision, recommendation: 'archive', can_retry: false }} onRetry={vi.fn()} />)
     expect(screen.getByText('当前志愿不通过')).toBeTruthy()

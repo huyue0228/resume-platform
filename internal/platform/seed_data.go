@@ -31,18 +31,6 @@ func (a *App) seedInitialData(ctx context.Context, db DB) error {
 		}
 		departments[str(definition["name"])] = row
 	}
-	for _, definition := range []Object{{"employee_no": "L2001", "name": "技术接口人A", "department": "技术二部", "role": "secondary"}, {"employee_no": "L2002", "name": "产品接口人B", "department": "产品二部", "role": "secondary"}, {"employee_no": "T3001", "name": "技术简历筛选人A", "department": "技术二部", "role": "tertiary"}, {"employee_no": "T3002", "name": "算法简历筛选人B", "department": "技术二部", "role": "tertiary"}, {"employee_no": "T3003", "name": "产品简历筛选人C", "department": "产品二部", "role": "tertiary"}} {
-		dep := departments[str(definition["department"])]
-		level := str(definition["role"])
-		role, group := contactRole(level)
-		contact, err := a.seedRecord(ctx, db, "core_contact", "employee_no", definition["employee_no"], Object{"employee_no": definition["employee_no"], "name": definition["name"], "email": normalized(str(definition["employee_no"])) + "@example.com", "department_id": dep["id"], "contact_level": level, "can_delegate": level != "tertiary", "is_active": true})
-		if err != nil {
-			return err
-		}
-		if err = a.seedUser(ctx, db, str(definition["employee_no"]), role, group, contact); err != nil {
-			return err
-		}
-	}
 	for _, entry := range []Object{{"username": "admin", "role": "admin", "group": "管理员"}, {"username": "hr", "role": "primary_hr", "group": "一级部门HR"}} {
 		if err := a.seedUser(ctx, db, str(entry["username"]), str(entry["role"]), str(entry["group"]), nil); err != nil {
 			return err

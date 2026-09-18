@@ -32,7 +32,7 @@ func (a *App) Migrate(ctx context.Context) error {
 		}
 	} else {
 		var active int
-		if err = tx.QueryRow(ctx, "SELECT count(*) FROM core_processingrun WHERE status IN ('pending','running','waiting_conflict','cancelling') AND protocol_version <> 'resume-analysis/v4'").Scan(&active); err != nil {
+		if err = tx.QueryRow(ctx, "SELECT count(*) FROM core_processingrun WHERE status IN ('pending','running','waiting_conflict','cancelling') AND protocol_version <> 'resume-analysis/v5'").Scan(&active); err != nil {
 			return err
 		}
 		if active > 0 {
