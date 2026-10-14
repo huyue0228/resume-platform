@@ -60,7 +60,7 @@ func (a *App) savePoolAssessment(ctx context.Context, db DB, run, w, resume, ite
 	if err = a.applicationState(ctx, db, resume["id"], status, str(match["reason"]), Object{"run_id": run["id"], "decision_id": decision["id"]}); err != nil {
 		return "", "", err
 	}
-	assessment := Object{"admission_threshold": obj(frozen["thresholds"])["dispatch"], "standard": standard, "pool": pool, "requirement": standardJob(policy, standard), "tag_catalog": obj(frozen["snapshot"])["tag_catalog"], "candidate": brief(obj(obj(frozen["snapshot"])["candidate"]), "highest_major", "highest_education"), "score": match["score"], "reason": match["reason"], "evidence": match["evidence"], "pin": pin}
+	assessment := Object{"admission_threshold": obj(frozen["thresholds"])["dispatch"], "standard": standard, "pool": pool, "requirement": standardJob(policy, standard), "tag_catalog": obj(frozen["snapshot"])["tag_catalog"], "candidate": candidateAssessmentInputs(obj(obj(frozen["snapshot"])["candidate"])), "score": match["score"], "reason": match["reason"], "evidence": match["evidence"], "pin": pin}
 	tags := list(obj(result["profile"])["tags"])
 	member, err := one(ctx, db, `INSERT INTO platform_pool_memberships(candidate_id,workflow_id,resume_id,decision_id,run_id,standard_code,pool_code,status,tags,assessment,file_checksum) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11) RETURNING row_to_json(platform_pool_memberships)`, item["candidate_id"], w["id"], resume["id"], decision["id"], run["id"], d["standard_code"], d["pool_code"], status, string(canonicalJSON(tags, false)), string(canonicalJSON(assessment, false)), obj(result["manifest"])["resume_checksum"])
 	if err != nil {

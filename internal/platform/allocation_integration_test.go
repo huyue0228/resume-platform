@@ -203,8 +203,8 @@ func TestAllocationAPIIdempotencyAndPermission(t *testing.T) {
 	responseObject(t, apiRequest(t, f.a, p, "GET", path+str(oneTask["task_id"])+"/", nil), 403)
 	responseObject(t, apiRequest(t, f.a, p, "PATCH", "/api/jobs/"+str(f.job["id"])+"/reception/", Object{"expected_revision": 1, "reception_state": "paused", "reason": "test"}), 403)
 	responseObject(t, apiRequest(t, f.a, f.p, "POST", path+str(oneTask["task_id"])+"/cancel/", Object{}), 202)
-	if _, _, err = f.a.claimAllocation(ctx); !noPoolRecord(err) {
-		t.Fatal("cancelled pending work was automatically executed", err)
+	if _, automatic, err := f.a.claimAllocation(ctx); err != nil || automatic["mode"] != "execute" {
+		t.Fatal("cancelled simulation blocked independent execution", err)
 	}
 }
 func TestAllocationLeaseRecoveryAndBoundedRetry(t *testing.T) {

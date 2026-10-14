@@ -648,8 +648,12 @@ func (a *App) importFiles(w http.ResponseWriter, r *http.Request, p *Principal) 
 		if education := educations[hash]; education != "" {
 			values["highest_education"] = education
 		}
+		previousCandidate := candidate
 		candidate, err = a.save(ctx, tx, "core_candidate", candidate["id"], values)
 		if err != nil {
+			return err
+		}
+		if err = a.invalidateCandidateInputs(ctx, tx, previousCandidate, candidate, p); err != nil {
 			return err
 		}
 		if isNew {

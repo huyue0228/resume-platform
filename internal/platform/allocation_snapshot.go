@@ -65,7 +65,7 @@ func (a *App) allocationQualificationValid(policy Object, row Object) bool {
 	if err != nil || allocationTagHash(facts) != q["tags_hash"] {
 		return false
 	}
-	return len(q) > 0 && m["status"] == "pending_allocation" && num(w["current_resume_id"]) == num(m["resume_id"]) && !truth(row["already_assigned"]) && !contains([]string{"passed", "archived", "waiting_next", "talent_pool"}, str(w["status"])) && activePolicyItem(standard) && activePolicyItem(pool) && current["standard_code"] == m["standard_code"] && current["pool_code"] == m["pool_code"] && q["standard_hash"] == standardJob(policy, standard)["content_hash"] && num(q["source_revision"]) == num(source["revision"]) && q["source_checksum"] == source["file_checksum"] && truth(source["verified"]) && fingerprint(brief(obj(row["candidate"]), "highest_major", "highest_education")) == fingerprint(obj(obj(m["assessment"])["candidate"]))
+	return len(q) > 0 && m["status"] == "pending_allocation" && num(w["current_resume_id"]) == num(m["resume_id"]) && !truth(row["already_assigned"]) && !contains([]string{"passed", "archived", "waiting_next", "talent_pool"}, str(w["status"])) && activePolicyItem(standard) && activePolicyItem(pool) && current["standard_code"] == m["standard_code"] && current["pool_code"] == m["pool_code"] && q["standard_hash"] == standardJob(policy, standard)["content_hash"] && num(q["source_revision"]) == num(source["revision"]) && q["source_checksum"] == source["file_checksum"] && truth(source["verified"]) && fingerprint(candidateAssessmentInputs(obj(row["candidate"]))) == fingerprint(obj(obj(m["assessment"])["candidate"]))
 }
 func (a *App) buildAllocationSnapshot(ctx context.Context, db DB, scope, task Object, at time.Time, clean bool) (c.AllocationSnapshot, error) {
 	var snapshot c.AllocationSnapshot
@@ -136,6 +136,9 @@ func (a *App) buildAllocationSnapshot(ctx context.Context, db DB, scope, task Ob
 				}
 				if status == "needs_reanalysis" {
 					if _, err = db.Exec(ctx, `UPDATE platform_pool_memberships SET status='needs_reanalysis',revision=revision+1,updated_at=now() WHERE id=$1`, m["id"]); err != nil {
+						return snapshot, err
+					}
+					if err = a.applicationState(ctx, db, m["resume_id"], "needs_reanalysis", "筛选资格已失效，请重新处理", Object{"member_id": m["id"]}); err != nil {
 						return snapshot, err
 					}
 				}

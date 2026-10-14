@@ -85,6 +85,11 @@ func (a *App) writeResource(w http.ResponseWriter, r *http.Request, resource str
 	}
 	current := Object{}
 	if id != nil {
+		if resource == "candidates" {
+			if _, err = one(ctx, tx, "SELECT row_to_json(c) FROM core_candidate c WHERE id=$1 FOR UPDATE", id); err != nil {
+				return err
+			}
+		}
 		current, err = a.get(ctx, tx, spec.Table, id)
 		if err != nil {
 			return err
@@ -337,6 +342,11 @@ func (a *App) writeResource(w http.ResponseWriter, r *http.Request, resource str
 	saved, err := a.save(ctx, tx, spec.Table, id, values)
 	if err != nil {
 		return err
+	}
+	if resource == "candidates" {
+		if err = a.invalidateCandidateInputs(ctx, tx, current, saved, p); err != nil {
+			return err
+		}
 	}
 	if err = a.syncRelations(ctx, tx, resource, saved, body); err != nil {
 		return err

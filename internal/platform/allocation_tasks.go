@@ -52,6 +52,10 @@ func (a *App) createAllocationTask(ctx context.Context, db DB, scope Object, ids
 	if err != nil {
 		return nil, err
 	}
+	// Simulation owns only a task/plan, never the durable execution queue.
+	if mode == "simulate" {
+		return task, nil
+	}
 	for _, id := range ids {
 		if _, err = db.Exec(ctx, `INSERT INTO platform_allocation_work_items(member_id,qualification_id,task_id) SELECT $1,q.id,$2 FROM platform_screening_qualifications q WHERE q.member_id=$1 ORDER BY revision DESC LIMIT 1 ON CONFLICT(qualification_id) WHERE status IN ('pending','leased') DO NOTHING`, id, task["id"]); err != nil {
 			return nil, err
@@ -162,8 +166,10 @@ ORDER BY s.id FOR UPDATE SKIP LOCKED LIMIT 1`)
 	for _, id := range list(task["member_ids"]) {
 		ids = append(ids, num(id))
 	}
-	if _, err = tx.Exec(ctx, `UPDATE platform_allocation_work_items SET status='leased',task_id=$2 WHERE member_id=ANY($1) AND status='pending'`, ids, task["id"]); err != nil {
-		return nil, nil, err
+	if task["mode"] != "simulate" {
+		if _, err = tx.Exec(ctx, `UPDATE platform_allocation_work_items SET status='leased',task_id=$2 WHERE member_id=ANY($1) AND status='pending'`, ids, task["id"]); err != nil {
+			return nil, nil, err
+		}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return nil, nil, err
@@ -223,7 +229,7 @@ func (a *App) processAllocation(ctx context.Context, scope, task Object) error {
 	if err = a.authorizeAllocationTask(ctx, tx, scope, task); err != nil {
 		return err
 	}
-	snapshot, err := a.buildAllocationSnapshot(ctx, tx, scope, task, time.Now().UTC().Truncate(time.Microsecond), true)
+	snapshot, err := a.buildAllocationSnapshot(ctx, tx, scope, task, time.Now().UTC().Truncate(time.Microsecond), task["mode"] != "simulate")
 	if err != nil {
 		return err
 	}
